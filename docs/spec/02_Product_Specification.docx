@@ -1,0 +1,484 @@
+Product Specification — the Platform — Phase 1 (MVP)
+
+**Product Specification**
+
+Invoice Discounting Platform — Phase 1 (MVP)
+
+*Foundation for architecture, technical design, and downstream specs*
+
+Audience: Chief Architect, CTO, Engineering Leadership
+
+*Rationale and alternatives for each design choice are recorded in the Decision Log*
+
+# **1. Context**
+
+## **1.1 What the platform does**
+
+The Platform is a private fractional invoice discounting marketplace. Suppliers (businesses holding receivables on creditworthy buyers) list invoices for early liquidity. Investors (a closed circle of pre-known individuals in Phase 1) fund those invoices fractionally. The buyer pays the invoice at maturity; investors receive principal plus a discount-based return.
+
+## **1.2 Phase 1 strategic frame**
+
+Phase 1 is a curated, small, private marketplace operating outside the TReDS framework. Investor base is invite-only (50–100 individuals). Buyer panel is 10–15 platform-led pre-approved corporates. Credit policy is owned by an in-house Credit Specialist. No NBFC partner sits in the chain; legal structure is direct assignment of receivables. Escrow-based per-listing virtual sub-accounts hold customer funds.
+
+*Decision Log refs: DL-001, DL-002, DL-003, DL-004, DL-005, DL-018, DL-022, DL-043*
+
+## **1.3 Phase 2 readiness principle**
+
+Phase 1 entities, state machines, and integrations are designed superset-ready. Schema accommodates Phase 2 expansions (MSME/Udyam fields, additional investor sub-types, anchor relationships, blanket acknowledgment, wallet model, hard concentration limits, regulator inspection access) without migration. Phase 1 keeps these inactive.
+
+# **2. Personas**
+
+Six personas. Four are external; two are internal/oversight. Each persona has an identity, an onboarding journey, an active-state journey, exit conditions, and decision boundaries.
+
+## **2.1 Persona summary**
+
+| **Persona** | **Type** | **Phase 1 Scope** |
+| --- | --- | --- |
+| Supplier | External transactional | Admin-assisted onboarding; admin acts on behalf with full transparency; limited recourse; IRN-driven invoice upload |
+| Buyer / Anchor | External transactional (passive) | Platform-led onboarding; per-invoice acknowledgment; minimal buyer portal; 10–15 active buyers |
+| Investor | External transactional | Invite-gated self-service; Resident Individuals + HUFs; ₹10K min ticket; per-invoice funding |
+| Platform Admin/Ops | Internal operational | 5 composable roles; RBAC + strict/soft SoD; MFA; record-level maker-checker |
+| Escrow Provider | External infrastructure | Per-listing virtual sub-accounts; webhook reconciliation; platform-instructed TDS |
+| Auditor | External oversight | Just-in-time scoped access; 10-year immutable audit log; admin UI + read APIs |
+
+## **2.2 Supplier**
+
+### **Identity**
+
+Registered business entity (Pvt Ltd, LLP, Partnership, Proprietorship, MSME) that originates an invoice on a buyer and assigns the receivable for early liquidity.
+
+### **Onboarding journey**
+
+Admin-assisted. Six stages: sign-up & identification (PAN, GSTIN verified against MCA21 / GST Network); full business KYC (constitution, signatory KYC, UBO declaration, AML, address, bank penny-drop); financial & operational profile (financials, GST returns via API, bank statements via AA, top buyers); credit specialist review (assigns risk rating, sets supplier-level exposure cap); agreement execution (Master Assignment Agreement via Aadhaar e-sign / DSC, e-stamped at master level); activation.
+
+Admin can act on behalf of supplier for all data-entry activities with audit trail and full supplier-side transparency. Legal signatures remain non-delegable.
+
+### **Active-state journey**
+
+Upload invoice (manual + GST IRN auto-fetch, or via Admin) → system runs operational checks → buyer per-invoice acknowledgment → listing live (5-day window) → 100% funded → T+1 disbursement to supplier bank from escrow → track to maturity → on maturity: buyer pays into escrow → T+1 distribution to investors → closure.
+
+### **Recourse**
+
+Limited recourse. Supplier liable for fraud and dilution; buyer credit default is investor risk. No upfront margin, no PG, no FLDG in Phase 1.
+
+### **States**
+
+signed_up → identity_verified → kyc_in_review → financials_submitted → under_credit_review → approved → agreement_signed → active. Exit states: voluntary_exit (only with no live invoices), suspended, blacklisted.
+
+*Decision Log refs: DL-012, DL-013, DL-014, DL-015, DL-016, DL-017*
+
+## **2.3 Buyer / Anchor**
+
+### **Identity**
+
+Corporate or business entity owing payment on a listed invoice. The obligor whose creditworthiness is the primary risk being financed. Three relationship tiers schema-supported (anchor, acknowledged_buyer, unacknowledged_buyer); only acknowledged_buyer is active in Phase 1.
+
+### **Onboarding journey**
+
+Platform-led only. Four stages: buyer record creation (identity verified via MCA21 + GST Network); credit assessment by Credit Reviewer (bureau pull, MCA financials, external ratings, GST analysis, sector assessment, decision with limit, pricing band, tenor cap, conditions); buyer engagement (NOA execution, authorised acknowledgment users designated, escrow remittance instructions confirmed); activation.
+
+### **Active-state journey**
+
+Receive per-invoice acknowledgment requests → review and acknowledge via minimal portal (or admin captures manually) → receive Notice of Assignment per invoice → pay maturity amount to designated escrow virtual account at due date → close.
+
+### **Minimal buyer portal scope**
+
+Email + OTP login (no SSO/MFA in Phase 1). Single dashboard view: list of invoices with columns for invoice number, supplier, amount, date, due date, status. Per-invoice acknowledgment action. Payment instructions view. Out of scope for Phase 1: payment initiation, dispute filing, statements, user management within buyer org, bulk acknowledgment, notification configuration.
+
+### **States**
+
+nominated → identity_verified → under_credit_review → approved_with_limit → buyer_engagement_in_progress → active. Other states: suspended, limit_reduced, offboarded.
+
+*Decision Log refs: DL-018, DL-019, DL-020, DL-021*
+
+## **2.4 Investor (HNI-style, invite-only)**
+
+### **Identity**
+
+Pre-known individual (or HUF) from the founders’ / team’s closed network, invited personally to participate. Operational “HNI” label is for product framing; regulatory protection derives from the closed-circle, invite-gated nature of the offering. Sub-types active in Phase 1: Resident Individuals + HUFs. NRIs, entities, partnerships, institutional, retail — deferred.
+
+### **Sourcing model**
+
+Public marketing site contains no investor sign-up CTA, no investment terms, no returns disclosure. Onboarding URL is separate and non-discoverable, gated by single-use 14-day-validity invite codes tied to invitee’s email and phone at issuance. Cold sign-ups (if URL is reached) route to waitlist, not onboarding. Referrals from existing investors are accepted; admin issues codes after review. Every invite issuance is logged.
+
+### **Onboarding journey**
+
+Eight stages: invitation (admin issues code) → sign-up & identification (email/mobile OTP, PAN verification, Aadhaar e-KYC over OTP) → full KYC (document upload — address proof, photo, signature; AML/PEP screening) → financial profile & suitability (declared financials with supporting docs, source of funds, investment experience, risk tolerance questionnaire, suitability assessment with override-acknowledgment if mismatched) → bank & tax (penny-drop, nominee, FATCA/CRS, TDS) → admin approval (full file review by Compliance Reviewer) → agreement execution (Master Investment Agreement via Aadhaar e-sign/DSC, risk disclosure acknowledged, POA, e-stamped) → active.
+
+### **Active-state journey**
+
+Browse listings → drill into a listing (buyer disclosed, supplier, IRN status, acknowledgment, risk indicators) → subscribe to fraction with ticket commitment (min ₹10K) → push transfer from investor bank to listing virtual account → on 100% funding: per-investor assignment document generated and e-signed → track active positions on dashboard → at maturity: buyer pays escrow → T+1 distribution (principal + return, net TDS and fees) to investor bank → receive statements (monthly portfolio, annual tax docs) → periodic KYC refresh.
+
+### **Funding model**
+
+Per-invoice. No platform-held wallet in Phase 1. Investor pushes funds from their bank to the listing-specific virtual account; returns credit directly to investor’s bank. Subscription stays in pending state until inflow received and reconciled via webhook, then transitions to confirmed.
+
+### **Concentration**
+
+Soft limits with default suggestions per buyer, per supplier, per invoice. System warns on excess; no system block in Phase 1.
+
+### **States**
+
+invited → signed_up → identity_verified → kyc_in_review → suitability_assessed → financial_profile_complete → under_admin_review → approved → agreement_signed → active. Other states: suspended (AML/PEP/fraud signals), dormant, exited (only with no active positions), blacklisted.
+
+*Decision Log refs: DL-005, DL-006, DL-007, DL-008, DL-009, DL-010, DL-011, DL-050*
+
+## **2.5 Platform Admin / Ops**
+
+Internal operational persona. Five composable roles. See Section 3 for full role and permission architecture.
+
+## **2.6 Escrow Provider**
+
+External regulated entity (scheduled commercial bank or RBI-authorised escrow operator); not a human user. Holds customer funds in per-listing virtual sub-accounts under a master escrow. Critical trust mechanism given the no-NBFC structure. See Section 5 for integration touchpoints.
+
+## **2.7 Auditor / Compliance Officer**
+
+### **Identity**
+
+Read-only oversight persona. Two flavors active in Phase 1: external statutory auditor (annual engagement) and internal auditor (founder-led, via separate dedicated audit-only user accounts). Regulator inspection deferred to Phase 2.
+
+### **Access pattern**
+
+Just-in-time scoped. Auditor accounts created only when engagement is active; auto-disabled at end-date. Scope parameterised by date range, entity types, and data sensitivity level. All auditor activity (reads, exports) is itself logged.
+
+### **Interface**
+
+Admin UI with role-based view restrictions for interactive use. Read-only APIs for programmatic bulk export. Both consume identical permissions; export rate limits prevent bulk exfiltration. Cannot modify any record, cannot approve, cannot communicate with platform users, cannot modify audit log entries.
+
+*Decision Log refs: DL-039, DL-040, DL-041, DL-042*
+
+# **3. Role and Permission Architecture**
+
+RBAC with composable role assignment. A single user account can hold multiple roles. Effective permissions are the union across roles. Record-level maker-checker SoD is enforced independently of role-level SoD. MFA is mandatory for all admin users.
+
+## **3.1 Roles**
+
+| **Role** | **Primary Responsibilities** | **Cannot Do** |
+| --- | --- | --- |
+| Ops Executive | Day-to-day operations; supplier onboarding execution; buyer engagement and acknowledgment chase; invoice operational checks; investor onboarding coordination; maturity tracking; soft collections; queries | Approve onboarding, listings, disbursements, KYC; issue invite codes; classify defaults; modify pricing |
+| Credit Reviewer | Credit policy authoring and maintenance; buyer onboarding underwriting; setting/changing credit limits and pricing bands; supplier credit review; listing exception adjudication; periodic reviews; default classification; portfolio monitoring | Approve listings operationally; approve disbursements; approve KYC; issue invite codes |
+| Compliance Reviewer | Investor KYC approval; supplier KYC approval; invite code issuance; AML/PEP adjudication; internal SAR documentation; periodic KYC refresh oversight; audit trail spot-checks | Approve listings, disbursements, credit decisions |
+| Treasury & Settlement | Approve listing go-live (final gate); approve disbursements to suppliers; approve distributions to investors; manage collections workflow (soft + hard); escrow reconciliation oversight; refunds | Modify pricing; approve credit; approve KYC; classify default vs dispute vs dilution |
+| Super Admin | User management; role assignment (within SoD); system configuration; Managed Deviation Register maintenance; read access across all data | Transact business; approve anything; modify or delete audit log entries |
+
+## **3.2 Segregation of Duties (SoD)**
+
+**Two layers of enforcement.**
+
+**Strict (system blocks):**
+
+- Same individual cannot be both maker and checker on the same record (e.g., Ops Executive who acted on behalf of a supplier cannot be the Treasury & Settlement approver for that same supplier’s listing or disbursement)
+
+- Credit Reviewer cannot also hold Treasury & Settlement
+
+**Soft (system warns, override-with-reason logged; logged in Managed Deviation Register; reviewed quarterly):**
+
+- Super Admin + Compliance Reviewer (Phase 1 necessity — Founder/CEO)
+
+- Ops Executive + Treasury & Settlement (Phase 1 necessity — Ops Lead; strict record-level maker-checker mitigates)
+
+- Credit Reviewer + Compliance Reviewer (lower-risk; both are review functions)
+
+## **3.3 Phase 1 team distribution**
+
+| **Person** | **Roles Held** | **SoD Status** |
+| --- | --- | --- |
+| Founder / CEO | Super Admin + Compliance Reviewer | Soft deviation logged; reviewed quarterly |
+| Ops Lead | Ops Executive + Treasury & Settlement | Soft deviation logged; record-level maker-checker enforced strictly |
+| Credit Lead | Credit Reviewer | Clean |
+
+*Decision Log refs: DL-031, DL-032, DL-033, DL-034, DL-035, DL-036*
+
+## **3.4 Authentication and audit**
+
+- MFA mandatory for all admin users; TOTP preferred, SMS OTP fallback
+
+- Every admin action logged to immutable audit store: user, timestamp, action, target record, before/after state where applicable
+
+- Audit log retention: 10 years for all entries
+
+- Audit log is immutable at storage layer — no role (including Super Admin) can modify or delete entries
+
+- Auditor activity (reads and exports) is itself audit data; audit-the-auditor pattern
+
+*Decision Log refs: DL-039, DL-040*
+
+# **4. Cross-Persona Transactional Flows**
+
+This section identifies the major end-to-end flows threading through multiple personas. Detailed sequence diagrams are produced at the architecture layer; this section establishes the actors, hand-offs, and approval gates.
+
+## **4.1 Invoice lifecycle (the primary flow)**
+
+| **#** | **Stage** | **Actions** | **Approver / Actor** |
+| --- | --- | --- | --- |
+| 1 | Invoice intake | Supplier (or Admin acting on behalf) enters IRN. Platform fetches invoice details from GST Network. Document copy uploaded. | Supplier / Ops Executive |
+| 2 | Operational checks | IRN validity; e-way bill match; buyer-supplier relationship; duplicate check; supplier exposure cap; buyer limit headroom; document completeness. | Ops Executive (system-assisted) |
+| 3 | Buyer acknowledgment | Per-invoice acknowledgment request to authorised buyer user. Buyer confirms via portal or email; Admin captures manually if needed. | Ops Executive coordinates; Buyer acts |
+| 4 | Pricing | System auto-applies discount rate from policy-defined band for this buyer/tenor. | System (policy by Credit Reviewer) |
+| 5 | Listing go-live | Final operational verification. Maker-checker SoD enforced (cannot be the same individual who prepared the listing). | Treasury & Settlement |
+| 6 | Funding window | Listing visible to active investors for 5 days. Subscriptions accepted from ₹10K. Investor pushes funds to listing virtual account. | Investor / Escrow webhook |
+| 7 | Funding outcome | If 100% funded by end of window → proceed to disbursement. If not → refund all committed funds. | Treasury & Settlement |
+| 8 | Per-investor assignment execution | Each investor’s fractional assignment document generated and e-signed. | System / Investor |
+| 9 | Disbursement | T+1 from funding completion. Escrow transfers face value − discount − platform fee to supplier bank. | Treasury & Settlement approves; Escrow executes |
+| 10 | Maturity tracking | Reminders to buyer at T-3, T-1, T. Status progression on delays (mildly_delayed → delayed → seriously_delayed → under_adjudication). | Ops Executive coordinates; Credit Reviewer adjudicates from T+16 |
+| 11 | Buyer maturity payment | Buyer pays to listing virtual account. Escrow webhook reconciles inflow. | Buyer / Escrow webhook |
+| 12 | Distribution | T+1 from reconciliation. Per-investor distribution calculated (principal + return − TDS − fee). Escrow executes multi-leg payout. | Treasury & Settlement approves; Escrow executes |
+| 13 | Closure | Listing closes. Statements and tax documents prepared. | System |
+
+*Decision Log refs: DL-016, DL-017, DL-019, DL-024, DL-029, DL-030, DL-043, DL-044, DL-045*
+
+## **4.2 Exception flows**
+
+### **Failed acknowledgment**
+
+If buyer does not acknowledge within SLA (24/48 hrs configurable), Ops Executive escalates: phone follow-up, then escalation to Credit Reviewer who may indicate buyer-supplier dispute or relationship deterioration. Listing does not proceed without acknowledgment.
+
+### **Funding shortfall**
+
+If listing does not reach 100% within 5-day window, all committed funds are refunded by Treasury & Settlement-approved instruction to escrow. Listing is closed unfunded. Supplier can re-list with same or revised terms (policy decision parked for Layer 4).
+
+### **Delayed payment**
+
+Status progression: T+1 to T+7 mildly_delayed (automated reminders); T+8 to T+15 delayed (active Ops follow-up; visible to investor); T+16 to T+30 seriously_delayed (Credit Reviewer adjudication triggered; hard collections initiated); T+31+ under_adjudication. Outcome states: disputed, dilution_claim, fraud_claim, defaulted, recovered. No automatic default declaration — case-by-case by Credit Reviewer.
+
+### **Dispute, dilution, or fraud**
+
+Credit Reviewer classifies. If dilution or fraud (and within supplier’s warranty scope per DL-015), Treasury & Settlement operationally triggers supplier indemnity claim. If pure buyer default, investors bear the credit loss transparently — no investor refund.
+
+*Decision Log refs: DL-015, DL-029*
+
+# **5. Critical Integrations**
+
+Three integrations are on the Phase 1 launch critical path. Each requires commercial procurement, technical integration, and operational testing.
+
+## **5.1 Aggregator partner (KYC + Bureau + GST + MCA + Bank)**
+
+Single partner provides API access to multiple data sources. Candidates: Perfios, Karza, FinBox, Setu. Selection criteria: API completeness, latency, reliability, commercial terms, support quality.
+
+**Required APIs:**
+
+- PAN verification (entity and individual)
+
+- Aadhaar e-KYC (with consent flow)
+
+- GSTIN verification and GST returns fetch (with taxpayer consent)
+
+- MCA21 — company master data, charges, directors, financials
+
+- CIBIL Commercial bureau pull
+
+- Bank statement analysis via Account Aggregator framework
+
+- Penny-drop verification for bank accounts
+
+- GST e-invoice IRN verification and detail fetch
+
+- E-way bill verification
+
+- AML/PEP/sanctions screening at onboarding
+
+*Decision Log refs: DL-026, DL-037, DL-047, DL-050*
+
+## **5.2 Escrow provider**
+
+Single provider with virtual-account infrastructure. Candidates: ICICI Escrow Pro, Yes Bank Escrow, IndusInd, RazorpayX, M2P/Decentro/Setu, HDFC Trustee Services. Selection criteria: virtual-account API maturity, multi-leg payout support, webhook reliability, settlement cutoffs, TDS support, RBI standing, commercial terms.
+
+**Required capabilities:**
+
+- Master escrow account with platform-managed virtual sub-accounts
+
+- Virtual-account lifecycle APIs (create on listing approval, close post-disbursement or post-refund)
+
+- Inflow webhooks (per-virtual-account; idempotent; retryable)
+
+- Multi-leg payout API (single instruction with N legs for distributions)
+
+- TDS deduction at source per platform instruction
+
+- Reversal and refund support
+
+- Daily statements / reconciliation APIs
+
+- NEFT/RTGS/IMPS support for inflows; NEFT/RTGS for outflows
+
+*Decision Log refs: DL-043, DL-044, DL-045, DL-046*
+
+## **5.3 Digital execution: e-sign and e-stamping**
+
+Aadhaar e-sign and DSC for legal signatures at scale. e-Stamping provider for state-stamp-duty compliance. Per-invoice stamp duty strategy is state-by-state and parked for legal counsel.
+
+**Required capabilities:**
+
+- Aadhaar e-sign workflow (OTP-based for individuals)
+
+- DSC support for entities with corporate signatories
+
+- Master agreement e-stamping at onboarding
+
+- Per-invoice assignment documentation and stamping (strategy parked)
+
+- Audit trail of every signature event (signer identity, IP, timestamp, document hash)
+
+*Decision Log refs: DL-048*
+
+## **5.4 Communications: email + SMS**
+
+Transactional email and SMS via standard providers. No WhatsApp Business, no push notifications, no in-app messaging in Phase 1.
+
+Use cases: OTPs (sign-up, login, e-sign), acknowledgment requests, maturity reminders, listing status updates, statement delivery, query responses, alerts to admin.
+
+*Decision Log refs: DL-049*
+
+# **6. State Machines**
+
+Major entities have state machines that govern lifecycle and permitted transitions. This section enumerates states; transition rules and triggers are produced at the technical-design layer.
+
+## **6.1 Supplier**
+
+signed_up → identity_verified → kyc_in_review → financials_submitted → under_credit_review → approved → agreement_signed → active
+
+Exit / alternate: rejected (from under_credit_review), additional_info_requested (from kyc_in_review or under_credit_review), suspended (from active), blacklisted (from suspended), voluntary_exit (from active, only with no live invoices).
+
+## **6.2 Buyer**
+
+nominated → identity_verified → under_credit_review → approved_with_limit → buyer_engagement_in_progress → active
+
+Exit / alternate: rejected (from under_credit_review), conditional_approval (from under_credit_review), suspended (from active), limit_reduced (from active; soft action), offboarded (from active or suspended).
+
+## **6.3 Investor**
+
+invited → signed_up → identity_verified → kyc_in_review → suitability_assessed → financial_profile_complete → under_admin_review → approved → agreement_signed → active
+
+Exit / alternate: rejected (from under_admin_review), additional_info_requested (from various stages), dormant (from active), suspended (from active; AML/PEP/fraud), exited (from active; only with no active positions), blacklisted (from suspended).
+
+## **6.4 Listing**
+
+draft → operational_checks_in_progress → awaiting_acknowledgment → ready_for_review → live → fully_funded → disbursed → in_repayment → matured_payment_received → distributed → closed
+
+Exit / alternate: rejected_operational (from operational_checks_in_progress), acknowledgment_failed (from awaiting_acknowledgment), funding_failed_refunded (from live or fully_funded), cancelled_pre_disbursement (from fully_funded). On payment delays from in_repayment: mildly_delayed → delayed → seriously_delayed → under_adjudication → outcome states (disputed, dilution_claim, fraud_claim, defaulted, recovered).
+
+## **6.5 Subscription (per-investor commitment to a listing)**
+
+committed → funds_pending → funds_received → confirmed → assignment_executed → matured_principal_returned → matured_return_distributed → closed
+
+Exit / alternate: cancelled_by_investor (only before funds_received), refunded (from any pre-disbursement state if listing fails to fund), loss_realised (from in_repayment if buyer defaults and recovery fails).
+
+# **7. Audit, Compliance, and Security Requirements**
+
+## **7.1 Audit logging**
+
+- Every admin action: user, timestamp, action, target record, before/after state
+
+- Every approval / rejection / override: actor, decision, rationale, target record
+
+- Every role assignment change: who, who-to, role(s), SoD warning if any, override-reason if any
+
+- Every sensitive read (e.g., KYC documents, financial statements): user, query, timestamp
+
+- Every “acting on behalf of supplier” action: admin user, supplier, action, authorisation reference, timestamp
+
+- Every invite code issuance: issuer, invitee identity at issuance, source/referrer, justification
+
+- Every fund movement instruction and webhook event
+
+- Every auditor activity (read, export, query parameters)
+
+Retention: 10 years. Storage: immutable (append-only / WORM). No role can modify or delete entries.
+
+## **7.2 KYC and AML**
+
+- Investor KYC: PAN verification, Aadhaar e-KYC over OTP (Aadhaar masked storage per UIDAI), DOB, address proof (document upload), photo and signature (document upload), PEP/sanctions screening, suitability questionnaire, source of funds, FATCA/CRS declaration, nominee
+
+- Supplier KYC: entity identity (PAN/GSTIN/CIN), constitution docs, signatory KYC, UBO declaration (>25%), AML screening of signatories and UBOs, address, bank penny-drop
+
+- Buyer KYC: entity identity, MCA financials, GST data, external ratings (manual capture), authorised acknowledgment users, escrow remittance instructions
+
+- AML screening: one-time at onboarding in Phase 1; monthly batch re-screening in Phase 2 (config switch)
+
+- SAR: internal-only in Phase 1; FIU-IND filing if regulatory status changes
+
+- KYC refresh: annual review for all active investors and suppliers
+
+*Decision Log refs: DL-037, DL-038, DL-050*
+
+## **7.3 Security architecture requirements**
+
+- MFA mandatory for all admin users (TOTP preferred)
+
+- Role-based access control with SoD enforcement at assignment time and action time
+
+- Aadhaar masked storage per UIDAI norms (last 4 digits visible; full not stored or stored encrypted with strict access)
+
+- Encryption at rest for sensitive data (KYC documents, financial statements, bank details)
+
+- Encryption in transit (TLS) for all platform traffic
+
+- Tenant isolation: investor cannot see other investors’ subscription details; supplier cannot see other suppliers’ invoices or investor identities
+
+- Webhook security: signed/HMAC-verified callbacks from escrow and aggregator
+
+- Rate limiting on auditor exports to prevent bulk exfiltration
+
+- Session security: time-bound sessions, idle timeout, secure cookies
+
+## **7.4 Data residency and compliance posture**
+
+- Data residency: India (per RBI / sectoral norms for financial data; aligns with DPDP Act for personal data localisation considerations)
+
+- Storage of customer documents per regulatory retention norms
+
+- Privacy policy and terms of service to be drafted before launch (parked for legal)
+
+# **8. Phase 2 Roadmap Hooks**
+
+Phase 1 system design must accommodate these Phase 2 expansions without migration. Each is dormant in Phase 1 but schema-supported and architecturally anticipated.
+
+| **Expansion** | **Architectural Hook in Phase 1** |
+| --- | --- |
+| NBFC Partner persona | NBFC entity model defined as subtype of Investor (Institutional). Co-lending hooks deferred but flagged. |
+| Retail investors (₹10K mass-market) | Investor sub-type field. Different KYC depth and risk-disclosure UX templates. |
+| Institutional investors (Banks, AIFs, FOs) | Investor sub-type. Different agreement templates. RM persona placeholder. |
+| NRIs | Resident status field. FEMA/repatriation routing hooks (deferred build). |
+| Anchor relationships | Buyer relationship tier field already supports anchor. Anchor admin user model deferred. |
+| Supplier-led buyer nomination | Workflow extension on Buyer entity. Schema supports nomination_source field. |
+| Wallet model for investors | Wallet entity placeholder; in Phase 1 every subscription is per-invoice. Phase 2 adds wallet balance and float. |
+| Hard concentration limits | Concentration calculations already running in Phase 1 (for soft warnings). Phase 2 adds enforcement layer. |
+| Standing buyer acknowledgment | Buyer entity supports acknowledgment_mode field (per_invoice vs blanket). Phase 1 forces per_invoice. |
+| Full buyer portal (payments, disputes) | Buyer-side platform foundation laid in Phase 1; Phase 2 adds feature modules. |
+| Monthly batch AML re-screening | AML alert and adjudication workflow exists. Phase 2 turns on scheduled re-screening (typically a config switch with aggregator). |
+| External FIU-IND SAR filing | Internal SAR process and documentation exists. Phase 2 wires up external filing. |
+| Regulator inspection access | Auditor role foundation exists. Phase 2 adds regulator-specific evidence packaging and access patterns. |
+| Pull-mode investor inflows (UPI, e-NACH) | Subscription confirmation already async (waits for inflow webhook). Phase 2 adds mandate-management module. |
+| Mobile applications | Web-first in Phase 1; APIs designed mobile-friendly so native mobile clients can be added in Phase 2. |
+| Accounting-system integrations (Tally / Zoho / SAP) for invoice ingestion | Manual + IRN upload in Phase 1. Phase 2 adds adapter layer; invoice entity is source-agnostic. |
+| TReDS integration / licensing path | Entity model superset-ready: MSME / Udyam fields on Supplier; corporate-tier on Buyer. |
+
+# **9. Open Architecture Questions**
+
+These are decisions for the Chief Architect / CTO. Product specification does not constrain them; the architect’s recommendations should be reviewed by the Chief Product Owner before commitment.
+
+- Monolith vs services for Phase 1 (cost, team size, deployment complexity vs future modularity)
+
+- Synchronous vs event-driven patterns for cross-persona flows (especially funding outcome, distribution)
+
+- Data store choices (relational for transactional; document or relational for KYC files; immutable store for audit log)
+
+- Audit log storage: WORM bucket vs append-only DB vs event-sourcing pattern
+
+- File storage for KYC documents and statements (encrypted at rest, signed URLs, retention)
+
+- Reconciliation engine architecture (real-time vs batch; how to handle out-of-order webhooks)
+
+- Idempotency strategy for fund-movement instructions to escrow
+
+- Webhook reliability patterns (retries, dead-letter, manual replay)
+
+- Observability stack (logs, metrics, traces, alerting)
+
+- CI/CD, environments (dev/staging/prod), data masking in non-prod
+
+- Disaster recovery posture (RPO/RTO targets) and backup strategy
+
+- Cloud and infrastructure provider; India data residency constraints
+
+Page of

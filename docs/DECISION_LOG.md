@@ -1,0 +1,306 @@
+# Backend Decision Log — Fintech Platform
+
+Living record of **non-obvious backend build decisions and bugs**. One entry per decision:
+what changed, why, and what to watch for. Adding the relevant entries is a **DoD requirement**
+for every module (see `docs/spec/Spec_Driven_Build_Plan.md` §F).
+
+**Scope of this log:** backend implementation only. Distinct from:
+- `DL-0xx` — domain/product decisions, defined inline in the `docs/spec/` corpus (frozen inputs).
+- `DL-MOCK-xxx` — frontend/mock decisions, in the `fintech-patform-mock` repo.
+
+**Prefix:** `DL-BE-`. Number sequentially. Reference related `DL-0xx` / `C1–C28` / `G…` from the
+spec corpus where a decision is constrained by one.
+
+---
+
+## DL-BE-001 — Repository housekeeping: spec corpus + SQL bundle moved into the backend
+**Date:** 2026-06-13
+**What:** Moved the domain spec corpus (numbered docs `02`–`10`, `Bounded_Contexts_Reference`,
+`domain_entity_responsibility`) and the canonical SQL bundle into `docs/spec/` and `docs/sql/`.
+Mirrored the `STEP2/4/5` blueprints and `Spec_Driven_Build_Plan.md` (backend copy is
+rules-canonical). Deleted the stale `SQL_Files_Bundle_old/`.
+**Why:** Single source of truth — Spec Kit runs here, so the corpus it consumes lives here. Avoids
+the two-repos-diverge problem flagged in the build plan §0.
+**Watch for:** Blueprints are mirrored, not unique — if a rule changes, edit the backend copy then
+re-copy to the mock. There is **no** separate platform Decision Log file; `DL-0xx` refs are inline
+in the corpus.
+
+---
+
+## DL-BE-002 — Declarative-only DB invariants: no procedural triggers; `updated_at` app-owned
+**Date:** 2026-06-13
+**What:** Adopted a standing policy for the schema: enforce invariants **declaratively**
+(CHECK / FK / NOT NULL / UNIQUE / domain types / enums) and via **GRANT/REVOKE**, never `plpgsql`
+triggers or functions. Concretely: (a) `updated_at` is **app-owned** (Hibernate `@UpdateTimestamp` /
+explicit set) — no `set_updated_at()` trigger; (b) the bundle's one procedural artifact, the
+`prevent_audit_modification` trigger + `fn_prevent_audit_modification()` on `sys_audit_event`
+(`04_generic_acl.sql`), is **dropped** and replaced with declarative least-privilege:
+`REVOKE UPDATE, DELETE, TRUNCATE ON sys_audit_event FROM <app_role>; GRANT INSERT, SELECT …`.
+**⚠️ SUPERSEDED for the audit trigger by [[DL-BE-010]] (2026-06-13):** the
+`prevent_audit_modification` trigger is **RETAINED as a documented exception** — `REVOKE` is
+ineffective while the app role owns the table, so the trigger stays until a restricted non-owner
+app role is deployed. The no-trigger rule still holds everywhere else (incl. `updated_at`).
+**Why:** Triggers are hard to debug and reason about; the user wants the procedural DB layer simple
+while still maximising the *declarative* last-line-of-defence. REVOKE/GRANT gives the same
+append-only guarantee for the app role, transparently. (Superuser/owner/`pg_dump` paths remain
+covered by the WORM substrate, spec G7.)
+**Watch for:** App-owned `updated_at` is **silently skipped by any write path that bypasses JPA
+lifecycle callbacks** — native SQL, jOOQ, bulk `UPDATE`. Such paths must set `updated_at = now()`
+explicitly; add a test/ArchUnit guard. The REVOKE only binds the application role, not a superuser —
+keep app DB credentials non-superuser. The crypto **hash-chain itself is not declaratively
+enforceable** (a CHECK can't read the previous row) and is therefore an **app-layer** responsibility
+(see [[DL-BE-003]]). Source: `docs/sql/PRE_MIGRATION_AUDIT.md` findings FN4 + audit-chain dimension.
+
+---
+
+## DL-BE-003 — `command_id` idempotency table + `sys_audit_event.envelope_hash`
+**Date:** 2026-06-13
+**What:** Two schema additions surfaced by the pre-migration audit as Fix-now gaps in the five
+non-negotiables: (1) Added a producer-dedup table `sys_command_log` with
+`PRIMARY KEY (actor_id, command_id)`; command handlers `INSERT … ON CONFLICT DO NOTHING` and treat a
+conflict as a replay (non-negotiable #4, idempotent on `command_id`, G18). Also add `command_id UUID`
+to `sys_audit_event` (NOT NULL for command-originated events, NULL for scheduler/webhook per B2). (2)
+Added the missing `envelope_hash BYTEA NOT NULL` self-hash column to `sys_audit_event` (+ length-32
+CHECK) — without it the hash chain is unverifiable and tamper-evidence is silently defeated.
+**Why:** `command_id` had **zero** declarative footprint in the bundle (grep = 0 across all files),
+so command replay was not a guaranteed no-op at the DB. `envelope_hash` was described in the AE.2
+comment and mandated by spec B2/B3/B4 but absent from the table — only `previous_envelope_hash`
+existed, which alone cannot verify a chain.
+**Watch for:** Reconcile `sys_command_log` with the **existing** vendor-side idempotency keys so the
+mechanism is not double-implemented: `cash_payout_instruction.payout_instruction_id` (PI.1),
+`legal_signature_request` idempotency uidx, `gate_vendor_instruction.vendor_event_id`,
+`gate_inflow_observation.vendor_event_id`/`utr`. Hash-chain + `envelope_hash` computation are
+app-owned (see [[DL-BE-002]]); `UNIQUE(aggregate_id, aggregate_version)` is **deliberately not**
+enforced (hot-row contention, comment in `04`) — ordering is app-stamped. Source:
+`docs/sql/PRE_MIGRATION_AUDIT.md` FN2, FN3.
+
+---
+
+## DL-BE-004 — Flyway migration split: one migration per source file
+**Date:** 2026-06-13
+**What:** The 4-file SQL bundle ports to four Flyway migrations, in source-file order:
+`V1__core` · `V2__counterparty_platform` · `V3__auth` · `V4__generic_acl`. Shared domains/enums stay
+co-located in `V1` (not a separate `V0__types`). `ddl-auto=validate` only.
+**Why:** The audit verified there are **zero hard inter-file FK constraints** — the only real
+cross-file dependency is type/extension availability (`01` defines the `citext` extension + the 8
+shared domains every other file consumes). Each Flyway migration commits its DDL before the next
+runs, so types from `V1` are visible to `V2`–`V4`. One producer of types → co-locating in `V1` is
+simplest; a separate types migration would add a file with no ordering benefit.
+**Watch for:** The old `SQL_FILES_MANIFEST.md` claimed `03_auth` adds FKs onto `02` tables named
+`tblAdminUser`/`tblInvestorAccount`/… — **fabricated**; those names don't exist and no such FKs
+exist (manifest now rewritten). The Fix-now/High findings in `docs/sql/PRE_MIGRATION_AUDIT.md` must
+be applied **inline as the bundle is ported** (or as deltas in the V-files), not deferred. Run
+`./mvnw flyway:info` + Testcontainers and `/code-review` the migration diff before commit.
+
+---
+
+## DL-BE-005 — V1 (core) decision pass: 4 audit-flagged design items resolved
+**Date:** 2026-06-13
+**What:** Resolved the four design-level items the pre-migration audit flagged on `01_core.sql`
+but deliberately left out of the mechanical fix (`V1__core.sql`):
+1. **Enforced** the close-reason invariant: `CHECK ((status='closed') = (terminal_outcome IS NOT NULL))`
+   — a closed listing always records its terminal outcome; a non-closed one never carries one.
+2. **No change** to `deal_listing_status` (it folds delay/outcome sub-states that also live on
+   `col_maturity_case`). Kept as-is.
+3. **Added `checker_mfa_assertion_id`** to `risk_default_case` (+ `checker_id ⇒ MFA` CHECK), mirroring
+   `deal_listing.golive_mfa_assertion_id` and `cash_payout_instruction.checker_mfa_assertion_id`.
+   **Did not** add approver-identity columns to `risk_buyer_profile`/`risk_supplier_profile`.
+4. **No schema change** for `legal_assignment_set.legs` (kept JSONB). The money-conservation rule
+   (Σ `allocation_paise` = listing `committed_total`) is recorded as an **app-layer invariant test**.
+**Why:** (1) B3 L.1 / `Close(terminal_outcome)` confirms the outcome is always set at close, so the
+CHECK can never reject a valid row — pure bug-catch for clean books/audit. (2) The delay/outcome
+values are part of the **frontend contract** (the listing status badge); removing them risks breaking
+screens for only a tidiness gain — minor drift risk accepted. (3) Spec §B3 line 277 models the
+>₹1 Cr four-eyes approval as a **FourEyesApproval envelope** referenced by `four_eyes_approval_ref`,
+not as approver columns on the credit row — so adding `first_approver_id` would diverge from the
+spec; default classification, by contrast, is record-level maker-checker (C4) and should carry the
+MFA token on-row like the other C4 commands. (4) The equality is **cross-aggregate** (AssignmentSet
+vs Listing), so it cannot be a single-row CHECK regardless; the spec models legs as a child
+collection of the AssignmentSet aggregate, and JSONB matches that. Validated: V1 applies on
+postgres:16-alpine; all new constraints negative-tested with seeded FK parents (CHECK, not FK, fires).
+**Watch for:** Item 4 — the Σ-allocations = `committed_total` invariant test is a **DoD requirement**
+for the BC5 (Assignment) module; do not ship assignment execution without it (see [[DL-BE-003]] for
+the broader "DB can't reach into JSONB / cross-aggregate equality is app-owned" pattern). If the
+frontend turns out **not** to use the delay/outcome listing-status values (item 2), revisit and move
+them to a single source of truth in BC6.
+
+---
+
+## DL-BE-006 — V2 (counterparty) ported with mechanical audit fixes; test harness established
+**Date:** 2026-06-13
+**What:** Ported `02_counterparty_platform.sql` → `V2__counterparty_platform.sql` with the
+**mechanical, low-risk declarative** audit fixes folded in: (a) `tax_year_profile.tds_rate_bps`
+retyped `INT` → `bps_type`; (b) an appended `AUDIT-FIX` section adding discriminator-gated /
+co-presence CHECKs (`tax_year_profile` form-16A, `sup_account` suspend+blacklist, `inv_account` /
+`buyer_account` suspend, `audit_account` lifecycle, `comp_refresh_schedule` completion), a
+strengthened + value-constrained AML adjudication CHECK, ~20 FK-coverage indexes, and 4 **non-unique**
+natural-key lookup indexes (PAN/GSTIN/CIN). Also established the automated migration-validation
+harness: `AbstractIntegrationTest` (Testcontainers postgres:16-alpine, shared context) +
+`SchemaMigrationTest` (Flyway success + objects) + `CoreSchemaConstraintsTest` /
+`CounterpartySchemaConstraintsTest` (invariant tests proving each headline CHECK fires). 20 tests green.
+**Why:** Mirrors the V1 approach — apply mechanically-safe declarative hardening now, defer
+design/spec-level calls to a decision pass (DL-BE-005 was V1's). Appending CHECKs/indexes via
+`ALTER`/`CREATE INDEX` after the deferred-FK block keeps the migration low-risk (every column
+already exists) and clearly delineates audit changes. Natural-key indexes are deliberately
+**non-unique**: GSTIN/CIN/PAN uniqueness is a business rule (proprietorships may share a PAN), held
+for the decision pass.
+**Watch for:** Open V2 **decision-pass** items, NOT yet applied: (1) spec-mandated record-level
+maker-checker *columns* for Suspend/Blacklist (`sup_account` C4 line 733, `buyer_account` line 819)
+and KYC submitter (`comp_kyc_file` KF.2 line 1075) + `audit_account` approver MFA token; (2)
+entity-dedup UNIQUE on GSTIN/CIN; (3) `comp_sar_status` models escalation-tier not SAR lifecycle;
+(4) `comp_kyc_file` status `in_review` vs spec `submitted`, and `inv_invite`/`sup_financial_profile`
+status as `TEXT`+CHECK vs enum. See [[DL-BE-005]] for the V1 precedent on this split. The
+`command_id`/`sys_command_log` + `envelope_hash` + WORM `REVOKE` still land in V4 ([[DL-BE-003]]).
+
+---
+
+## DL-BE-007 — V2 decision pass: maker-checker columns, entity-dedup uniqueness, naming cleanups
+**Date:** 2026-06-13
+**What:** Resolved the four V2 decision-pass items in `V2__counterparty_platform.sql`:
+1. **Record-level maker-checker made declarative** (spec C4). Added `suspend_maker_id` /
+   `suspend_checker_id` / `suspend_checker_mfa_assertion_id` (+ blacklist equivalents) to
+   `sup_account`; the suspend trio to `buyer_account`; `submitted_by` + `approver_mfa_assertion_id`
+   to `comp_kyc_file`; `approved_mfa_assertion_id` to `audit_account`. CHECKs: maker≠checker, and
+   "the action cannot exist without its two-person record + MFA" (`suspended_at`/`blacklisted_at`
+   ⇒ maker+checker+MFA present). FKs to `admin_user`; checker columns indexed.
+2. **Entity de-duplication:** UNIQUE (partial, WHERE NOT NULL) on `sup_account.gstin`,
+   `sup_account.cin`, `buyer_account.gstin`, `buyer_account.mca_cin`. **PAN stays non-unique**
+   (proprietors may legitimately reuse a personal PAN across entities) — plain index only.
+3. **SAR:** kept `comp_sar_status` as the escalation-tier field (Phase 1 single value `internal`);
+   the SAR opened→documented lifecycle will be modelled when the BC11 compliance module is built.
+4. **Naming/consistency:** `comp_kyc_file_status` value `in_review` → `submitted` (spec B3);
+   `inv_invite.status` and `sup_financial_profile.status` promoted from `TEXT`+CHECK to enums
+   (`inv_invite_status`, `sup_financial_profile_status`).
+**Why:** (1) C4 mandates record-level maker-checker for these exact actions (B3 lines 733/819/1075);
+making it declarative enforces two-person control + MFA-freshness at the last line of defence, the
+V2 analogue of V1's go-live/payout maker-checker. (2) GSTIN/CIN are per-entity government IDs;
+uniqueness blocks duplicate company onboarding that would split exposure. PAN is excluded by design.
+(3) Phase-1 SAR has one value, so modelling its lifecycle now is premature. (4) Pure consistency
+with the spec/blueprints and the rest of the enum-typed schema. Validated: V1+V2 apply on
+postgres:16-alpine; 25 tests green incl. new maker-checker/dedup/naming invariant tests.
+**Watch for:** The maker-checker "required" CHECKs mean a Suspend/Blacklist command MUST populate
+maker+checker+MFA in the same write — the command handlers (and any backfill of legacy suspends)
+must supply them. Contrast [[DL-BE-005]] where credit-profile four-eyes intentionally stayed in the
+approval envelope (no on-row approver columns) — here the spec calls for on-row maker-checker.
+
+---
+
+## DL-BE-008 — V3 (auth) ported; closes the least-audited file's two real gaps
+**Date:** 2026-06-13
+**What:** Ported `03_auth.sql` → `V3__auth.sql`. The file was already well-constrained (shape
+CHECKs, partial-unique indexes, validity-window/auditor/ack-user CHECKs), so only the two gaps the
+audit's completeness critic flagged were added, both declarative/index-only: (1) a partial UNIQUE
+index `uidx_auth_otp_challenge_assertion` on `auth_otp_challenge.assertion_id` (WHERE NOT NULL) —
+the MFA-assertion anchor that `auth_session.mfa_assertion_id` and every admin audit envelope
+reference; (2) four **unfiltered** FK-coverage indexes on `identity_id`
+(`auth_credential`/`auth_mfa_factor`/`auth_otp_challenge`/`auth_session`) — the existing identity_id
+indexes are all partial (`WHERE revoked_at IS NULL`/`status='active'`), leaving the ON DELETE
+RESTRICT check and full-history lookups uncovered.
+**Why:** `assertion_id` is the literal anchor of non-negotiable #2 (MFA-fresh); a non-unique,
+unindexed anchor makes the freshness join (invariant A3) ambiguous and slow. The citext extension
+the auth `email` column needs is created in V1 (ported from 01_core SECTION 0A), so Flyway's
+V1→V2→V3 order satisfies it. `auth_identity.status` is intentionally a **coarse projection** of each
+owning aggregate's richer lifecycle (admin/investor/auditor) — app-maintained, no enum change
+(collapse map: suspended/exited/blacklisted→disabled, validity-end→auto_disabled). Validated:
+V1+V2+V3 apply on postgres:16-alpine; tests green incl. assertion-id uniqueness + password-shape.
+**Watch for:** A **cross-cutting architectural decision is still open** and NOT yet actioned: the
+audit's bounded-context-purity dimension flagged hard FKs that cross BC boundaries (e.g.
+`cash_payout_instruction.subscription_id`→`sub_subscription`, `col_claim_case.listing_id`→
+`deal_listing`, and the `admin_user` actor FKs on `audit_account`/`audit_scope`/many V2 tables) as
+violations of "no cross-BC joins; coordinate via identity references". These span V1 and V2 (already
+written). Decide as a dedicated pass before the ArchUnit BC-enforcement work, since it may convert
+several hard FKs to soft UUID references. The auth-layer `identity_id` FKs to `auth_identity` are
+explicitly **exempt** (auth is the shared kernel). `command_id`/`envelope_hash`/WORM still land in V4
+([[DL-BE-003]]).
+
+---
+
+## DL-BE-009 — V4 (generic ACL / audit) ported; Fix-now items applied, trigger swap deferred
+**Date:** 2026-06-13
+**What:** Ported `04_generic_acl.sql` → `V4__generic_acl.sql`. Applied the decided Fix-now items
+([[DL-BE-003]]) and declarative hardening: (1) **`sys_command_log`** producer-dedup table
+(PK `(actor_id, command_id)`) — non-negotiable #4; (2) **`sys_audit_event.envelope_hash` BYTEA
+NOT NULL** + 32-byte length CHECK (self-hash for tamper-evidence, previously absent), a length guard
+on `previous_envelope_hash`, a nullable `command_id`, AE.5 actor key-presence CHECK (`actor_type`/
+`actor_id`/`session_id`), a C7 admin-actor-MFA CHECK, and an `occurred_at <= recorded_at` CHECK;
+(3) `gate_verification` failure_class shape CHECK; (4) `sys_notification_dispatch.retry_count` column
+(ND.4 had no home) + provider_ref shape CHECK; (5) `gate_inflow_observation.amount` → `positive_money_paise`;
+(6) `idx_vsr_doc_hash`. 33 tests green; full V1–V4 applies on postgres:16-alpine.
+**Why:** Fix-now items were pre-approved in DL-BE-003. The actor/MFA/time CHECKs make AE.5 and the
+C7 MFA-fresh evidence requirement declarative in the audit trail rather than comment-only.
+**Watch for — DELIBERATELY DEFERRED to the V4 decision pass (NOT yet actioned):** (A) the
+`prevent_audit_modification` **trigger is still in place** — replacing it with a WORM `REVOKE/GRANT`
+is ineffective while the app role *owns* the audit table (dev/test/current prod), so dropping it now
+would weaken the only effective DB-level immutability; this is a compliance + deployment-topology
+decision. (B) the hash chain has **no explicit shard-key column** (G25) — it's app-derived today.
+(C) `before_state`/`after_state` "required on state-transition events" has no DB discriminator. (D)
+`vendor_instruction_status_enum` is simpler than B3's BankingInstruction states, and
+`gate_verification.signature_verified_at` diverges from the `hmac_verified_at` naming used in BC18/BC19.
+`command_id` on `sys_audit_event` is nullable (conditional NOT-NULL for command-originated events is
+app-enforced). Also still open: the cross-BC hard-FK question from [[DL-BE-008]].
+
+---
+
+## DL-BE-010 — V4 decision pass: audit-trigger exception, chain shard key, transition snapshots, consistency
+**Date:** 2026-06-13
+**What:** Resolved the four V4 decision-pass items in `V4__generic_acl.sql`:
+1. **Audit-immutability trigger KEPT** as a documented exception to the no-trigger rule (see the
+   amendment on [[DL-BE-002]]). The `REVOKE/GRANT` swap is ineffective while the app role owns the
+   audit table, so the trigger remains the only effective DB-level immutability until a restricted
+   non-owner app role is deployed; WORM substrate (G7) remains the superuser-path control.
+2. **Explicit chain shard key** — added `sys_audit_event.chain_shard TEXT NOT NULL`; dropped
+   `idx_audit_chain_verify` and added `idx_audit_chain_shard_verify (chain_shard, recorded_at, event_id)`.
+   Makes "first row per shard has NULL previous_envelope_hash" (G25) verifiable instead of app-inferred.
+3. **State-transition snapshots enforced** — added `is_state_transition BOOLEAN NOT NULL DEFAULT FALSE`
+   + CHECK requiring `before_state`/`after_state` when true.
+4. **Consistency** — extended `vendor_instruction_status_enum` with the B3 superset values
+   (`acknowledged`, `webhook_received`, `reconciled`; additive, existing values retained) and renamed
+   `gate_verification.signature_verified_at` → `hmac_verified_at` to match BC18/BC19.
+**Why:** (1) Audit immutability is a hard compliance control; honouring "no triggers" strictly would
+remove the only effective guard in every current environment — the user chose to keep it as the one
+sanctioned exception. (2) An app-inferred shard makes chain verification fragile. (3) Guarantees state
+events capture what changed. (4) Pure spec/cross-ACL consistency; the enum extension is additive so it
+can't break existing rows, and the Phase-1 app may use whichever subset the ACL needs.
+**Watch for:** `chain_shard` and `envelope_hash` are **app-populated** on every audit append — the
+single serialized BC14 append path must set them (no ad-hoc native inserts). `ALTER TYPE ADD VALUE`
+ran inside Flyway's transaction fine on PG16 (values added, not used in-migration). The trigger
+exception should be **revisited** when the restricted-app-role deployment lands (then drop trigger +
+`REVOKE`). Cross-BC hard-FK decision ([[DL-BE-008]]) and the ArchUnit BC-enforcement harness remain
+the next architectural items.
+
+---
+
+## DL-BE-011 — `/code-review` follow-ups: ₹10 Cr four-eyes threshold + relax DB to maximise app flexibility
+**Date:** 2026-06-13
+**What:** Acted on the `/code-review` findings with a guiding principle from the founder — **maximise
+application-level flexibility now; don't over-constrain the DB for future state machines.**
+1. **Four-eyes threshold is ₹10 crore, by decision** (not ₹1 crore). The constant
+   `10000000000` paise is therefore CORRECT; the misleading "Rs 1 Cr" comments were fixed to "Rs 10 Cr"
+   (11 occurrences in V1). **This DIVERGES from spec C6 / DL-023 (which say "> ₹1 crore")** — recorded
+   here as the authoritative backend decision; reconcile the spec text separately.
+2. **Removed the blanket `sys_audit_event_admin_mfa` CHECK** — it rejected legitimate admin audit
+   appends (login-success, MFA-challenge issuance, sensitive reads) that carry no `mfa_assertion_id`.
+   MFA-freshness on state-changing commands stays per-aggregate (`*_mfa_assertion_id` columns) + app.
+3. **Dropped three over-strict lifecycle CHECKs** so the app owns those state machines for now:
+   `risk_default_case_classified_shape_chk` (was blocking the maker's ProposeClassification step),
+   `cash_virtual_account_status_shape_chk` (bank close-webhook may set `closed_at_bank` after the
+   status flip), `col_maturity_case_outcome_shape_chk` (BC3 sets outcome while delay_status is still
+   `under_adjudication`). Each is re-addable as a precise guard when its module's state machine is final.
+4. **Made `sub_subscription_distribution_net_check` sound** — added `distribution_outcome ?& array[...]`
+   so a non-null outcome missing a money key can no longer make the CHECK evaluate to UNKNOWN and pass
+   silently. Money-conservation is the one place worth keeping a DB guard.
+5. **KYC SoD (`comp_kyc_file`) left as the partial DB guard** (`approver_id <> submitted_by` when both
+   present); full enforcement (requiring `submitted_by` on supplier KYC) is **app-owned** for now —
+   no rigid `subject_type`-keyed NOT NULL added, per the flexibility principle.
+6. **Tests:** removed the now-invalid admin-MFA test (replaced with an accepted-case assertion);
+   hardened two brittle multi-violation tests (AML, payout-refund) to seed real FK parents so the
+   asserted CHECK is the sole violation; `SchemaMigrationTest` domain assertion switched to `contains`.
+**Why:** The schema is not deployed and there is no domain code yet, so relaxing CHECKs now costs
+nothing and avoids the DB fighting the application as modules are built; the constraints can be
+re-tightened per-module later (a one-line `ALTER`). Money-conservation and the four-eyes control are
+kept because they encode hard invariants, not provisional state-machine shapes.
+**Watch for — DEFERRED (revisit per module, tracked here):** `legal_master_agreement_status_shape_chk`
+is asymmetric (a 'stamped' row with NULL `stamp_cert_id` passes — weaker than MA.3) — left as-is. No
+DB guard on `chain_shard` non-emptiness or `sys_command_log` ↔ `sys_audit_event` linkage (audit-chain
+integrity is app-owned). When BC3/BC4/BC5/BC6/BC11 are built, re-add precise lifecycle/SoD guards
+appropriate to each finalized state machine. Validated: 34 tests green after the changes.

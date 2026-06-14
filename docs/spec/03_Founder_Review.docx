@@ -1,0 +1,107 @@
+Founder Review — the Platform — Phase 1 (MVP)
+
+**Founder Review**
+
+Invoice Discounting Platform — Phase 1 (MVP)
+
+*For sign-off. Full rationale in Decision Log; full build detail in Product Specification.*
+
+# **1. Strategic posture**
+
+Phase 1 is a private, curated, off-TReDS fractional invoice discounting platform. Long-term posture is hybrid: Phase 1 builds the product and operating muscle; Phase 2 onward integrates with or pursues TReDS licensing. Phase 1 chooses control over reach and learning over scale.
+
+**Phase 1 in one paragraph.**
+
+A closed circle of 50–100 invited investors (Resident Individuals + HUFs) fund fractional shares of invoices raised by curated suppliers on a pre-approved panel of 10–15 blue-chip buyers. The legal mechanism is direct assignment of receivables; no NBFC sits in the chain. Credit policy is owned by an in-house Credit Specialist. Customer funds are held in per-listing virtual sub-accounts under a master escrow. The investor side is invite-gated self-service; the supplier side is admin-assisted with full audit trail. Minimum investor ticket is ₹10,000.
+
+# **2. Key decisions**
+
+| **Area** | **Decision** | **Decision Log Ref** |
+| --- | --- | --- |
+| Regulatory | Off-TReDS in Phase 1; TReDS-readiness baked into schema; pursue TReDS in Phase 2+ | DL-001 |
+| Legal structure | Direct assignment of receivables; no NBFC in chain | DL-002, DL-003 |
+| Investor base | Invite-only closed circle; Resident Individuals + HUFs; ₹10K min ticket; per-invoice funding | DL-005, DL-006, DL-007, DL-008, DL-009 |
+| Buyer panel | Platform-led onboarding only; 10–15 active buyers in Phase 1; per-invoice acknowledgment | DL-018, DL-019, DL-025 |
+| Supplier | Admin-assisted onboarding; admin acts on behalf with audit trail; limited recourse (fraud and dilution only) | DL-012, DL-013, DL-015 |
+| Credit | In-house Credit Specialist owns policy and underwriting; four-eyes above ₹1 Cr limit | DL-022, DL-023 |
+| Operations | Platform Admin owns operational checks; soft + hard collections in-house; T+1 disbursement and distribution | DL-027, DL-028, DL-030 |
+| Governance | 5-role RBAC (Ops, Credit, Compliance, Treasury, Super Admin); strict SoD on critical rules, soft + logged on MVP necessities; MFA mandatory | DL-031, DL-032, DL-033, DL-035 |
+| Audit & Compliance | Immutable audit log, 10-year retention; just-in-time auditor access; internal SAR in Phase 1; one-time AML at onboarding | DL-037, DL-038, DL-039, DL-040 |
+| Escrow | Per-listing virtual sub-accounts; platform-calculated TDS, escrow-deducted; push-mode investor inflows | DL-043, DL-044, DL-045 |
+| Integrations | Single aggregator partner for KYC/Bureau/GST/MCA; e-sign + e-stamping; email + SMS for comms | DL-026, DL-047, DL-048, DL-049 |
+
+# **3. What****'****s in Phase 1, what****'****s deferred**
+
+## **In Phase 1**
+
+- 6 personas: Supplier, Buyer, Investor, Platform Admin/Ops (5 roles), Escrow Provider, Auditor
+
+- Invoice lifecycle end-to-end: upload, ops checks, acknowledgment, listing, funding, disbursement, maturity tracking, distribution
+
+- Investor onboarding (invite-gated), supplier onboarding (admin-assisted), buyer onboarding (platform-led)
+
+- Credit underwriting workflow; pricing policy-driven and system-applied
+
+- Per-listing virtual escrow sub-accounts; reconciliation; TDS
+
+- RBAC, SoD, MFA, immutable audit log, just-in-time auditor access
+
+- Minimal buyer portal (acknowledgment + read-only view of invoices and payment instructions)
+
+- Aggregator-driven KYC, bureau, GST, MCA, AA, IRN, e-way bill verifications
+
+## **Deferred to Phase 2 or later**
+
+- NBFC Partner participation, retail investors, institutional investors, NRIs, family offices, partnerships
+
+- Anchor relationships and supplier-led buyer onboarding
+
+- Wallet model, hard concentration limits, standing blanket acknowledgment
+
+- Full buyer portal (payments, disputes, statements)
+
+- Monthly batch AML re-screening, external FIU-IND SAR filing, regulator-inspection tooling
+
+- Pull-mode investor inflows (UPI mandate / e-NACH), accounting-system integrations, mobile apps
+
+- Collections agency outsourcing
+
+- Trade credit insurance, channel partners / DSAs, dedicated Relationship Manager
+
+# **4. Critical path dependencies**
+
+These must be procured / decided before Phase 1 build can complete. Lead times are commercial + integration.
+
+- Aggregator partner — Perfios / Karza / FinBox / Setu category. Provides KYC, Bureau, GST, MCA, AA, AML. 6–10 weeks typical.
+
+- Escrow provider — ICICI / Yes / IndusInd / RazorpayX / M2P / Decentro / HDFC Trustee category. Provides per-listing virtual accounts, multi-leg payout, webhooks. 6–10 weeks typical.
+
+- e-sign and e-stamping providers — Aadhaar e-sign / DSC infrastructure and a state-stamping integration.
+
+- Fintech legal counsel — for direct-assignment structure, Master Agreement drafting, public-site solicitation review, stamp duty strategy, TDS / Form 16A mechanics, privacy policy and ToS. Recommended firms include Khaitan, Cyril Amarchand, Trilegal, Ikigai Law.
+
+- Initial buyer panel sourcing — Credit Lead identifies and starts underwriting 10–15 corporates ahead of platform go-live.
+
+- Initial investor invite list — Founder/CEO identifies the 50–100 person closed circle for the invited launch cohort.
+
+# **5. Risks accepted**
+
+These are decisions where a trade-off was knowingly made. Each is manageable in Phase 1; each will be revisited at scale.
+
+- Regulatory model relies on invite-gated, closed-circle posture. Marketing or sourcing drift toward public solicitation would re-introduce regulatory exposure. Mitigation: legal counsel sign-off on public site copy and onboarding flow before launch.
+
+- Credit Specialist is a single point of failure in Phase 1. The role concentrates buyer underwriting, pricing policy, exception adjudication, and default classification. Mitigation: four-eyes above ₹1 Cr (DL-023), tight curated buyer panel, documented written policies.
+
+- SoD deviations — Founder/CEO holds both Super Admin and Compliance Reviewer; Ops Lead holds both Ops Executive and Treasury & Settlement. Both are logged in the Managed Deviation Register with mitigating controls (record-level maker-checker, audit log review) and scheduled for closure on subsequent hires.
+
+- Collections capability is in-house from day one but untested. Curated segment bets on low default rates; collections muscle is built as cases arise. Panel lawyer engaged before launch.
+
+- Aggregator and escrow partners are single-vendor dependencies in Phase 1. Multi-provider redundancy is a Phase 2+ consideration.
+
+# **6. Open items requiring founder decision**
+
+None at the product-conceptualisation layer. The cast, journeys, roles, and integrations are locked. Remaining open items live in the legal-structuring layer (instrument documentation, stamp duty, tax mechanics — all parked for counsel) and in the architecture layer (technology stack, deployment topology, observability — handed to the Chief Architect).
+
+**Sign-off authorises the Chief Architect to proceed with detailed architecture design on the basis of this specification, in parallel with legal counsel engagement on the parked legal items.**
+
+Page  of

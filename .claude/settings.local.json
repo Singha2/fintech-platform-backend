@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__ide__getDiagnostics",
+      "Bash(java -version)",
+      "Bash(./mvnw -version)",
+      "Read(//Users/amitsingh/.m2/repository/org/springframework/spring-context/**)",
+      "Bash(./mvnw -q -o compile)",
+      "Bash(/usr/libexec/java_home *)",
+      "Bash(export JAVA_HOME=\"/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home\")",
+      "Bash(/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home/bin/java -version)",
+      "Bash(zsh -lic 'java -version')",
+      "Bash(cat)",
+      "Bash(zsh -lc 'echo JAVA_HOME=$JAVA_HOME; java -version')",
+      "Bash(grep -niE 'TIMESTAMP[^TZ]|TIMESTAMP$|\\\\bDATE\\\\b' 01_core.sql 02_counterparty_platform.sql 03_auth.sql 04_generic_acl.sql)",
+      "Read(//usr/local/bin/**)",
+      "Read(//Users/amitsingh/Applications/**)",
+      "Read(//Applications/IntelliJ IDEA.app/Contents/MacOS/**)",
+      "Bash(./mvnw compile *)",
+      "Bash(./mvnw --version)",
+      "Bash(rm -rf /Users/amitsingh/IdeaProjects/fintech-platform-backend/.idea)",
+      "Bash(rm /Users/amitsingh/IdeaProjects/fintech-platform-backend/platform-backend.iml)"
+    ]
+  }
+}

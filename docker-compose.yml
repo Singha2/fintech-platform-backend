@@ -1,0 +1,35 @@
+# Local development stack — PostgreSQL 16
+#
+# Usage:
+#   docker compose up -d          # start (detached)
+#   docker compose down           # stop and remove containers (data volume persists)
+#   docker compose down -v        # stop AND wipe the data volume (full reset)
+#   docker compose logs -f        # stream logs
+#
+# The app (./mvnw spring-boot:run) connects to this container automatically.
+# Tests (./mvnw test) use Testcontainers and spin up their own isolated Postgres —
+# you do NOT need this compose file to run tests.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: platform-postgres
+    environment:
+      POSTGRES_DB:       platform
+      POSTGRES_USER:     platform
+      POSTGRES_PASSWORD: avc@2026
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U platform -d platform"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    # Named volume — data survives `docker compose down`.
+    # Use `docker compose down -v` to wipe it completely.
