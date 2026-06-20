@@ -19,7 +19,13 @@
       "Bash(./mvnw compile *)",
       "Bash(./mvnw --version)",
       "Bash(rm -rf /Users/amitsingh/IdeaProjects/fintech-platform-backend/.idea)",
-      "Bash(rm /Users/amitsingh/IdeaProjects/fintech-platform-backend/platform-backend.iml)"
+      "Bash(rm /Users/amitsingh/IdeaProjects/fintech-platform-backend/platform-backend.iml)",
+      "Bash(./mvnw -q compile)",
+      "Bash(./mvnw -q test-compile)",
+      "Bash(./mvnw -q test -Dtest='MoneyTest,BpsTest,GlobalExceptionHandlerTest')",
+      "Bash(./mvnw test *)",
+      "Skill(code-review)",
+      "Bash(grep -iE \"Tests run: [0-9]+, Fail.*Skipped: 0$|BUILD SUCCESS|BUILD FAILURE\")"
     ]
   }
 }

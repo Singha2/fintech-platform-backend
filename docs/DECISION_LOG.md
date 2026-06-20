@@ -304,3 +304,42 @@ is asymmetric (a 'stamped' row with NULL `stamp_cert_id` passes — weaker than 
 DB guard on `chain_shard` non-emptiness or `sys_command_log` ↔ `sys_audit_event` linkage (audit-chain
 integrity is app-owned). When BC3/BC4/BC5/BC6/BC11 are built, re-add precise lifecycle/SoD guards
 appropriate to each finalized state machine. Validated: 34 tests green after the changes.
+
+---
+
+## DL-BE-012 — M1a shared kernel: Money/Bps value objects, error model, logging; tests re-enable Flyway
+**Date:** 2026-06-20
+**What:** First feature slice (M1a, light tier — spec `docs/modules/M1-shared-kernel.md`). Added:
+(1) `shared.Money` (record over `long` paise) and `shared.Bps` (record over `int` bps) — overflow-safe
+arithmetic via `Math.*Exact`, no float anywhere; (2) error model `shared.error.PlatformException`
+(base, carries stable `errorCode` + `HttpStatus`) → `ValidationException` (400); (3) logging baseline:
+`logback-spring.xml` with a per-request correlation id in the pattern, `RequestIdFilter` (MDC +
+`X-Request-Id` echo), and `GlobalExceptionHandler` (`@RestControllerAdvice`) mapping domain errors to
+RFC 7807 `ProblemDetail` and logging every exception with the request id. **Also fixed a pre-existing
+test regression:** commit 8e0c433 added `spring.flyway.enabled=false` (prod runs migrations manually
+via `FlywayMigrationRunner`), which left the integration-test DB empty; re-enabled Flyway *only* in
+tests via `@TestPropertySource` on `AbstractIntegrationTest`. 41 tests green.
+**Why:** `Money` is **signed** (maps to `BIGINT`; negative ledger deltas are valid) — only
+`requirePositive()` enforces `> 0`, mirroring the DB `positive_money_paise` domain (zero is an
+accounting error per V1 comment); plain `money_paise` (`>= 0`) is enforced at the column, not the type.
+Records give value equality for free and forbid a float accessor by construction. Domain exceptions log
+at WARN (expected business flow, no stack trace); unexpected ones at ERROR with trace. The Flyway fix
+is scoped to tests so production's deliberate manual-migration posture is unchanged.
+**Watch for:** M1a is the first cut of M1 — **M1b still owes** the `command_id` idempotency store
+(`sys_command_log`, [[DL-BE-003]]), the in-process event bus, and the `aggregate_version`
+optimistic-locking helper; none of the five non-negotiables bind until then. `requirePositive()` must
+be called explicitly at strictly-positive boundaries — nothing forces it. If app code ever bypasses JPA
+for writes, `updated_at` still app-owned ([[DL-BE-002]]).
+**`/code-review` follow-ups applied (high effort):** (1) `GlobalExceptionHandler` now maps Spring
+Security `AccessDeniedException`→403 / `AuthenticationException`→401 (the catch-all previously turned
+in-handler method-security denials into 500 — load-bearing once `@PreAuthorize` lands for SoD/
+maker-checker); (2) `Bps` now enforces the **full** `bps_type` range `[0, 100000]`, not just `>= 0`;
+(3) added `Money.requireNonNegative()` (`>= 0`, mirrors `money_paise`) — `requirePositive()` is `> 0`,
+so callers pick the guard matching the target column's domain; (4) `RequestIdFilter` validates an
+inbound `X-Request-Id` against `[A-Za-z0-9_-]{1,64}` and otherwise generates one (untrusted value was
+logged verbatim → log-forging / log-volume risk); (5) 500 responses now carry the `errorCode`
+property like every other error; (6) dropped redundant `toPaise()`/`toInt()` aliases (use record
+accessors `paise()`/`value()`); (7) tests extended for the Bps bounds, `minus()`/`times()` overflow,
+the non-negative guard, and the malicious-request-id discard. **Deferred (not a bug yet):** MDC
+correlation id is not re-established across async dispatch — revisit when the first async endpoint
+lands. Validated: 43 tests green.

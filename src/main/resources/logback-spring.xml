@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Logging baseline (M1a). Goal: fast exception debugging.
+  - Console pattern includes a per-request correlation id (MDC key "requestId",
+    set by RequestIdFilter) so all log lines for one request are greppable.
+  - "dev" profile: app package at DEBUG, full stack traces.
+  - default/other profiles: app package at INFO.
+  Extends Spring Boot's own defaults via base.xml (colors, sane framework levels).
+-->
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <property name="LOG_PATTERN"
+              value="%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] [req=%X{requestId:-}] %logger{36} - %msg%n"/>
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>${LOG_PATTERN}</pattern>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+
+    <!-- Application logs: DEBUG in dev, INFO otherwise -->
+    <springProfile name="dev">
+        <logger name="com.arthvritt.platform" level="DEBUG"/>
+        <!-- Uncomment to see SQL while debugging:
+        <logger name="org.hibernate.SQL" level="DEBUG"/>
+        <logger name="org.hibernate.orm.jdbc.bind" level="TRACE"/>
+        -->
+    </springProfile>
+
+    <springProfile name="!dev">
+        <logger name="com.arthvritt.platform" level="INFO"/>
+    </springProfile>
+</configuration>
