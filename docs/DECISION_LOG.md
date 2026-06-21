@@ -1014,21 +1014,56 @@ Validated: 128 tests green.
 
 ---
 
-## DL-BE-028 — M5d Notifications-full (BC15) *(RESERVED — planned, not yet built)*
-**Date:** 2026-06-22 (reserved at draft)
-**Status:** Reserved. Spec drafted (`docs/modules/M5d-notifications.md`, Status: Draft).
-Placeholder so the number is claimed; **fill in the as-built `What`/`Why`/`/code-review` at M5d DoD.**
-**Planned scope (M5 slice 4/4 — completes Wave 0):** the BC15 `sys_notification_dispatch` lifecycle,
-completing M3a's thin slice. `NotificationService` (extends `AbstractAclService`) becomes the sole
-`NotificationPort` impl; `StubNotifier` is recast as the swappable `NotificationChannel` (keeps its
-`lastCodeFor` test hooks). Lifecycle `queued → sent (provider_ref) | failed`; fire-and-forget (ND.1);
-**no OTP/PII in the persisted payload** (ND.2 — a sensitive-key denylist filters params; the channel
-still gets the full params to deliver). Audit `Notification.Dispatched`/`.DispatchFailed`. M3a's
-`AuthService` (injects `NotificationPort`) is **unchanged**. **No new migration** (table + enums V4).
-**Decisions to confirm at build:** Port-impl/channel recast (one `NotificationPort` bean =
-`NotificationService`; `StubNotifier` → `NotificationChannel`); fire-and-forget via `afterCommit` +
-no-rethrow-on-failure; sensitive-key denylist; no dedup key (fire-and-forget permits duplicates);
-`causation_event_id` null until the event bus wires subscriptions.
-**Watch for (at build):** the **~50-test OTP regression risk** — the admin-IAM/auth suite delivers OTPs
-through `StubNotifier.lastCodeFor`, so the recast must keep that chain intact; real provider + templates
-+ retries + delivered-receipts + outage banners are the real-adapter's.
+## DL-BE-028 — M5d Notifications-full (BC15): the dispatch lifecycle behind the real port
+**Date:** 2026-06-22
+**Status:** Built. Spec `docs/modules/M5d-notifications.md` (Status: Done). **Wave 0 complete.**
+
+**What changed.** Completed M3a's thin notification slice into the full BC15 `sys_notification_dispatch`
+lifecycle, and split the port from the wire:
+- `NotificationService extends AbstractAclService implements NotificationPort` ([[DL-BE-026]]) — now the
+  **sole** `NotificationPort` bean. `send()` is `@Transactional`: INSERT `queued` (with the filtered
+  payload) → deliver via the channel → UPDATE `sent`+`provider_ref` | `failed` → audit
+  `notifications.Notification.Dispatched`/`.DispatchFailed`.
+- `StubNotifier` recast `implements NotificationChannel` (was the `NotificationPort` impl) — the swappable
+  raw-delivery seam (fake → SES/SNS/Twilio at Production). Kept `lastFor`/`lastCodeFor`/`clear`/`sent`, so
+  the M3a OTP-delivery chain is intact (the ~50-test regression risk did **not** materialise — full suite
+  **133/133**). `send()` now returns the vendor provider-ref `String`.
+- No new migration (`sys_notification_dispatch` + both enums are V4). M3a's `AuthService` (injects
+  `NotificationPort`, sends on `afterCommit`) is **unchanged** — it gets the lifecycle + audit for free.
+
+**Why these shapes.**
+- **Port/channel split** — exactly one bean per interface (no `@Primary`/qualifier needed): the *fixed*
+  half (persistence + audit + PII filter) is `NotificationService`; only the *channel* swaps at
+  Production. Same ACL shape as M5a/b/c.
+- **Fire-and-forget (ND.1)** — `send()` runs in `afterCommit` (business tx already committed), so a
+  delivery failure must never escape. The delivery outcome is settled **first** in a private `deliver()`
+  that catches every channel `RuntimeException` *and* a null/blank provider-ref, returning null; only then
+  does `send()` persist the outcome + audit. So no channel fault reaches the caller, and an audit hiccup
+  can't reclassify a delivered message.
+- **No OTP/PII in payload (ND.2, C14/C15, DL-050)** — `safePayload` drops sensitive **keys** (code, otp,
+  password, secret, phone, mobile, email, pan, aadhaar) **and** any non-scalar value (Map/Collection/array),
+  persisting only scalar template vars. The channel still receives the full `params` to render/deliver.
+- **No dedup key** — fire-and-forget permits duplicate sends (acceptable for notifications); the schema
+  has no `(recipient, type, ref)` unique. `causation_event_id` left null until the event bus wires
+  subscriptions (Walking Skeleton).
+
+**`/code-review` (5 findings, all fixed; 2 regression tests added).**
+1. *(must-fix)* `channel.send()` returning **null** → the `'sent'` UPDATE would breach
+   `sys_notification_dispatch_provider_ref_shape_chk`, **poison** the Postgres tx, and the recovery
+   statements would then throw out of `afterCommit` (ND.1 breach). Fixed: `deliver()` treats null/blank
+   ref as a failure → `status='failed'`, no CHECK hit. Test `a_null_provider_ref_is_recorded_as_failed_not_sent`.
+2. Audit failure on the **success path** was caught by the same handler that flips to `failed` →
+   a delivered message mislabelled `failed`. Fixed by settling the outcome before any UPDATE/audit.
+3. Unguarded recovery block could escape `send()`. Fixed: the only fire-and-forget path (channel
+   delivery) is fully contained in `deliver()`; residual infra/audit faults surface loudly (audit `append`
+   uses `ON CONFLICT DO NOTHING` for chain conflicts, so it does **not** poison the tx).
+4. `safePayload` denylist only scrubbed **top-level keys** → a nested map (`{"borrower":{"pan":…}}`) leaked
+   PII (ND.2). Fixed: scalars-only filter (structured values dropped + warn-logged). Test
+   `a_nested_param_value_is_dropped_from_the_persisted_payload`.
+5. Stale `NotificationPort` javadoc still named `StubNotifier` as its adapter — corrected to
+   `NotificationService` (impl) delegating to a `NotificationChannel`.
+
+**Watch for.** Real provider swap brings templates/i18n, retries, the dispatch scheduler, `delivered` via
+provider receipts, and outage-banner notifications. Event-bus subscriptions + `causation_event_id` linkage
+land at the Walking Skeleton. The real channel resolves email/phone from Identity at send — never persist
+it (ND.2). Add a `(recipient, type, reference)` dedup key if duplicate notifications become a problem.

@@ -8,7 +8,7 @@
 | **Module** | M5 — Integration ACLs, stubbed (BC15/17/18/19) |
 | **Slice** | M5d — Notifications-full (BC15): the `sys_notification_dispatch` lifecycle + swappable channel |
 | **Tier** | Foundation (low rigor — stub) |
-| **Status** | Draft |
+| **Status** | Done |
 | **Owner** | Amit + Claude |
 | **Created** | 2026-06-22 |
 
@@ -93,11 +93,11 @@ subscriptions (every BC + `*Outage.Declared`) wire up at the Walking Skeleton.
       `NotificationService → StubNotifier` (the whole admin-IAM/auth suite is the guard).
 
 ## 8. Definition of Done (foundation, low rigor)
-- [ ] §7 tests green (fire-and-forget + no-PII-in-payload are the headline); whole suite green (OTP regression).
-- [ ] `/code-review` on the diff; findings fixed.
-- [ ] `DL-BE-028` entry (the dispatch lifecycle on `AbstractAclService`, the Port-impl/channel recast,
+- [x] §7 tests green (fire-and-forget + no-PII-in-payload are the headline); whole suite green (OTP regression) — `NotificationAclTest` 5/5, full suite **133/133**.
+- [x] `/code-review` on the diff; findings fixed — 5 findings (null provider_ref→CHECK/poison, audit-failure mislabel, unguarded recovery, nested-PII bypass, stale port javadoc) all resolved + 2 regression tests added.
+- [x] `DL-BE-028` entry (the dispatch lifecycle on `AbstractAclService`, the Port-impl/channel recast,
       fire-and-forget, the PII-filter, the provider/templates/retries/dedup deferrals).
-- [ ] Status flipped to **Done**. **Wave 0 complete.**
+- [x] Status flipped to **Done**. **Wave 0 complete.**
 
 ## 9. Self-review resolutions (DoR-green)
 1. **Reuses `AbstractAclService`** (audit; no sha256 — no payload-hash column).
