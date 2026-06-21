@@ -133,6 +133,18 @@ public class SessionService {
     }
 
     /**
+     * Bulk-revokes every active session for an identity — the session half of an admin-disable cascade
+     * (M4b hardening). Returns the count revoked; per-session envelopes are intentionally omitted (the
+     * triggering command's envelope — e.g. {@code AdminUser.Disabled} — is the audit record, and it
+     * carries the count). Runs in the caller's transaction.
+     */
+    @Transactional
+    public int revokeAllForIdentity(UUID identityId) {
+        return jdbc.update("UPDATE auth_session SET status = 'revoked', revoked_at = now() "
+                + "WHERE identity_id = ? AND status = 'active'", identityId);
+    }
+
+    /**
      * The MFA-freshness gate (C7, B4 §6.4, AU10.3). True only when the session carries an assertion
      * whose underlying OTP challenge was consumed within the band's window. A NULL assertion, an
      * unconsumed challenge, or a stale {@code consumed_at} ⇒ not fresh. Pure read; the window is

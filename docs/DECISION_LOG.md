@@ -720,3 +720,24 @@ commands route through the M4a gateway (#2/#4/#5 + super_admin authz). **No new 
 5. **Quarterly-review scheduler → M5/ops**; M4c ships only the `reviewDeviation` command.
 **Watch for (at build):** strict-SoD concurrency (FOR UPDATE now; consider a DB exclusion later);
 policy supersession must not orphan in-flight deviations.
+
+---
+
+## DL-BE-022 — Disable-cascade hardening (admin disable revokes identity + sessions)
+**Date:** 2026-06-21
+**What:** Completes the M4b authz-hole remediation. `RoleResolver` already stripped a disabled admin's
+command authority (DL-BE-019 follow-up a); but disable wasn't a full cascade — the admin's
+`auth_identity` stayed `active` (so they could re-authenticate, M3a checks identity status) and their
+`auth_session` rows stayed live. `disableAdminUser` now also sets `auth_identity.status = 'disabled'`
+and bulk-revokes the identity's active sessions (`SessionService.revokeAllForIdentity`), all in the
+command transaction; `enableAdminUser` re-activates the identity (old sessions stay revoked — a fresh
+one is minted on next login). The `AdminUser.Disabled` envelope payload carries `sessions_revoked`.
+**Why:** Defense-in-depth across the three planes a disabled admin could still act on — command boundary
+(RoleResolver), authentication (identity status), and existing sessions. Invariant test asserts a
+disabled admin can neither authenticate, resolve a live session, nor be authorized.
+**Decisions:** (1) **bulk session revoke, no per-session envelopes** — the `AdminUser.Disabled` envelope
+(with the count) is the audit record; N envelopes would be noise. (2) `revokeAllForIdentity` lives on
+`SessionService` (auth owns `auth_session`); `AdminUserService` calls it — no cross-module table write.
+**Watch for:** revoking an admin's *last MFA factor* still doesn't downgrade status (separate, noted in
+DL-BE-019); a future generic "deactivate principal" path should reuse this cascade.
+Validated: 96 tests green.

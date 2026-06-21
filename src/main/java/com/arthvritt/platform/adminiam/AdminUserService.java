@@ -6,6 +6,7 @@ import com.arthvritt.platform.command.CommandOutcome;
 import com.arthvritt.platform.command.CommandRejectedException;
 import com.arthvritt.platform.command.CommandRequest;
 import com.arthvritt.platform.command.CommandResult;
+import com.arthvritt.platform.auth.SessionService;
 import com.arthvritt.platform.shared.Ids;
 import com.arthvritt.platform.shared.error.ValidationException;
 import org.springframework.dao.DuplicateKeyException;
@@ -30,10 +31,12 @@ public class AdminUserService {
 
     private final JdbcTemplate jdbc;
     private final CommandGateway gateway;
+    private final SessionService sessions;
 
-    public AdminUserService(JdbcTemplate jdbc, CommandGateway gateway) {
+    public AdminUserService(JdbcTemplate jdbc, CommandGateway gateway, SessionService sessions) {
         this.jdbc = jdbc;
         this.gateway = gateway;
+        this.sessions = sessions;
     }
 
     /** Provisions a new admin (its {@code auth_identity} + an {@code invited} {@code admin_user} row). */
@@ -81,7 +84,7 @@ public class AdminUserService {
     public CommandResult<Void> enableAdminUser(CommandRequest request) {
         return gateway.execute(request, SUPER_ADMIN_ONLY, () -> {
             UUID targetId = request.aggregateId();
-            loadFor(targetId, "disabled");
+            AdminRow row = loadFor(targetId, "disabled");
             requireConfirmedTotp(targetId);
             int updated = jdbc.update(
                     "UPDATE admin_user SET status = 'active', disabled_at = NULL, disabled_by = NULL, "
@@ -91,6 +94,9 @@ public class AdminUserService {
             if (updated == 0) {
                 throw versionConflict(targetId, request.expectedVersion());
             }
+            // Reverse the disable cascade's identity lock so the admin can authenticate again (their
+            // old sessions stay revoked — they get a fresh one on next login).
+            jdbc.update("UPDATE auth_identity SET status = 'active' WHERE identity_id = ?", row.identityId());
             return statusTransition(targetId, request.expectedVersion() + 1,
                     "admin_iam.AdminUser.Enabled", "disabled", "active");
         });
@@ -104,7 +110,7 @@ public class AdminUserService {
     public CommandResult<Void> disableAdminUser(CommandRequest request) {
         return gateway.execute(request, SUPER_ADMIN_ONLY, () -> {
             UUID targetId = request.aggregateId();
-            loadFor(targetId, "active");
+            AdminRow row = loadFor(targetId, "active");
             UUID actorAdminId = actorAdminId(request.actorId());
             int updated = jdbc.update(
                     "UPDATE admin_user SET status = 'disabled', disabled_at = now(), disabled_by = ?, "
@@ -114,8 +120,16 @@ public class AdminUserService {
             if (updated == 0) { // lost the optimistic race between loadFor and this write
                 throw versionConflict(targetId, request.expectedVersion());
             }
-            return statusTransition(targetId, request.expectedVersion() + 1,
-                    "admin_iam.AdminUser.Disabled", "active", "disabled");
+            // Cascade (defense beyond the RoleResolver authz filter): block re-authentication by
+            // disabling the auth identity, and kill any live sessions so existing ones die at once.
+            jdbc.update("UPDATE auth_identity SET status = 'disabled' WHERE identity_id = ?", row.identityId());
+            int sessionsRevoked = sessions.revokeAllForIdentity(row.identityId());
+
+            CommandEvent event = new CommandEvent("admin_iam.AdminUser.Disabled",
+                    request.expectedVersion() + 1,
+                    Map.of("admin_user_id", targetId.toString(), "sessions_revoked", sessionsRevoked),
+                    Map.of("status", "active"), Map.of("status", "disabled"), true);
+            return new CommandOutcome<>(null, event);
         });
     }
 
@@ -128,8 +142,9 @@ public class AdminUserService {
 
     private AdminRow loadFor(UUID adminUserId, String expectedStatus) {
         AdminRow row = jdbc.query(
-                "SELECT status::text AS status, aggregate_version FROM admin_user WHERE admin_user_id = ?",
-                rs -> rs.next() ? new AdminRow(rs.getString("status"), rs.getInt("aggregate_version")) : null,
+                "SELECT status::text AS status, aggregate_version, identity_id FROM admin_user WHERE admin_user_id = ?",
+                rs -> rs.next() ? new AdminRow(rs.getString("status"), rs.getInt("aggregate_version"),
+                        rs.getObject("identity_id", UUID.class)) : null,
                 adminUserId);
         if (row == null) {
             throw new ValidationException("admin user not found: " + adminUserId);
@@ -185,6 +200,6 @@ public class AdminUserService {
         return id;
     }
 
-    private record AdminRow(String status, int version) {
+    private record AdminRow(String status, int version, UUID identityId) {
     }
 }

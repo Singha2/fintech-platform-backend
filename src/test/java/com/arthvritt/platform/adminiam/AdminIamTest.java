@@ -152,6 +152,36 @@ class AdminIamTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void disabling_an_admin_cascades_to_identity_and_sessions() { // disable-cascade hardening
+        Actor disabler = superAdminActor();
+        // Target A: active super_admin with a password and a live session.
+        String email = email();
+        UUID identityId = auth.provisionIdentity("admin_user", email, phone(), "Target A");
+        auth.setPassword(identityId, "Sup3r-Secret!");
+        UUID targetId = Ids.newId();
+        jdbc.update("INSERT INTO admin_user (admin_user_id, identity_id, email, display_name, status) "
+                + "VALUES (?, ?, ?, ?, 'active')", targetId, identityId, "au-" + targetId + "@arthvritt.test", "Target A");
+        jdbc.update("INSERT INTO auth_mfa_factor (factor_id, identity_id, kind, secret_encrypted, label, last_used_at) "
+                + "VALUES (?, ?, 'totp'::mfa_factor_kind_enum, ?, 'seed', now())",
+                Ids.newId(), identityId, cipher.encrypt(Totp.newSecret()));
+        jdbc.update("INSERT INTO admin_role_assignment (admin_user_id, role, status, assigned_by) "
+                + "VALUES (?, 'super_admin'::admin_role, 'active', ?)", targetId, targetId);
+        AuthSession aSession = sessionFor(identityId);
+
+        // Pre-conditions: A can authenticate, resolve its session, and is authorized.
+        assertThat(auth.authenticatePassword(email, "Sup3r-Secret!").authenticated()).isTrue();
+        assertThat(sessions.resolveSession(aSession.sessionId()).active()).isTrue();
+        assertThat(roleResolver.activeRoles(identityId)).containsExactly("super_admin");
+
+        adminUsers.disableAdminUser(req(disabler, "admin_iam.AdminUser.Disable", targetId, 1));
+
+        assertThat(status(targetId)).isEqualTo("disabled");
+        assertThat(auth.authenticatePassword(email, "Sup3r-Secret!").authenticated()).isFalse(); // identity disabled
+        assertThat(sessions.resolveSession(aSession.sessionId()).active()).isFalse();             // session revoked
+        assertThat(roleResolver.activeRoles(identityId)).isEmpty();                                // authz stripped
+    }
+
+    @Test
     void admin_email_is_globally_unique() { // INV-5
         Actor admin = superAdminActor();
         String email = email();
