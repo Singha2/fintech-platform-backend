@@ -831,3 +831,37 @@ duplication is now in three admin-IAM test classes** — the `AbstractAdminIamTe
 maker-checker (close before production). Maker-checker'd disable could move to its own service if
 `AdminUserService` grows further.
 Validated: 110 tests green.
+
+---
+
+## DL-BE-024 — M5a Verification ACL (BC17) *(RESERVED — planned, not yet built)*
+**Date:** 2026-06-21 (reserved at draft)
+**Status:** Reserved. Spec drafted (`docs/modules/M5a-verification-acl.md`, Status: Draft).
+Placeholder so the number is claimed and the planned decisions are on the record; **fill in the
+as-built `What` / `Why` / `/code-review` follow-ups at M5a DoD.**
+**M5 slicing (flagged for the architect):** M5 bundles four integration ACLs; they're independent
+integrations, so M5 is sliced **by bounded context** — **M5a Verification (BC17)** (this) → **M5b
+Banking/Escrow (BC18)** → **M5c Signing (BC19)** → **M5d Notifications-full (BC15)** (M3a already
+shipped a thin `NotificationPort`/`StubNotifier`). M5a is first because it's the simplest (no money,
+auto-pass) and **establishes the ACL pattern** the others reuse.
+**Planned scope:** a real `VerificationPort` (the 11 aggregator ops — `verifyPan`, `verifyGstin`,
+`verifyIrn`, `screenAmlPep`, …) with a **fake in-process `StubVerificationAdapter`** that auto-passes
+with deterministic `extracted_fields` and per-type TTLs (A2 §1.4); `gate_verification` persistence with
+the cache rule (a non-stale completed `(subject, api)` is reused, not re-called, V.1/V.4); audit
+envelopes. **No new migration** (`gate_verification` + enums exist V4).
+**Decisions taken to DoR-green (confirm/revise at build):**
+1. **Real ports, fake adapters** — only the adapter is swapped (fake → sandbox → production) at the
+   Production gate; the port/aggregate/events stay fixed. The vendor model never leaks (A1/B1 ACL rule).
+2. **Webhook ingress deferred to the real adapter** — the stub completes **in-process**, so the
+   `/webhooks/verification/...` routes, HMAC over `(timestamp||body)` (C10), the 5-min replay window
+   (A2 §1.2), and `vendor_event_id` dedup land when the real adapter does. The stub stamps
+   `signature_verified_at` at completion (V.2).
+3. **Verbatim payload archival deferred** — only `vendor_payload_hash` stored now; full payload into
+   `sys_document_object` is **BC16 Documents** (not built).
+4. **Not a gateway command** — verification is system-triggered; idempotency is the ACL key
+   (`client_request_id` = `verification_id`) + the `(subject, api)` cache, **not** the M4a `command_id`
+   store. Audited via `AuditLog` directly.
+5. **AML/PEP adjudication → BC11/M15**; BC17 makes the `screen_aml_pep` call only.
+**Watch for (at build):** the real-adapter swap brings the full webhook stack + BC16 payload archival +
+manual-fallback (G8) + the TTL-sweep scheduler + the outage banner; if M5b/M5c repeat the pattern,
+extract a small shared ACL base (but not before the second consumer exists).
