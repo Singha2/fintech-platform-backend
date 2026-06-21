@@ -965,3 +965,29 @@ idempotency mechanisms are **not** shared (Verification caches by `(subject, api
 `client_instruction_id` via `ON CONFLICT` — genuinely different, table-specific). Forcing them into a
 base would be a wrong-altitude abstraction.
 Validated: 122 tests green.
+
+---
+
+## DL-BE-027 — M5c Signing ACL (BC19) *(RESERVED — planned, not yet built)*
+**Date:** 2026-06-22 (reserved at draft)
+**Status:** Reserved. Spec drafted (`docs/modules/M5c-signing-acl.md`, Status: Draft).
+Placeholder so the number is claimed and the planned decisions are on the record; **fill in the
+as-built `What` / `Why` / `/code-review` follow-ups at M5c DoD.**
+**Planned scope (M5 slice 3/4):** the BC19 e-Sign ACL, reusing the ACL shape on
+[[DL-BE-026]]'s `AbstractAclService`. `SigningPort` (`initiateSignature` → `SignatureSession{vendorSessionUrl}`,
+`completeSignature` → `cert_serial`, `fetchSignature`) with a deterministic `StubSigningVendorClient`
+(fixed session URL, auto-success fake cert). `gate_signature_session` lifecycle
+`session_initiated → completed`, idempotent on the `(signature_request_id, doc_hash)` UNIQUE + `vsr_id`
+PK; `cert_serial` only on `completed` (DB CHECK). Audit via the inherited `auditAclEvent`. Sole consumer
+is **BC5 Assignment & Signing (M12, not built)** — produces the "signed via stub" the Walking Skeleton
+needs. **No new migration** (`gate_signature_session` + enums exist V4).
+**Decisions taken to DoR-green (confirm/revise at build):**
+1. **Reuses `AbstractAclService`** (audit + sha256); only the signing persistence/idempotency is new.
+2. **Two-step initiate → complete** mirrors the real async flow; the stub completes in-process. HTTP
+   webhook ingress + HMAC + 5-min replay are the real adapter's.
+3. **e-Sign only** — e-Stamp (`issue_stamp`/`StampIssued`, master-level, G15) deferred (no stamp table;
+   own concern).
+4. **Not a gateway command** — BC5-triggered; idempotency is the ACL key, audited directly.
+5. **Aadhaar-OTP/DSC paths, UIDAI-outage degradation, retry/expiry (cap 3), BC16 archival** → the real adapter.
+**Watch for (at build):** the failed/expired path (latent under the always-succeeding stub); the
+real-adapter webhook stack + the two signing paths + outage degradation + BC16 signed-doc archival.
