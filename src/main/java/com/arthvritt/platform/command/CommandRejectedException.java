@@ -44,6 +44,12 @@ public class CommandRejectedException extends PlatformException {
                 "command_id already used for a different command", HttpStatus.CONFLICT);
     }
 
+    /** The actor holds none of the roles the command requires (C18). 403, no envelope (G22). */
+    public static CommandRejectedException roleNotHeld() {
+        return new CommandRejectedException("role_not_held",
+                "actor does not hold a role authorised for this command", HttpStatus.FORBIDDEN);
+    }
+
     /** A concurrent first execution of this {@code command_id} is still in flight. 409, retryable. */
     public static CommandRejectedException commandInProgress() {
         return new CommandRejectedException("command_in_progress",

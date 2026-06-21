@@ -607,11 +607,17 @@ Validated: 83 tests green.
 
 ---
 
-## DL-BE-019 — M4b Admin IAM + RBAC + TOTP enrollment *(RESERVED — planned, not yet built)*
-**Date:** 2026-06-21 (reserved at draft)
-**Status:** Reserved. Spec drafted (`docs/modules/M4b-admin-iam-rbac-totp.md`, Status: Draft).
-Placeholder so the number is claimed and the planned decisions are on the record; **fill in the
-as-built `What` / `Why` / `/code-review` follow-ups at M4b DoD.**
+## DL-BE-019 — M4b Admin IAM + RBAC + TOTP enrollment
+**Date:** 2026-06-21
+**What:** M4 slice 2/3 (spec `docs/modules/M4b-admin-iam-rbac-totp.md`). `AdminUserService`
+(provision invited → `activateAdminUser` gated on AU10.1 → disable/enable), `TotpService` (RFC-6238
+TOTP enroll/confirm; `Totp` is dependency-free HMAC-SHA1 + inline Base32, verified by RFC-6238 vector
+tests), `RbacService` (super_admin-gated assign/revoke) + `RoleResolver` (the read-only
+`ActorAuthorization` the gateway consults), `SecretCipher`/`AesGcmSecretCipher` (AES-256-GCM, dev key)
+for the encrypted TOTP secret, and `AdminBootstrap` (seeds the first super_admin outside the authz'd
+flow). The M4a `CommandGateway` gained a role-authz gate (`requiredRoles` → `role_not_held` 403, no
+envelope), closing the M4a `disableAdminUser` authz gap. **No new migration.** 10 new tests; 95 green.
+**Why (key decisions, as built):**
 **Planned scope (M4 slice 2 of 3):** admin user lifecycle (`provisionAdminUser` invited →
 `activateAdminUser`, gated on AU10.1 → `disable`/`enable`), **TOTP enrollment** into `auth_mfa_factor`
 (the C7 factor admin activation requires), **composable RBAC** (`assignRole`/`revokeRole`,
@@ -637,6 +643,31 @@ exist V2/V3).
    closes M4a's `disableAdminUser` authz gap.
 7. **TOTP-at-login assertion minting deferred** (small follow-up); admins use the SMS-OTP fallback
    (M3a) meanwhile; the gateway is factor-agnostic.
-**Watch for (at build):** revoking an admin's last active factor must downgrade `status` from active
-(schema comment); KMS + secret rotation at Production; keep the authz gate factor-agnostic so the
-AI-agent actor model (G31) composes later.
+**As-built notes:** Base32 is implemented inline in `Totp` (the only `commons-codec` jar is a stale,
+unresolved transitive — no dependency added). `provisionAdminUser` uses the caller-supplied
+`request.aggregateId()` as the new admin's id, so the gateway's idempotency key + envelope name the
+entity being created. Dev AES key is `platform.security.secret-key` (32-byte base64) with a clearly
+dev-only default.
+**`/code-review` follow-ups applied (high effort):**
+(a) **Disabled admin is deauthorized** — `RoleResolver.activeRoles` now filters
+`admin_user.status = 'active'` as well as the role-assignment status; disabling an admin (whose role
+rows are not individually revoked) immediately strips their command authority. (High-severity authz
+hole; regression test added.)
+(b) **TOTP confirm is one-time** — `confirmTotp` rejects a replayed code against an already-confirmed
+factor (`last_used_at IS NOT NULL`); full last-step replay tracking belongs with the deferred
+TOTP-at-login slice.
+(c) **AES-GCM decrypt length guard** — a blob shorter than nonce+tag is rejected with a typed error
+instead of an `ArrayIndexOutOfBounds`.
+(d) **Duplicate-key translation** — `provisionAdminUser` catches `DuplicateKeyException` (the email
+pre-check is best-effort/TOCTOU) and returns a clean `ValidationException` rather than a 500.
+(e) **Reactivation clears soft-SoD columns** — `assignRole`'s `ON CONFLICT DO UPDATE` nulls
+`deviation_register_entry_id` / `sod_warning_acknowledged_at` / `override_reason` so a reactivated
+assignment carries no stale deviation reference (M4c re-evaluates SoD).
+**Watch for (carry forward):** revoking an admin's last active factor must downgrade `status` from
+active (schema comment) — not handled in M4b; KMS + secret rotation at Production; TOTP-at-login needs
+proper last-step replay tracking; the **audit-envelope builder is now hand-assembled in four producers**
+(`AuthService`, `SessionService`, `CommandGateway`, `TotpService`) — the shared-factory extraction
+(flagged in [[DL-BE-018]]) is now overdue and should be its own cleanup change (touches Done modules,
+kept out of this slice deliberately); keep the authz gate factor-agnostic so the AI-agent actor model
+(G31) composes later.
+Validated: 95 tests green.

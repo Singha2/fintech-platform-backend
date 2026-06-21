@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -34,15 +35,29 @@ public class CommandGateway {
     private final JdbcTemplate jdbc;
     private final SessionService sessions;
     private final AuditLog auditLog;
+    private final ActorAuthorization authorization;
 
-    public CommandGateway(JdbcTemplate jdbc, SessionService sessions, AuditLog auditLog) {
+    public CommandGateway(JdbcTemplate jdbc, SessionService sessions, AuditLog auditLog,
+                          ActorAuthorization authorization) {
         this.jdbc = jdbc;
         this.sessions = sessions;
         this.auditLog = auditLog;
+        this.authorization = authorization;
     }
 
-    @Transactional
+    /** Runs a command with no role requirement (open to any authenticated actor). */
     public <R> CommandResult<R> execute(CommandRequest request, CommandHandler<R> handler) {
+        return execute(request, Set.of(), handler);
+    }
+
+    /**
+     * Runs a command requiring the actor to hold at least one of {@code requiredRoles} (C18). The
+     * authz gate sits after the MFA gate and before the claim, so an un-authorised actor is rejected
+     * {@code role_not_held} with no log row and no envelope (G22).
+     */
+    @Transactional
+    public <R> CommandResult<R> execute(CommandRequest request, Set<String> requiredRoles,
+                                        CommandHandler<R> handler) {
         validate(request);
         boolean adminActor = ADMIN_ACTOR.equals(request.actorType());
 
@@ -64,6 +79,12 @@ public class CommandGateway {
         // 2. MFA-freshness gate for admin actors (#2, AU10.3) — reject before claiming anything.
         if (adminActor && !sessions.isMfaFresh(request.session(), request.sensitivity())) {
             throw CommandRejectedException.mfaExpired();
+        }
+
+        // 2b. Authorization gate (M4b, C18) — the actor must hold one of the command's required roles.
+        if (!requiredRoles.isEmpty()
+                && java.util.Collections.disjoint(authorization.activeRoles(request.actorId()), requiredRoles)) {
+            throw CommandRejectedException.roleNotHeld();
         }
 
         // 3. Claim the (actor_id, command_id) slot. A concurrent first execution that committed between

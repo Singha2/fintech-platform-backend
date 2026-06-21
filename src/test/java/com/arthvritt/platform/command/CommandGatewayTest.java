@@ -181,9 +181,9 @@ class CommandGatewayTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void an_actor_without_an_admin_user_row_is_rejected() { // acting identity is not an admin (RBAC is M4b)
+    void an_actor_holding_no_authorised_role_is_rejected() { // M4b authz gate (role_not_held)
         UUID identityId = auth.provisionIdentity("admin_user", email(), "+919800000003", "Ghost");
-        UUID assertionId = freshAssertion(identityId); // session + MFA, but no admin_user row inserted
+        UUID assertionId = freshAssertion(identityId); // session + MFA, but no admin_user row / no roles
         UUID sessionId = sessions.establishSession(identityId, assertionId, TenantClaims.empty(), null, null);
         AuthSession session = sessions.resolveSession(sessionId).session();
         UUID target = admin();
@@ -191,8 +191,9 @@ class CommandGatewayTest extends AbstractIntegrationTest {
                 "admin_iam.AdminUser.Disable", "AdminUser", target, 1, "admin_user", ActionSensitivity.SENSITIVE);
 
         assertThatThrownBy(() -> adminUsers.disableAdminUser(req))
-                .isInstanceOf(com.arthvritt.platform.shared.error.ValidationException.class);
-        assertThat(status(target)).isEqualTo("active"); // target untouched; claim rolled back
+                .isInstanceOf(CommandRejectedException.class)
+                .satisfies(e -> assertThat(((CommandRejectedException) e).getErrorCode()).isEqualTo("role_not_held"));
+        assertThat(status(target)).isEqualTo("active"); // target untouched; rejected before the handler
     }
 
     // --- helpers -------------------------------------------------------------------------------
@@ -208,7 +209,10 @@ class CommandGatewayTest extends AbstractIntegrationTest {
 
     private Actor makeActor(boolean withMfa) {
         UUID identityId = auth.provisionIdentity("admin_user", email(), "+919800000001", "Actor");
-        insertAdminUser(identityId);
+        UUID adminUserId = insertAdminUser(identityId);
+        // The disable command requires super_admin (M4b authz); grant it to the acting admin.
+        jdbc.update("INSERT INTO admin_role_assignment (admin_user_id, role, status, assigned_by) "
+                + "VALUES (?, 'super_admin'::admin_role, 'active', ?)", adminUserId, adminUserId);
         UUID assertionId = withMfa ? freshAssertion(identityId) : null;
         UUID sessionId = sessions.establishSession(identityId, assertionId, TenantClaims.empty(), null, null);
         AuthSession session = sessions.resolveSession(sessionId).session();

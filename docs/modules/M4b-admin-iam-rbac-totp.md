@@ -9,7 +9,7 @@
 | **Module** | M4 — Admin IAM + Maker-Checker + SoD (BC10, BC16) |
 | **Slice** | M4b — admin user lifecycle, TOTP enrollment (AU10.1), composable RBAC + command authorization |
 | **Tier** | Foundation-critical (light ceremony · heavy IAM-invariant rigor) |
-| **Status** | Draft |
+| **Status** | Done (impl + tests green; `/code-review` findings fixed; DL-BE-019) |
 | **Owner** | Amit + Claude |
 | **Created** | 2026-06-21 |
 
@@ -112,11 +112,12 @@
 - [ ] Inherited controls: an admin command replays as a no-op and emits one envelope (INV-6, via M4a).
 
 ## 8. Definition of Done (foundation-critical)
-- [ ] §7 tests green (the activation gate + command authz are the headline invariants).
-- [ ] `/code-review` on the diff; findings fixed.
-- [ ] `DL-BE-019` entry (TOTP impl + secret cipher, last_used_at-as-confirmed, role-based authz model,
+- [x] §7 tests green — `AdminIamTest` (9) + `TotpTest` (3, incl. RFC-6238 vectors); 95 total green.
+- [x] `/code-review` on the diff; findings fixed (disabled-admin deauthorization, one-time TOTP
+      confirm, AES-GCM length guard, duplicate-key translation, soft-SoD column clear on reactivate).
+- [x] `DL-BE-019` entry (TOTP impl + secret cipher, last_used_at-as-confirmed, role-based authz model,
       bootstrap-first-super_admin, the SoD/maker-checker deferral with its M4c guardrail).
-- [ ] Status flipped to **Done**.
+- [x] Status flipped to **Done**.
 
 ## 9. Self-review resolutions (DoR-green)
 1. **Slicing — RESOLVED:** M4b owns IAM lifecycle + TOTP + RBAC + command authz; **SoD on role-assign
