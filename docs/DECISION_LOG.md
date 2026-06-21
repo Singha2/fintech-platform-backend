@@ -1075,26 +1075,40 @@ it (ND.2). Add a `(recipient, type, reference)` dedup key if duplicate notificat
 **Status:** Reserved. Spec drafted (`docs/modules/WS-walking-skeleton.md`, Status: Draft).
 Umbrella number for Milestone 1; **fill in the as-built strategy + cross-cutting proofs at the WS DoD.**
 Each sub-slice's non-obvious decisions claim their own subsequent `DL-BE-030+` numbers as built.
-**Planned scope (Milestone 1 — completes the first end-to-end money-flow):** the thin vertical cut that
-takes ONE invoice through BC1/2/3/4/5 + BC7/8/9 + BC11(auto-approve stub), on top of the finished
-foundation (M0–M5). **No new migration** — the money-flow schema is V1–V5; pure application wiring. The
-slice walks the B2 §4.1 Trace A spine `Listing.GoneLive → Disbursed` under one `correlation_id` and proves
-the five hardest invariants early: **maker-checker** (go-live + payout, proposer ≠ approver),
-**MFA-freshness** (the two checker steps), **funding equality G10** (`Σ confirmed = committed_total =
-observed_inflow_total = funding_target`, paise-exact), **idempotency** (`command_id` / vendor keys), and
-**audit chaining** (unbroken `previous_envelope_hash` end-to-end).
+**Planned scope (Milestone 1 — the first end-to-end money-flow, *over HTTP*):** the thin vertical cut that
+takes ONE invoice through the **B4 HTTP edge** + BC1/2/3/4/5 + BC7/8/9 + BC11(auto-approve stub), on top of
+the finished foundation (M0–M5). M1–M5 built the hexagonal *core* (services proven headless); **there is no
+HTTP surface yet** (zero business endpoints — only `GlobalExceptionHandler` + Actuator). A true walking
+skeleton (Cockburn/GOOS) is a thin slice through **every layer including the delivery mechanism**, so M1
+adds the skin: it stands up the B4 command + webhook edges and drives `Listing.GoneLive → Disbursed`
+**through real controllers** under one `correlation_id`. **No new money-flow migration** (schema is V1–V5);
+the only new persistence is what the edge needs (e.g. a webhook dedup index, if absent). Proves the five
+hardest invariants *at the wire boundary*: **maker-checker** (go-live + payout, two endpoints each, proposer
+≠ approver), **MFA-freshness** (`X-Mfa-Assertion-Id` on the two checker steps), **funding equality G10**
+(`Σ confirmed = committed_total = observed_inflow_total = funding_target`, paise-exact), **idempotency**
+(`X-Command-Id` / vendor `event_id`), and **audit chaining + audit-before-2xx** (X13: no 2xx before the
+envelope append; unbroken `previous_envelope_hash` end-to-end).
 **Minimal config (decisions to confirm at build):** one of each counterparty; one invoice **< ₹1 Cr** to
 keep four-eyes (C6) out; a **single subscriber funding 100%** so `assignment_set.total_count = 1`
 (collapses BC5 to one leg, dodges the G13 24 h time-box); compliance **auto-approved** behind the same
-`RecordKycApproved` command the real BC11 engine will call at M15; all vendors are the M5 in-process stubs.
-**Sub-slices (build order):** WS-1 supplier active · WS-2 buyer + ack user · WS-3 investor active ·
-WS-4 listing priced+gone-live (snapshot + maker-checker+MFA #1 + VA) · WS-5 subscribe-to-100% (G10,
-coordinated commit) · WS-6 assignment single-leg signed (`all_signed` gate, C27) · WS-7 disbursement
-(maker-checker+MFA #2). Capstone = `WalkingSkeletonE2ETest`. (WS-8 maturity→distribution→closed deferred.)
-**Watch for (at build):** `funding_target` **paise rounding** (pin the rule — a drift breaks G10's strict
-equality); the **coordinated commit** must make over-subscription impossible by construction, not
-check-then-act; M4d's maker-checker engine is admin-IAM-shaped — WS-4/WS-7 are the first *domain*
-propose→approve uses, so a decision-logged extraction may precede WS-4 (mirror the `AbstractAclService`
-move); thread one `correlation_id` from WS-1 so the E2E chain assert holds; use **DB-enum-true** state
-names (`operational_checks_in_progress`, `awaiting_acknowledgment`; the disbursement gate is the
-`deal_listing.all_signed` boolean, **not** a separate state).
+`record-kyc-approved` command the real BC11 engine will call at M15; all vendors are the M5 in-process
+stubs, with their inbound results **delivered through the B4 webhook ingress** (the test POSTs HMAC-signed
+events to `/webhooks/…`, exercising the inbound seam for real).
+**Sub-slices (build order):** **WS-0 the HTTP edge** (request-envelope resolver, intent-shaped
+command-controller, `emitted_events` response, the full B4 §4 error taxonomy on `GlobalExceptionHandler`,
+bearer→actor security filter, and — from WS-5 — the webhook ingress; proven against already-built M3/M4
+services + one query) · WS-1 supplier active · WS-2 buyer + ack user · WS-3 investor active · WS-4 listing
+priced+gone-live (snapshot + maker-checker+MFA #1 + VA) · WS-5 subscribe-to-100% (G10, coordinated commit,
+inflow via webhook) · WS-6 assignment single-leg signed (`all_signed` gate, C27, signing via webhook) ·
+WS-7 disbursement (maker-checker+MFA #2, payout via webhook). Capstone = `WalkingSkeletonE2ETest`
+(MockMvc/`TestRestTemplate`, HTTP-driven). (WS-8 maturity→distribution→closed deferred.)
+**Watch for (at build):** **audit-before-2xx** — M2's same-tx append already satisfies X13 in the monolith
+*without* a separate outbox table, but WS-0 must assert it at the HTTP boundary so it survives the Phase-2
+broker swap (G27); `funding_target` **paise rounding** (pin the rule — a drift breaks G10); the
+**coordinated commit** must make over-subscription impossible by construction, not check-then-act; M4d's
+maker-checker engine is admin-IAM-shaped — WS-4/WS-7 are the first *domain* two-endpoint pairs, so a
+decision-logged extraction may precede WS-4 (mirror the `AbstractAclService` move); `correlation_id` minted
+at the edge / propagated via `X-Correlation-Id`; **webhook correlation re-establishment** (G24 — stubs
+never echo the platform id; re-link via the stored `client_instruction_id`/`va_id`/`signature_request_id`
+mapping); use **DB-enum-true** state names (`operational_checks_in_progress`, `awaiting_acknowledgment`;
+the disbursement gate is the `deal_listing.all_signed` boolean, **not** a separate state).
