@@ -510,3 +510,37 @@ N+1).
 5. **OTP rate-limiting / resend throttling** is minimal while stubbed — revisit with the real SMS
    provider (cost + abuse), M5/Production.
 Validated: 63 tests green.
+
+---
+
+## DL-BE-017 — M3b sessions, MFA-freshness check & tenant claims *(RESERVED — planned, not yet built)*
+**Date:** 2026-06-21 (reserved at draft)
+**Status:** Reserved. Spec drafted (`docs/modules/M3b-sessions-and-mfa-freshness.md`, Status: Draft).
+This entry is a placeholder so the number is claimed and the planned decisions are on the record;
+**fill in the as-built `What` / `Why` / `/code-review` follow-ups at M3b DoD.**
+**Planned scope:** `auth_session` lifecycle (`establishSession` / `resolveSession` with lazy idle-roll
++ expiry / `revokeSession`) on the V3 `auth_session` table; **`isMfaFresh(session, sensitivity)`** — the
+freshness gate every admin command calls (M3a minted the assertion, M3b consumes it); tenant-claim
+serialisation into `tenant_claims` JSONB (the C16/G19 isolation input). Native SQL + `AuditLog` (M2),
+service-substrate only (no HTTP layer yet). Audit envelopes: `SessionEstablished` / `SessionRevoked`
+/ `SessionExpired` + `TenantClaim.Issued` (B2 §3.10).
+**Decisions taken to DoR-green (confirm/revise at build):**
+1. **Session TTLs (proposed):** idle **30 min**, absolute **8 h** for admin sessions — final values
+   are BC10 policy, tunable without schema change.
+2. **Lazy expire-on-`resolve`** — no scheduler in M3b; a sweep/cleanup job is deferred to M5/ops
+   (a stale `active` row is harmless because every resolve re-checks both expiries).
+3. **Freshness window = B4 §6.4 defaults** — 5 min sensitive / 30 min normal; `isMfaFresh` takes the
+   action's `ActionSensitivity` so callers pick the band. Compares server-side `consumed_at` only —
+   no client timestamp ever feeds the window.
+4. **HTTP cookie/session filter deferred** to the first authenticated endpoint (Walking Skeleton);
+   M3b ships the session *service*. (Resolves DL-BE-016 watch-for #3 — the `SecurityFilterChain` —
+   when the endpoint exists.)
+5. **Claims content:** M3b owns the per-kind serialisation mechanism + typed accessor; **admin
+   `{roles}` is populated by M4** (M3b only supplies the role values' container).
+6. **Idle-roll not audited** — establish/revoke/expire are audited; the per-request idle roll is not
+   (noise); `last_seen_at` is the durable record.
+**Carried-forward from DL-BE-016 to address here:** thread one `correlation_id` (+ `session_id`) per
+request via a shared audit-envelope factory (DL-BE-016 watch-for #2); stand up the `SecurityFilterChain`
+with the cookie filter (watch-for #3).
+**Watch for (at build):** concurrent idle-roll vs revoke races (guarded/conditional update or the
+`aggregate_version` pattern); absolute-ceiling re-auth UX (`session_expired` to the frontend).
