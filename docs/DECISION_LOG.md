@@ -893,11 +893,19 @@ Validated: 116 tests green.
 
 ---
 
-## DL-BE-025 — M5b Banking/Escrow ACL (BC18) *(RESERVED — planned, not yet built)*
-**Date:** 2026-06-21 (reserved at draft)
-**Status:** Reserved. Spec drafted (`docs/modules/M5b-banking-escrow-acl.md`, Status: Draft).
-Placeholder so the number is claimed and the planned decisions are on the record; **fill in the
-as-built `What` / `Why` / `/code-review` follow-ups at M5b DoD.**
+## DL-BE-025 — M5b Banking/Escrow ACL (BC18)
+**Date:** 2026-06-21
+**What:** Second M5 slice (spec `docs/modules/M5b-banking-escrow-acl.md`) — the BC18 escrow ACL,
+reusing [[DL-BE-024]]'s shape (fixed `EscrowAclService` + swappable `EscrowVendorClient`).
+`EscrowPort` (createVa, payout single + multi-leg, refund, `processInflowWebhook`) keyed by
+`client_instruction_id` (= `vendor_instruction_id` PK). Outbound idempotency + inbound inflow dedup
+both use `INSERT … ON CONFLICT DO NOTHING` (atomic). `StubEscrowVendorClient` gives a deterministic
+IFSC/account + fake UTR. Inflows recorded provisional in `gate_inflow_observation` (amount > 0, deduped
+on `vendor_event_id` AND `utr` → `Webhook.DuplicateDropped`). Vendor-assigned values (IFSC/UTR) flow to
+BC4 via the webhook envelopes (no dedicated columns), so an idempotent retry re-reads them from the
+audit stream. Built **test-first** (6 `BankingAclTest`, red → green). **No new migration** (both
+`gate_*` tables + enums exist V4). 122 green.
+**Why (key decisions, as built):**
 **Planned scope (M5 slice 2/4 — heaviest):** the BC18 escrow ACL, reusing [[DL-BE-024]]'s shape (fixed
 service + swappable vendor client). `EscrowPort` (createVa / payout single+multi-leg / refund / closeVa)
 keyed by `client_instruction_id` (= `vendor_instruction_id` PK, the idempotency key, VI.1); inbound
@@ -920,7 +928,20 @@ migration** (both `gate_*` tables + enums exist V4).
 5. **Webhook ingress deferred to the real adapter** — `processXWebhook` is the entry; HMAC + 5-min
    replay (A2 §1.2) + dead-letter + the `/webhooks/banking/...` routes are the real adapter's. Stub
    stamps `hmac_verified_at` at the in-process webhook (VI.2).
-**Watch for (at build):** the failed-instruction path (like M5a, latent under the stub); the
-real-adapter webhook stack + TDS + BC16 archival; and — M5b being the **second** ACL consumer — the
-shared-ACL-base extraction (idempotent-instruction + `vendor_event_id` dedup + JSON/Instant helpers) is
-now in scope to consider after M5b lands.
+**`/code-review` follow-ups applied (high effort):**
+(a) **Atomic idempotency claim** — replaced the outbound `exists()`-then-insert (a TOCTOU where a
+concurrent same-`client_instruction_id` caller's loser hit the PK and got an exception) with `INSERT …
+ON CONFLICT (vendor_instruction_id) DO NOTHING`; rowcount 0 ⇒ re-read the original outcome. Now matches
+the inflow path and honours the VI.1 no-op contract under concurrency.
+(b) **Multi-leg retry order** — `envelopeFields` now re-reads per-leg UTRs ordered by the explicit
+`leg_index`, not `recorded_at` (same-microsecond legs could permute → UTR↔beneficiary misattribution on
+a money distribution). Regression test added.
+(c) **DuplicateDropped traceability** — a dropped duplicate inflow's envelope is filed under the
+**original** inflow's id (looked up by the colliding `vendor_event_id`/`utr`), so the drop and the
+original correlate by `aggregate_id`.
+**Watch for (carry forward):** the failed-instruction path (like M5a, latent under the stub); the
+real-adapter webhook stack (HMAC, 5-min replay, dead-letter, `/webhooks/banking/...`) + TDS + BC16
+archival; **reconciliation/remediation are BC4/M13** (provisional inflows are meaningless until then).
+M5b is the **second** ACL consumer — the shared-ACL-base extraction (idempotent-instruction +
+`vendor_event_id` dedup + JSON/Instant helpers) is now worth doing before/with M5c.
+Validated: 122 tests green.

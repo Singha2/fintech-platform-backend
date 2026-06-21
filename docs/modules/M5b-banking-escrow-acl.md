@@ -9,7 +9,7 @@
 | **Module** | M5 — Integration ACLs, stubbed (BC15/17/18/19) |
 | **Slice** | M5b — Banking/Escrow ACL (BC18): real `EscrowPort`, fake deterministic in-process adapter |
 | **Tier** | Foundation (low rigor — stub; idempotency/dedup invariants matter) |
-| **Status** | Draft |
+| **Status** | Done (impl test-first + tests green; `/code-review` findings fixed; DL-BE-025) |
 | **Owner** | Amit + Claude |
 | **Created** | 2026-06-21 |
 
@@ -114,11 +114,13 @@ reconciliation / the real adapter._
 - [ ] Zero-amount inflow → rejected by the `positive_money_paise` domain (INV-4).
 
 ## 8. Definition of Done (foundation, low rigor)
-- [ ] §7 tests green (idempotency + webhook dedup are the headline).
-- [ ] `/code-review` on the diff; findings fixed.
-- [ ] `DL-BE-025` entry (the escrow stub pattern, client_instruction_id + vendor_event_id idempotency,
+- [x] §7 tests green — `BankingAclTest` (6, written test-first: red → green); 122 total green.
+- [x] `/code-review` on the diff; findings fixed (atomic `ON CONFLICT` idempotency claim — no
+      exists()-TOCTOU; multi-leg retry re-reads UTRs in `leg_index` order — no misattribution;
+      DuplicateDropped filed under the original inflow id).
+- [x] `DL-BE-025` entry (the escrow stub pattern, client_instruction_id + vendor_event_id idempotency,
       provisional inflows, the BC4-reconciliation / TDS / remediation / HMAC-ingress deferrals).
-- [ ] Status flipped to **Done**.
+- [x] Status flipped to **Done**.
 
 ## 9. Self-review resolutions (DoR-green)
 1. **Slicing — RESOLVED: one slice, with a split option.** M5b is the heaviest M5 slice; if it balloons,
