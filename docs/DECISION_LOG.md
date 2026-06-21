@@ -1067,3 +1067,34 @@ lifecycle, and split the port from the wire:
 provider receipts, and outage-banner notifications. Event-bus subscriptions + `causation_event_id` linkage
 land at the Walking Skeleton. The real channel resolves email/phone from Identity at send — never persist
 it (ND.2). Add a `(recipient, type, reference)` dedup key if duplicate notifications become a problem.
+
+---
+
+## DL-BE-029 — Walking Skeleton: one invoice `listed → disbursed` *(RESERVED — planned, not yet built)*
+**Date:** 2026-06-22 (reserved at draft)
+**Status:** Reserved. Spec drafted (`docs/modules/WS-walking-skeleton.md`, Status: Draft).
+Umbrella number for Milestone 1; **fill in the as-built strategy + cross-cutting proofs at the WS DoD.**
+Each sub-slice's non-obvious decisions claim their own subsequent `DL-BE-030+` numbers as built.
+**Planned scope (Milestone 1 — completes the first end-to-end money-flow):** the thin vertical cut that
+takes ONE invoice through BC1/2/3/4/5 + BC7/8/9 + BC11(auto-approve stub), on top of the finished
+foundation (M0–M5). **No new migration** — the money-flow schema is V1–V5; pure application wiring. The
+slice walks the B2 §4.1 Trace A spine `Listing.GoneLive → Disbursed` under one `correlation_id` and proves
+the five hardest invariants early: **maker-checker** (go-live + payout, proposer ≠ approver),
+**MFA-freshness** (the two checker steps), **funding equality G10** (`Σ confirmed = committed_total =
+observed_inflow_total = funding_target`, paise-exact), **idempotency** (`command_id` / vendor keys), and
+**audit chaining** (unbroken `previous_envelope_hash` end-to-end).
+**Minimal config (decisions to confirm at build):** one of each counterparty; one invoice **< ₹1 Cr** to
+keep four-eyes (C6) out; a **single subscriber funding 100%** so `assignment_set.total_count = 1`
+(collapses BC5 to one leg, dodges the G13 24 h time-box); compliance **auto-approved** behind the same
+`RecordKycApproved` command the real BC11 engine will call at M15; all vendors are the M5 in-process stubs.
+**Sub-slices (build order):** WS-1 supplier active · WS-2 buyer + ack user · WS-3 investor active ·
+WS-4 listing priced+gone-live (snapshot + maker-checker+MFA #1 + VA) · WS-5 subscribe-to-100% (G10,
+coordinated commit) · WS-6 assignment single-leg signed (`all_signed` gate, C27) · WS-7 disbursement
+(maker-checker+MFA #2). Capstone = `WalkingSkeletonE2ETest`. (WS-8 maturity→distribution→closed deferred.)
+**Watch for (at build):** `funding_target` **paise rounding** (pin the rule — a drift breaks G10's strict
+equality); the **coordinated commit** must make over-subscription impossible by construction, not
+check-then-act; M4d's maker-checker engine is admin-IAM-shaped — WS-4/WS-7 are the first *domain*
+propose→approve uses, so a decision-logged extraction may precede WS-4 (mirror the `AbstractAclService`
+move); thread one `correlation_id` from WS-1 so the E2E chain assert holds; use **DB-enum-true** state
+names (`operational_checks_in_progress`, `awaiting_acknowledgment`; the disbursement gate is the
+`deal_listing.all_signed` boolean, **not** a separate state).
