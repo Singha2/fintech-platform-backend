@@ -19,5 +19,5 @@ import org.springframework.test.context.TestPropertySource;
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
 @TestPropertySource(properties = "spring.flyway.enabled=true")
-abstract class AbstractIntegrationTest {
+public abstract class AbstractIntegrationTest {
 }

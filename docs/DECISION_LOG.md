@@ -343,3 +343,47 @@ accessors `paise()`/`value()`); (7) tests extended for the Bps bounds, `minus()`
 the non-negative guard, and the malicious-request-id discard. **Deferred (not a bug yet):** MDC
 correlation id is not re-established across async dispatch — revisit when the first async endpoint
 lands. Validated: 43 tests green.
+
+---
+
+## DL-BE-013 — M1b kernel: UUIDv7 IDs + `aggregate_version` optimistic-locking base; idempotency deferred
+**Date:** 2026-06-21
+**What:** Second shared-kernel slice (M1b, light tier — spec `docs/modules/M1b-ids-and-versioning.md`).
+Added: (1) `shared.Ids.newId()` — **UUIDv7** via `com.fasterxml.uuid:java-uuid-generator`
+(`Generators.timeBasedEpochGenerator()`, singleton) for `event_id`/`command_id`/`correlation_id`/
+`causation_id` (B2 §2.1); (2) `shared.VersionedAggregate` — `@MappedSuperclass` mapping the schema's
+`aggregate_version INT` to JPA `@Version` optimistic locking (P5), proven against the **real schema**
+by a minimal test entity on `risk_pricing_policy` (two stale writers → `OptimisticLockingFailureException`,
+version 1→2). Test-infra: `AbstractIntegrationTest` made **public** (base for tests in other packages);
+`PlatformBackendApplicationTests` folded onto it because this is the project's **first `@Entity`**, so
+`ddl-auto=validate` now runs in every context and the boot smoke test legitimately needs a migrated DB.
+**Idempotency store deliberately DEFERRED** out of M1b (option 1) — see Watch-for.
+**Why:** `Ids` is programmatic because `command_id`/`event_id` are minted in app code; Hibernate's
+`@UuidGenerator` only covers entity-id assignment (so it can't serve app-side minting). UUIDv7 gives the
+audit/event chain a time-ordered tie-breaker. `VersionedAggregate` makes the optimistic-lock pattern
+inherited, not re-declared per entity. The test entity maps only `@Id` + `buyer_id` + `@Version` and
+seeds rows via SQL, so `validate` only sees UUID/INT columns (no Postgres enum / `bps_type` mapping
+needed). **Idempotency has no consumer until the first state-changing command**, and its dedup/
+transaction boundary is far safer designed against a real handler; the contract is already fixed by
+`sys_command_log` ([[DL-BE-003]]) so deferring carries zero schema risk.
+**`/code-review` follow-ups applied (high effort):** (a) `AggregateVersionLockingTest` is non-transactional
+(needs separate txs to model two writers), so added `@AfterEach` to DELETE its seeded row — the shared
+cached container/context convention depends on tests not leaking rows; (b) strengthened the lock test to
+assert A's value survived and version advanced exactly once (so a non-lock failure can't masquerade as a
+pass); (c) corrected `IdsTest` — JUG's v7 generator **is** monotonic within a millisecond (RFC 9562 §6.2),
+so the test now asserts strict ordering on back-to-back calls with no sleep, instead of the weaker cross-ms
+case; (d) hoisted the lib version to a `<java-uuid-generator.version>` property (not in the Spring Boot BOM).
+**Watch for — DEFERRED / ACCEPTED (decisions on the record):**
+1. **`@Version` on a primitive `int` seeds JPA-managed INSERTs to 0**, overriding the column `DEFAULT 1`
+   and diverging from B2 "first version = 1". **Accepted for now**: no aggregate *table* carries a
+   `CHECK(aggregate_version >= 1)` (only `sys_audit_event` does — and that is append-only, **app-stamped**
+   per [[DL-BE-003]], NOT a JPA-`@Version` aggregate), so a JPA aggregate starting at 0 is harmless.
+   **Distinct concepts:** the optimistic-lock column (JPA-owned) vs the audit-envelope `aggregate_version`
+   (app-stamped event sequence) — do not conflate. Revisit (boxed `Integer` seeded to 1, or explicit
+   stamping) if the first real aggregate genuinely needs first=1.
+2. **`command_id` idempotency store deferred — STILL MANDATORY (non-negotiable #4, G18).** Guardrail:
+   **no money-moving command may ship without it.** Lands with the first state-changing command module.
+3. **Test-only `PricingPolicyRow` lives under the base package**, so it's scanned into every context's
+   persistence unit. Accepted: real aggregates (M6+) will populate the PU regardless, and `validate` runs
+   once on the cached context; confine via a dedicated `@EntityScan` only if it becomes noisy.
+Validated: 47 tests green.

@@ -17,6 +17,7 @@
 
 	<properties>
 		<java.version>21</java.version>
+		<java-uuid-generator.version>5.1.0</java-uuid-generator.version>
 	</properties>
 
 	<dependencies>
@@ -64,6 +65,13 @@
 			<groupId>org.projectlombok</groupId>
 			<artifactId>lombok</artifactId>
 			<optional>true</optional>
+		</dependency>
+
+		<!-- UUIDv7 (time-ordered ids) — JDK has no built-in v7 (M1b, DL-BE-013) -->
+		<dependency>
+			<groupId>com.fasterxml.uuid</groupId>
+			<artifactId>java-uuid-generator</artifactId>
+			<version>${java-uuid-generator.version}</version>
 		</dependency>
 
 		<!-- Test -->

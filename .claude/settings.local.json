@@ -25,7 +25,13 @@
       "Bash(./mvnw -q test -Dtest='MoneyTest,BpsTest,GlobalExceptionHandlerTest')",
       "Bash(./mvnw test *)",
       "Skill(code-review)",
-      "Bash(grep -iE \"Tests run: [0-9]+, Fail.*Skipped: 0$|BUILD SUCCESS|BUILD FAILURE\")"
+      "Bash(grep -iE \"Tests run: [0-9]+, Fail.*Skipped: 0$|BUILD SUCCESS|BUILD FAILURE\")",
+      "Bash(git mv *)",
+      "Bash(awk \"/CREATE TABLE risk_pricing_policy \\\\\\(/{f=1} f{print} /^\\\\\\);/{if\\(f\\){f=0}}\" src/main/resources/db/migration/V1__core.sql)",
+      "Bash(echo \"exit=$?\")",
+      "Bash(grep -iE \"Tests run: [0-9]+, Failures.*Skipped: 0$|BUILD SUCCESS|BUILD FAILURE\")",
+      "Bash(./mvnw -q dependency:tree)",
+      "Bash(./mvnw -q help:evaluate -Dexpression=project.dependencyManagement)"
     ]
   }
 }
