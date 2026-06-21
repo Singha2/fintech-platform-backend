@@ -834,11 +834,18 @@ Validated: 110 tests green.
 
 ---
 
-## DL-BE-024 — M5a Verification ACL (BC17) *(RESERVED — planned, not yet built)*
-**Date:** 2026-06-21 (reserved at draft)
-**Status:** Reserved. Spec drafted (`docs/modules/M5a-verification-acl.md`, Status: Draft).
-Placeholder so the number is claimed and the planned decisions are on the record; **fill in the
-as-built `What` / `Why` / `/code-review` follow-ups at M5a DoD.**
+## DL-BE-024 — M5a Verification ACL (BC17)
+**Date:** 2026-06-21
+**What:** First M5 slice (spec `docs/modules/M5a-verification-acl.md`) — the BC17 Verification ACL.
+A `VerificationPort` (universal `verify(VerificationRequest)` over all 11 `VerificationApi` values +
+typed sugar for 4 common ops) implemented by the **fixed** `VerificationService` (cache,
+`gate_verification` persistence, audit, ACL idempotency), which calls the **swappable**
+`VerificationVendorClient` — `StubVerificationVendorClient` (deterministic auto-pass) now, real
+aggregator later. A non-stale completed TTL'd result for `(subject, api)` is cache-reused; one-shot
+APIs (null TTL) are never reused. `Verification.Requested`/`.Completed` audited via `AuditLog`. Built
+**test-first** (6 `VerificationAclTest`, red → green). **No new migration** (`gate_verification` exists
+V4; the migrated column is `hmac_verified_at`). 116 green.
+**Why (key decisions, as built):**
 **M5 slicing (flagged for the architect):** M5 bundles four integration ACLs; they're independent
 integrations, so M5 is sliced **by bounded context** — **M5a Verification (BC17)** (this) → **M5b
 Banking/Escrow (BC18)** → **M5c Signing (BC19)** → **M5d Notifications-full (BC15)** (M3a already
@@ -862,6 +869,24 @@ envelopes. **No new migration** (`gate_verification` + enums exist V4).
    (`client_request_id` = `verification_id`) + the `(subject, api)` cache, **not** the M4a `command_id`
    store. Audited via `AuditLog` directly.
 5. **AML/PEP adjudication → BC11/M15**; BC17 makes the `screen_aml_pep` call only.
-**Watch for (at build):** the real-adapter swap brings the full webhook stack + BC16 payload archival +
-manual-fallback (G8) + the TTL-sweep scheduler + the outage banner; if M5b/M5c repeat the pattern,
-extract a small shared ACL base (but not before the second consumer exists).
+**As-built refinements:** (a) the swappable seam is `VerificationVendorClient`, **not** the port —
+`VerificationService` (fixed: cache/persistence/audit) implements `VerificationPort` and delegates the
+raw call to the client; only the client is swapped. Cleaner than the draft's "adapter implements port"
+and the correct ACL shape. (b) The migrated column is **`hmac_verified_at`** (V4 renamed
+`signature_verified_at`) — the stub stamps it at completion. (c) Typed convenience covers 4 ops;
+`verify(VerificationRequest)` supports all 11.
+**`/code-review` follow-up applied:** the stub's raw payload now folds in `inputs`, so a one-shot
+verification's `vendor_payload_hash` actually varies with the request (not just the api/subject) —
+regression test added.
+**Watch for (carry forward):** **(real-adapter, latent under the stub)** — the failed path
+(`requested→failed` + `Verification.Failed` envelope + `failure_class`) has **no code yet**: the
+stub never fails, so a vendor error would currently roll back the `requested` row + its envelope with
+no record. Build the failed-path (likely a separate transaction so the failure persists) when the real
+adapter lands. **Concurrent `verify()`** for one `(subject, api)` both miss the cache and insert two
+completed rows (a real adapter = a duplicate paid vendor call); a partial unique index on
+`(subject_id, api_name) WHERE status='completed'` would close it (needs a migration) — acceptable for a
+stub. Plus the previously-noted: the real-adapter webhook stack (HMAC, 5-min replay, `vendor_event_id`
+dedup, `/webhooks/...` routes) + BC16 payload archival + manual-fallback (G8) + the TTL-sweep scheduler
++ the outage banner; and the JSON/Instant helpers are the first candidates for a shared ACL base once
+M5b/M5c land (not before).
+Validated: 116 tests green.

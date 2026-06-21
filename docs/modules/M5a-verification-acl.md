@@ -9,7 +9,7 @@
 | **Module** | M5 — Integration ACLs, stubbed (BC15/17/18/19) |
 | **Slice** | M5a — Verification ACL (BC17): real `VerificationPort`, fake auto-pass in-process adapter |
 | **Tier** | Foundation (low rigor — stub; the port contract is what matters) |
-| **Status** | Draft |
+| **Status** | Done (impl test-first + tests green; `/code-review` findings fixed; DL-BE-024) |
 | **Owner** | Amit + Claude |
 | **Created** | 2026-06-21 |
 
@@ -118,11 +118,19 @@ in-process event bus is a Walking-Skeleton concern. _AggregatorOutage.Declared /
       port (INV-4, INV-5).
 
 ## 8. Definition of Done (foundation, low rigor)
-- [ ] §7 tests green (the cache/TTL idempotency is the headline).
-- [ ] `/code-review` on the diff; findings fixed.
-- [ ] `DL-BE-024` entry (the ACL-port + deterministic-stub pattern, cache-by-(subject,api), TTL matrix,
-      stub-completes-in-process vs deferred HMAC webhook ingress, the by-BC M5 slicing).
-- [ ] Status flipped to **Done**.
+- [x] §7 tests green — `VerificationAclTest` (6, written test-first: red → green); 116 total green.
+- [x] `/code-review` on the diff; findings fixed (stub payload now folds in `inputs` so one-shot
+      hashes vary with the request; the failed-path / concurrency notes recorded as real-adapter watch-fors).
+- [x] `DL-BE-024` entry (the ACL-port + deterministic-stub pattern, the fixed-Service/swappable-VendorClient
+      split, cache-by-(subject,api), TTL matrix, stub-in-process vs deferred HMAC ingress, by-BC slicing).
+- [x] Status flipped to **Done**.
+
+> **As-built refinement:** the cache/persistence/audit logic is the **fixed** `VerificationService`
+> (implements `VerificationPort`); the swappable seam is a separate `VerificationVendorClient`
+> (`StubVerificationVendorClient` now, real adapter later) — cleaner than the draft's "adapter implements
+> port", and the correct ACL shape (swap only the vendor client). The migrated column is
+> `hmac_verified_at` (V4 renamed `signature_verified_at`). Typed convenience covers 4 common ops;
+> `verify(VerificationRequest)` supports all 11 (the rest add as consumers land).
 
 ## 9. Self-review resolutions (DoR-green)
 1. **Slicing — RESOLVED: M5 by bounded context** (M5a Verification → M5b Banking → M5c Signing → M5d
