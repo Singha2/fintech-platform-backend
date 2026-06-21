@@ -1011,3 +1011,24 @@ under concurrency `completeSignature` could make a double *vendor* call before t
 (no double-audit/state; benign for the deterministic stub, a real-adapter dedup concern); the
 real-adapter webhook stack + the two signing paths + outage degradation + BC16 signed-doc archival.
 Validated: 128 tests green.
+
+---
+
+## DL-BE-028 — M5d Notifications-full (BC15) *(RESERVED — planned, not yet built)*
+**Date:** 2026-06-22 (reserved at draft)
+**Status:** Reserved. Spec drafted (`docs/modules/M5d-notifications.md`, Status: Draft).
+Placeholder so the number is claimed; **fill in the as-built `What`/`Why`/`/code-review` at M5d DoD.**
+**Planned scope (M5 slice 4/4 — completes Wave 0):** the BC15 `sys_notification_dispatch` lifecycle,
+completing M3a's thin slice. `NotificationService` (extends `AbstractAclService`) becomes the sole
+`NotificationPort` impl; `StubNotifier` is recast as the swappable `NotificationChannel` (keeps its
+`lastCodeFor` test hooks). Lifecycle `queued → sent (provider_ref) | failed`; fire-and-forget (ND.1);
+**no OTP/PII in the persisted payload** (ND.2 — a sensitive-key denylist filters params; the channel
+still gets the full params to deliver). Audit `Notification.Dispatched`/`.DispatchFailed`. M3a's
+`AuthService` (injects `NotificationPort`) is **unchanged**. **No new migration** (table + enums V4).
+**Decisions to confirm at build:** Port-impl/channel recast (one `NotificationPort` bean =
+`NotificationService`; `StubNotifier` → `NotificationChannel`); fire-and-forget via `afterCommit` +
+no-rethrow-on-failure; sensitive-key denylist; no dedup key (fire-and-forget permits duplicates);
+`causation_event_id` null until the event bus wires subscriptions.
+**Watch for (at build):** the **~50-test OTP regression risk** — the admin-IAM/auth suite delivers OTPs
+through `StubNotifier.lastCodeFor`, so the recast must keep that chain intact; real provider + templates
++ retries + delivered-receipts + outage banners are the real-adapter's.
