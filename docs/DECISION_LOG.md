@@ -767,3 +767,37 @@ disabled admin can neither authenticate, resolve a live session, nor be authoriz
 **Watch for:** revoking an admin's *last MFA factor* still doesn't downgrade status (separate, noted in
 DL-BE-019); a future generic "deactivate principal" path should reuse this cascade.
 Validated: 96 tests green.
+
+---
+
+## DL-BE-023 — M4d maker-checker engine *(RESERVED — planned, not yet built)*
+**Date:** 2026-06-21 (reserved at draft)
+**Status:** Reserved. Spec drafted (`docs/modules/M4d-maker-checker.md`, Status: Draft).
+Placeholder so the number is claimed and the planned decisions are on the record; **fill in the
+as-built `What` / `Why` / `/code-review` follow-ups at M4d DoD.**
+**Planned scope (M4 slice 4/4 — last foundation control):** the record-level maker≠checker primitive
+(C4, X11, DL-033) — a `MakerCheckerGate` the checker command invokes: read the most-recent maker
+(proposal) envelope on the originating aggregate, compare `actor.actor_id` to the checker's. Equal →
+`MakerChecker.Blocked` + 409 `maker_checker_violation`; distinct → `MakerChecker.Approved` + the
+transition, atomically. Plus the queue projection (proposals awaiting a different checker). Builds
+**non-negotiable #1**. Proven on one representative BC10 four-eyes flow (maker-checker'd admin disable:
+propose → approve). Real consumers (M9 go-live, M13 disbursement, M15 KYC) plug in later. **No new
+migration** — maker-checker state IS the envelope stream (`sys_audit_event`); the queue is a projection.
+**Decisions taken to DoR-green (confirm/revise at build):**
+1. **Blocked is a committed, audited outcome — the key departure from M4a.** A blocked checker command
+   does NOT throw-and-roll-back (that's the pre-authorisation reject model); the gate appends
+   `MakerChecker.Blocked` and the command commits, returning a `Blocked` `CommandResult` the caller maps
+   to 409 (B4 §4.2: `maker_checker_violation` *emits* an envelope, unlike role/version rejects).
+2. **Approve = `MakerChecker.Approved` side-envelope + the transition as the gateway `CommandEvent`**
+   (same two-envelope pattern as M4c soft-deviation), both in one transaction (X13).
+3. **Check on `actor_id`, not role/session** (C4/C18) — two roles held by one human still can't be both
+   maker and checker.
+4. **Proving flow = maker-checker'd admin disable**; whether to retrofit other sensitive BC10 commands
+   (provision, role-assign) to four-eyes is a product/compliance decision — NOT assumed in M4d; the
+   direct M4b disable remains until then (control-coverage gap, pre-production only).
+5. **Maker-checker state read from `sys_audit_event`** (latest proposal envelope = the maker; unanswered
+   = no later Approved/Blocked); the queue is a projection over it.
+6. **G29 scope:** the check is on the initiating aggregate only; dependents inherit via `causation_id`.
+**Watch for (at build):** audit-log-as-read-model can get query-heavy → a projection table is the later
+optimisation (audit log stays canonical); concurrent checkers on one proposal (idempotency + optimistic
+lock should serialise); `maker_aggregate_state_invalid` full state-machine check arrives with M9+.
