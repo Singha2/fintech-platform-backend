@@ -1,6 +1,7 @@
 package com.arthvritt.platform.adminiam;
 
 import com.arthvritt.platform.command.ActorAuthorization;
+import com.arthvritt.platform.shared.error.ValidationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
@@ -35,5 +36,19 @@ public class RoleResolver implements ActorAuthorization {
                         + "JOIN admin_user au ON au.admin_user_id = ra.admin_user_id "
                         + "WHERE au.identity_id = ? AND ra.status = 'active' AND au.status = 'active'",
                 String.class, actorIdentityId));
+    }
+
+    /**
+     * Resolves the {@code admin_user_id} backing an auth identity — the single home for the
+     * "who is this acting admin" lookup the admin-IAM command handlers need (for {@code assigned_by},
+     * {@code disabled_by}, {@code published_by}, …). Throws if the identity is not an admin.
+     */
+    public UUID adminUserId(UUID identityId) {
+        UUID id = jdbc.query("SELECT admin_user_id FROM admin_user WHERE identity_id = ?",
+                rs -> rs.next() ? rs.getObject(1, UUID.class) : null, identityId);
+        if (id == null) {
+            throw new ValidationException("acting identity is not an admin user: " + identityId);
+        }
+        return id;
     }
 }

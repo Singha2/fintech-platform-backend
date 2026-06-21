@@ -692,11 +692,16 @@ Validated: 95 tests green.
 
 ---
 
-## DL-BE-021 — M4c SoD enforcement & deviation register *(RESERVED — planned, not yet built)*
-**Date:** 2026-06-21 (reserved at draft)
-**Status:** Reserved. Spec drafted (`docs/modules/M4c-sod-enforcement.md`, Status: Draft).
-Placeholder so the number is claimed and the planned decisions are on the record; **fill in the
-as-built `What` / `Why` / `/code-review` follow-ups at M4c DoD.**
+## DL-BE-021 — M4c SoD enforcement & deviation register
+**Date:** 2026-06-21
+**What:** M4 slice 3 (spec `docs/modules/M4c-sod-enforcement.md`). `SodPolicyService` (rules-as-data
+strict/soft evaluator reading the active `admin_sod_policy`; `seedDefaultPolicy`, `publishSodPolicy`
+supersession, `reviewDeviation`, `logDeviation`) + SoD integration into `RbacService.assignRole`:
+strict pair → `sod_role_block` (403, no envelope); soft pair → requires `override_reason`, writes one
+`admin_deviation_log` entry, links it, emits `SodSoftDeviation.Logged`. Builds non-negotiable #3 and
+**lifts the M4b role-assign guardrail**. `super_admin`-gated commands via the M4a gateway. **No new
+migration.** 7 new tests; 103 green.
+**Why (key decisions, as built):**
 **M4 re-slice (flagged for the architect):** the original plan grouped M4c = "SoD + maker-checker."
 Built M4a/M4b show these are independently large, unrelated mechanisms, so **M4c = SoD enforcement +
 deviation register** and **maker-checker (#1) → M4d**. Recorded so the split is on the record; trivial
@@ -718,8 +723,29 @@ commands route through the M4a gateway (#2/#4/#5 + super_admin authz). **No new 
 3. **Maker-checker (#1) → M4d**, with the Walking-Skeleton guardrail (go-live/disbursement need it).
 4. **RA.4 (auditor ⊕ operational role) deferred to M17** (no `audit_account` to cross-check yet).
 5. **Quarterly-review scheduler → M5/ops**; M4c ships only the `reviewDeviation` command.
-**Watch for (at build):** strict-SoD concurrency (FOR UPDATE now; consider a DB exclusion later);
-policy supersession must not orphan in-flight deviations.
+**`/code-review` follow-ups applied (high effort):**
+(a) **`publishSodPolicy` validates every pair** — exactly two distinct, known `AdminRole` wires. A
+malformed pair (wrong arity, typo, same-role) would never match a real `Set.of(a,b)` at evaluate time
+and would *silently disable* the strict block — the highest-severity finding. (Regression test added.)
+(b) **Fail closed on a missing policy** — `evaluate` now refuses the assignment if no active policy is
+seeded (an explicitly-published *empty* policy still returns CLEAR); a regulated control must not
+default-open because the policy row is absent.
+(c) **No duplicate deviation on re-assign** — re-assigning an already-active soft-override role
+short-circuits (idempotent) instead of minting a second `admin_deviation_log` entry and orphaning the
+first.
+(d) **`reviewDeviation` validates the decision** (non-blank) before the UPDATE, so a null decision is a
+clean 400, not a raw `admin_deviation_log_review_chk` 500.
+(e) **Duplicate-key translation** — concurrent `publishSodPolicy` or a reused policy id surfaces as a
+clean `ValidationException` (retry), not a raw 500; the one-active uidx remains the integrity backstop.
+(f) **Consolidated `identity→admin_user_id`** — the thrice-duplicated lookup (AdminUserService /
+RbacService / SodPolicyService) moved to `RoleResolver.adminUserId`; `requireAdminExists` folded into
+the `FOR UPDATE` lock. Stale "maker-checker (M4c)" javadoc fixed to M4d.
+**Watch for (carry forward):** strict-SoD concurrency uses a parent-row `FOR UPDATE` lock; a DB
+exclusion constraint would make the DB the last line of defence (evaluate in M4d/hardening). Policy
+supersession must not orphan in-flight deviations. `enforcement_tier` is descriptive-only in Phase 1
+(the evaluator reads only the pair-sets). **Test-helper duplication** (SodEnforcementTest ↔
+AdminIamTest) — a shared `AbstractAdminIamTest` base is now warranted; deferred as test-only cleanup.
+Validated: 103 tests green.
 
 ---
 

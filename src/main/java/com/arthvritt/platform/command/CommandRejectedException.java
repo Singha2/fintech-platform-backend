@@ -8,7 +8,7 @@ import org.springframework.http.HttpStatus;
  * envelope. The {@code errorCode} is the B4 §4.2 machine reason; the HTTP status is the one B4 maps it
  * to. These rejects emit <b>no</b> audit envelope and, because they propagate out of the gateway's
  * transaction, roll back any idempotency claim (INV-3/INV-4/INV-6). The 422 invariant /
- * maker-checker (M4c) reject paths, which <i>do</i> emit a {@code CommandRejected} envelope, are
+ * maker-checker (M4d) reject paths, which <i>do</i> emit a {@code CommandRejected} envelope, are
  * modelled separately.
  */
 public class CommandRejectedException extends PlatformException {
@@ -48,6 +48,12 @@ public class CommandRejectedException extends PlatformException {
     public static CommandRejectedException roleNotHeld() {
         return new CommandRejectedException("role_not_held",
                 "actor does not hold a role authorised for this command", HttpStatus.FORBIDDEN);
+    }
+
+    /** The assignment forms a strict SoD pair the policy system-blocks (C5). 403, no envelope (G22). */
+    public static CommandRejectedException sodRoleBlock(String role, String conflictsWith) {
+        return new CommandRejectedException("sod_role_block",
+                "role " + role + " is strictly segregated from " + conflictsWith, HttpStatus.FORBIDDEN);
     }
 
     /** A concurrent first execution of this {@code command_id} is still in flight. 409, retryable. */

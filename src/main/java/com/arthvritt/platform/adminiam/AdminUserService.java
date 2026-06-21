@@ -32,11 +32,13 @@ public class AdminUserService {
     private final JdbcTemplate jdbc;
     private final CommandGateway gateway;
     private final SessionService sessions;
+    private final RoleResolver roles;
 
-    public AdminUserService(JdbcTemplate jdbc, CommandGateway gateway, SessionService sessions) {
+    public AdminUserService(JdbcTemplate jdbc, CommandGateway gateway, SessionService sessions, RoleResolver roles) {
         this.jdbc = jdbc;
         this.gateway = gateway;
         this.sessions = sessions;
+        this.roles = roles;
     }
 
     /** Provisions a new admin (its {@code auth_identity} + an {@code invited} {@code admin_user} row). */
@@ -111,7 +113,7 @@ public class AdminUserService {
         return gateway.execute(request, SUPER_ADMIN_ONLY, () -> {
             UUID targetId = request.aggregateId();
             AdminRow row = loadFor(targetId, "active");
-            UUID actorAdminId = actorAdminId(request.actorId());
+            UUID actorAdminId = roles.adminUserId(request.actorId());
             int updated = jdbc.update(
                     "UPDATE admin_user SET status = 'disabled', disabled_at = now(), disabled_by = ?, "
                             + "aggregate_version = aggregate_version + 1 "
@@ -189,15 +191,6 @@ public class AdminUserService {
         Integer current = jdbc.query("SELECT aggregate_version FROM admin_user WHERE admin_user_id = ?",
                 rs -> rs.next() ? rs.getInt(1) : null, adminUserId);
         return CommandRejectedException.versionConflict(expectedVersion, current == null ? -1 : current);
-    }
-
-    private UUID actorAdminId(UUID actorIdentityId) {
-        UUID id = jdbc.query("SELECT admin_user_id FROM admin_user WHERE identity_id = ?",
-                rs -> rs.next() ? rs.getObject(1, UUID.class) : null, actorIdentityId);
-        if (id == null) { // unreachable once authz requires a role (roles FK admin_user); kept defensive
-            throw new ValidationException("acting identity is not an admin user: " + actorIdentityId);
-        }
-        return id;
     }
 
     private record AdminRow(String status, int version, UUID identityId) {

@@ -9,7 +9,7 @@
 | **Module** | M4 — Admin IAM + Maker-Checker + SoD (BC10, BC16) |
 | **Slice** | M4c — SoD strict-block + soft-warn-with-deviation-log on role assignment (C5, DL-033) |
 | **Tier** | Foundation-critical (light ceremony · heavy SoD-invariant rigor) |
-| **Status** | Draft |
+| **Status** | Done (impl + tests green; `/code-review` findings fixed; DL-BE-021) |
 | **Owner** | Amit + Claude |
 | **Created** | 2026-06-21 |
 
@@ -113,11 +113,13 @@
 - [ ] Inherited: a non-`super_admin` actor's `assignRole` → `role_not_held` (M4b authz still fires first).
 
 ## 8. Definition of Done (foundation-critical)
-- [ ] §7 tests green (the strict block + soft-deviation logging are the headline invariants).
-- [ ] `/code-review` on the diff; findings fixed.
-- [ ] `DL-BE-021` entry (rules-as-data evaluator, strict-block app-only + its concurrency guard,
+- [x] §7 tests green — `SodEnforcementTest` (7); 103 total green.
+- [x] `/code-review` on the diff; findings fixed (publish pair-validation, fail-closed on missing
+      policy, review-decision validation, no duplicate deviation on re-assign, duplicate-key
+      translation, `identity→admin_user_id` consolidated into `RoleResolver`).
+- [x] `DL-BE-021` entry (rules-as-data evaluator, strict-block app-only + its concurrency guard,
       soft-override deviation flow, the maker-checker→M4d split, RA.4 deferral).
-- [ ] Status flipped to **Done**.
+- [x] Status flipped to **Done**.
 
 ## 9. Self-review resolutions (DoR-green)
 1. **Slicing — RESOLVED: M4c = SoD; maker-checker → M4d.** Each is independently large and unrelated;
