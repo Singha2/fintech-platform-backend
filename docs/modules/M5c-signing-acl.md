@@ -9,7 +9,7 @@
 | **Module** | M5 — Integration ACLs, stubbed (BC15/17/18/19) |
 | **Slice** | M5c — Signing ACL (BC19): real `SigningPort`, fake deterministic in-process adapter |
 | **Tier** | Foundation (low rigor — stub) |
-| **Status** | Draft |
+| **Status** | Done (impl test-first + tests green; `/code-review` findings fixed; DL-BE-027) |
 | **Owner** | Amit + Claude |
 | **Created** | 2026-06-22 |
 
@@ -97,11 +97,12 @@ _`SignatureFailed`, `StampIssued/Failed`, `WebhookSignature.Invalid` → with th
 - [ ] `doc_hash` is bytes/hash; no vendor type crosses the port (INV-3, INV-5).
 
 ## 8. Definition of Done (foundation, low rigor)
-- [ ] §7 tests green (idempotent session + cert-only-on-completed are the headline).
-- [ ] `/code-review` on the diff; findings fixed.
-- [ ] `DL-BE-027` entry (the signing stub pattern on `AbstractAclService`, idempotent (request,doc)
+- [x] §7 tests green — `SigningAclTest` (6, written test-first: red → green); 128 total green.
+- [x] `/code-review` on the diff; findings fixed (idempotency targets the `(request, doc)` UNIQUE so
+      there's no silent-null path; `vsr_id` reuse → clean reject; input guards; collision-free stub cert).
+- [x] `DL-BE-027` entry (the signing stub pattern on `AbstractAclService`, idempotent (request,doc)
       session, cert-on-completed, the e-Stamp / webhook-ingress / BC16 deferrals).
-- [ ] Status flipped to **Done**.
+- [x] Status flipped to **Done**.
 
 ## 9. Self-review resolutions (DoR-green)
 1. **Reuses the ACL base** — `SignatureAclService extends AbstractAclService` (audit + sha256 shared,

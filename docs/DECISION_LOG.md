@@ -968,11 +968,18 @@ Validated: 122 tests green.
 
 ---
 
-## DL-BE-027 — M5c Signing ACL (BC19) *(RESERVED — planned, not yet built)*
-**Date:** 2026-06-22 (reserved at draft)
-**Status:** Reserved. Spec drafted (`docs/modules/M5c-signing-acl.md`, Status: Draft).
-Placeholder so the number is claimed and the planned decisions are on the record; **fill in the
-as-built `What` / `Why` / `/code-review` follow-ups at M5c DoD.**
+## DL-BE-027 — M5c Signing ACL (BC19)
+**Date:** 2026-06-22
+**What:** Third M5 slice (spec `docs/modules/M5c-signing-acl.md`) — the BC19 e-Sign ACL, the first ACL
+built **on** [[DL-BE-026]]'s `AbstractAclService`. `SignatureAclService` (extends the base) +
+`SigningPort` (`initiateSignature` → `SignatureSession{vendorSessionUrl}`, `completeSignature` →
+`cert_serial`, `fetchSignature`) behind the swappable `StubSigningVendorClient` (deterministic session
+URL + auto-success fake cert). `gate_signature_session` lifecycle `session_initiated → completed`,
+idempotent on the `(signature_request_id, doc_hash)` UNIQUE; `cert_serial` set only on `completed`
+(DB CHECK). Produces the "signed via stub" the Walking Skeleton needs. Sole consumer BC5 (M12, not
+built). Built **test-first** (6 `SigningAclTest`, red → green). **No new migration**
+(`gate_signature_session` + enums exist V4). 128 green.
+**Why (key decisions, as built):**
 **Planned scope (M5 slice 3/4):** the BC19 e-Sign ACL, reusing the ACL shape on
 [[DL-BE-026]]'s `AbstractAclService`. `SigningPort` (`initiateSignature` → `SignatureSession{vendorSessionUrl}`,
 `completeSignature` → `cert_serial`, `fetchSignature`) with a deterministic `StubSigningVendorClient`
@@ -989,5 +996,18 @@ needs. **No new migration** (`gate_signature_session` + enums exist V4).
    own concern).
 4. **Not a gateway command** — BC5-triggered; idempotency is the ACL key, audited directly.
 5. **Aadhaar-OTP/DSC paths, UIDAI-outage degradation, retry/expiry (cap 3), BC16 archival** → the real adapter.
-**Watch for (at build):** the failed/expired path (latent under the always-succeeding stub); the
+**`/code-review` follow-ups applied (high effort):**
+(a) **Idempotency targets the `(signature_request_id, doc_hash)` UNIQUE** (`ON CONFLICT
+(signature_request_id, doc_hash)`), not an untargeted clause — so the only `claimed==0` path is the
+idempotent re-initiate, which always re-reads a present session (no silent-null → NPE). A `vsr_id` PK
+collision (the caller reusing a vsr id for a *different* signature) is now a clean `ValidationException`,
+not a 500 or a null. Regression test added.
+(b) **Input guards** — null/empty `docHash` or blank `signerRef` → `ValidationException` (consistent with
+the rest of the class, instead of a raw NOT-NULL 500).
+(c) **Collision-free stub cert** — uses the full `vsr_id` hex, not a 12-char prefix (UUIDv7's monotonic
+timestamp prefix made same-prefix collisions plausible).
+**Watch for (carry forward):** the failed/expired path (latent under the always-succeeding stub);
+under concurrency `completeSignature` could make a double *vendor* call before the guarded UPDATE
+(no double-audit/state; benign for the deterministic stub, a real-adapter dedup concern); the
 real-adapter webhook stack + the two signing paths + outage degradation + BC16 signed-doc archival.
+Validated: 128 tests green.
