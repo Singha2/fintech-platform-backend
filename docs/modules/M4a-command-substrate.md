@@ -9,7 +9,7 @@
 | **Module** | M4 — Admin IAM + Maker-Checker + SoD (BC10, BC16) |
 | **Slice** | M4a — the command-control substrate: idempotency (#4) + MFA-freshness enforcement (#2) + optimistic concurrency (P8) + the `command_id`-stamped audit envelope (#5) |
 | **Tier** | Foundation-critical (light ceremony · heavy control-invariant rigor) |
-| **Status** | Draft |
+| **Status** | Done (impl test-first + tests green; `/code-review` findings fixed; DL-BE-018) |
 | **Owner** | Amit + Claude |
 | **Created** | 2026-06-21 |
 
@@ -75,8 +75,9 @@
   `actor.mfa_assertion_id`; `sys_command_log.resulting_event_id` links it back. _(ref: non-negotiable
   #5, X13/G27)_
 - **INV-6 — Reject leaves no trace; replay short-circuits.** Idempotency replay returns the original
-  before any re-check; a first attempt gates MFA + version **before** claiming, so a rejected command
-  writes neither a log row nor an envelope nor a mutation. _(ref: ordering, B4 §7)_
+  before any re-check. MFA is gated **before** the claim; version/invariant rejections throw **inside**
+  the handler (after the claim) and the single transaction rolls the claim back — so either way a
+  rejected command writes no log row, no envelope, no mutation. _(ref: ordering, B4 §7)_
 
 ## 4. API / type surface
 - **Gateway:** `CommandGateway.execute(CommandRequest req, CommandHandler<R> handler) → CommandResult<R>`.
@@ -120,11 +121,13 @@
 - [ ] Audit: envelope `command_id` + `actor.mfa_assertion_id` populated; chain verifies (INV-5).
 
 ## 8. Definition of Done (foundation-critical)
-- [ ] §7 tests green (idempotency + MFA-fresh + version are the headline invariants).
-- [ ] `/code-review` on the diff; findings fixed.
-- [ ] `DL-BE-018` entry (sys_command_log claim/replay design, boundary ordering, conflict-detection
+- [x] §7 tests green (idempotency + MFA-fresh + version are the headline) — `CommandGatewayTest`,
+      9 tests written **test-first** (red on the stubbed gateway → green); 83 total green.
+- [x] `/code-review` on the diff; findings fixed (null-session NPE guards + request validation,
+      clean reject when the actor has no admin row, accurate version on the lost-race path).
+- [x] `DL-BE-018` entry (sys_command_log claim/replay design, boundary ordering, conflict-detection
       scope, MFA-fresh reuse, the #1/#3-hook deferral with its M4c guardrail).
-- [ ] Status flipped to **Done**.
+- [x] Status flipped to **Done**.
 
 ## 9. Self-review resolutions (DoR-green)
 1. **Slicing — RESOLVED: M4a/M4b/M4c (architect's call, substrate-first).** This slice = the engine;
@@ -134,10 +137,12 @@
    `sys_command_log` + `admin_user`.
 3. **Idempotency #4 home — RESOLVED: built here.** The [[M1b-ids-and-versioning]] deferral lands with
    its first real command, against the unchanged `sys_command_log` contract (DL-BE-013 guardrail met).
-4. **Boundary order — RESOLVED:** idempotency-replay first → MFA-fresh + version gate → claim
-   (`INSERT … ON CONFLICT DO NOTHING`) → execute → append envelope → record `resulting_event_id`. A
-   reject thus leaves no log row / no envelope; a replay returns the original without re-checking.
-   The #1/#3 gates (M4c) slot between the version gate and execute.
+4. **Boundary order — RESOLVED:** null-session/missing-assertion guard → idempotency-replay →
+   MFA-fresh gate → claim (`INSERT … ON CONFLICT DO NOTHING`) → execute (the version-checked mutation;
+   a stale version / invariant throws here) → append envelope → record `resulting_event_id`. **As-built
+   nuance:** the version gate lives *inside* the handler (a generic gateway can't read an arbitrary
+   aggregate's version pre-claim), so it fires after the claim; the single transaction rolls the claim
+   back on any throw, so a reject still leaves no trace. The #1/#3 gates (M4c) slot just before execute.
 5. **Conflict detection — RESOLVED: identity-level now, body-hash later.** Detect on `(command_type,
    aggregate_type, aggregate_id)`; payload-hash G32 needs a `sys_command_log` column → §10.
 6. **First command — RESOLVED: `disableAdminUser`.** Proves the harness; its Super-Admin role authz is

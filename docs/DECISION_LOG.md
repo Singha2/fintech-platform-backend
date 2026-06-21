@@ -558,33 +558,49 @@ Validated: 74 tests green.
 
 ---
 
-## DL-BE-018 — M4a command substrate: idempotency, MFA-freshness enforcement & the audited command envelope *(RESERVED — planned, not yet built)*
-**Date:** 2026-06-21 (reserved at draft)
-**Status:** Reserved. Spec drafted (`docs/modules/M4a-command-substrate.md`, Status: Draft).
-Placeholder so the number is claimed and the planned decisions are on the record; **fill in the
-as-built `What` / `Why` / `/code-review` follow-ups at M4a DoD.**
+## DL-BE-018 — M4a command substrate: idempotency, MFA-freshness enforcement & the audited command envelope
+**Date:** 2026-06-21
+**What:** First state-changing-command slice (spec `docs/modules/M4a-command-substrate.md`).
+`CommandGateway.execute(CommandRequest, CommandHandler)` — the one harness every command routes
+through: idempotency claim/replay on `sys_command_log` (#4 — the M1b deferral's first consumer),
+MFA-freshness enforcement for admin actors via M3b `isMfaFresh` (#2/AU10.3), optimistic concurrency
+(P8), and exactly one `command_id`-stamped audit envelope appended in-tx (#5/X13). Types
+`CommandRequest/Handler/Outcome/Event/Result` + `CommandRejectedException` (B4 §4.2 reason codes →
+HTTP status). First command `AdminUserService.disableAdminUser` proves the harness. **No new
+migration** (all M4 tables exist V2–V4). Built **test-first**: 9 `CommandGatewayTest` cases written
+against the API, run **red** on a stubbed gateway, then implemented to green; 83 total.
+**Why (key decisions, as built):**
 **M4 slicing (architect's call, substrate-first):** **M4a** = the command-control engine (this);
 **M4b** = Admin IAM + RBAC + TOTP enrollment; **M4c** = SoD engine + maker-checker. Distinct from the
 coarse plan register, which lists M4 as one module — recorded here so the split is on the record.
-**Planned scope:** `CommandGateway` — the one harness every state-changing command routes through:
-idempotency claim/replay on the existing `sys_command_log` (**non-negotiable #4, the
-[[M1b-ids-and-versioning]] deferral's first consumer**), MFA-freshness enforcement at the boundary
-(#2 consumer / AU10.3 — calls M3b `isMfaFresh`), optimistic concurrency (`aggregate_version` / P8), and
-the `command_id`-stamped audit envelope (#5, X13 in-tx). Proven on one minimal command
-(`disableAdminUser`). Service substrate only — no HTTP layer. **No new migration** (all M4 tables exist
-in V2–V4).
-**Decisions taken to DoR-green (confirm/revise at build):**
-1. **Boundary order:** idempotency-replay first → MFA-fresh + version gate → claim (`INSERT … ON
-   CONFLICT DO NOTHING`) → execute → append envelope → record `resulting_event_id`. A reject leaves no
-   log row / no envelope / no mutation; a replay returns the original without re-checking. The #1/#3
-   gates (M4c) slot between the version gate and execute.
+**Key decisions:**
+1. **Boundary order (as built):** null-session/missing-assertion guard → idempotency-replay →
+   MFA-fresh gate → claim (`INSERT … ON CONFLICT DO NOTHING`) → execute → append envelope → record
+   `resulting_event_id`. The **version gate lives inside the handler** (a generic gateway can't read an
+   arbitrary aggregate's version pre-claim), so it fires after the claim; the single transaction rolls
+   the claim back on any throw, so a reject still leaves no log row / no envelope / no mutation. A
+   replay returns the original without re-checking freshness. The #1/#3 gates (M4c) slot just before execute.
 2. **Idempotency conflict scope:** detect divergent reuse on `(command_type, aggregate_type,
    aggregate_id)`; full payload-hash G32 deferred (no `sys_command_log` column).
 3. **First command `disableAdminUser`:** proves the harness; its Super-Admin role authz is M4b. M4a
    exposes no HTTP surface, so the un-authorized path is not externally reachable.
 4. **MFA-fresh reuse:** reuse M3b `isMfaFresh(session, ActionSensitivity)`; the command declares its
    sensitivity; no new freshness code.
+**`/code-review` follow-ups applied (high effort):**
+(a) **Null-session NPE guards + request validation** — `execute()` dereferenced `session.identityId()`
+in the idempotency lookup *before* the null-session check the code claimed to handle; reordered so a
+session-less / assertion-less admin command returns `mfa_assertion_missing` cleanly, and added a typed
+`validate()` so a null `aggregateId`/`commandId` fails with a 400 instead of a raw NOT-NULL violation
+mid-claim.
+(b) **Clean reject when the actor has no `admin_user` row** — the `disabled_by` lookup used
+`queryForObject` (threw `EmptyResultDataAccessException`); now null-tolerant → `ValidationException`
+(real RBAC authz is M4b).
+(c) **Accurate version on the lost-race path** — the post-`UPDATE` `updated==0` branch reported a
+fabricated `actual=-1`; now re-reads the true current `aggregate_version` for the 409 body.
 **Guardrail (carry forward):** maker-checker (#1) and SoD (#3) are **unbuilt** in M4a — no
 maker-checker-gated command (go-live, disbursement, role-assign) may ship before **M4c** fills the
 hooks (same discipline as the M1b #4 deferral). Also: full payload-hash idempotency conflict; one
-`correlation_id` per command until multi-step chains (G29) are designed in M4c.
+`correlation_id` per command until multi-step chains (G29) are designed in M4c; the audit-envelope
+builder spine is now hand-assembled in three services (`AuthService`, `SessionService`,
+`CommandGateway`) — extract a shared factory when the next producer lands (deferred, not a bug).
+Validated: 83 tests green.
