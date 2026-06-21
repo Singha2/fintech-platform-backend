@@ -513,18 +513,19 @@ Validated: 63 tests green.
 
 ---
 
-## DL-BE-017 — M3b sessions, MFA-freshness check & tenant claims *(RESERVED — planned, not yet built)*
-**Date:** 2026-06-21 (reserved at draft)
-**Status:** Reserved. Spec drafted (`docs/modules/M3b-sessions-and-mfa-freshness.md`, Status: Draft).
-This entry is a placeholder so the number is claimed and the planned decisions are on the record;
-**fill in the as-built `What` / `Why` / `/code-review` follow-ups at M3b DoD.**
-**Planned scope:** `auth_session` lifecycle (`establishSession` / `resolveSession` with lazy idle-roll
-+ expiry / `revokeSession`) on the V3 `auth_session` table; **`isMfaFresh(session, sensitivity)`** — the
-freshness gate every admin command calls (M3a minted the assertion, M3b consumes it); tenant-claim
-serialisation into `tenant_claims` JSONB (the C16/G19 isolation input). Native SQL + `AuditLog` (M2),
-service-substrate only (no HTTP layer yet). Audit envelopes: `SessionEstablished` / `SessionRevoked`
-/ `SessionExpired` + `TenantClaim.Issued` (B2 §3.10).
-**Decisions taken to DoR-green (confirm/revise at build):**
+## DL-BE-017 — M3b sessions, MFA-freshness check & tenant claims
+**Date:** 2026-06-21
+**What:** Second auth slice (spec `docs/modules/M3b-sessions-and-mfa-freshness.md`). `SessionService`
+(native SQL onto the V3 `auth_session` table): `establishSession` (stamps the M3a-minted
+`mfa_assertion_id` + serialises `tenant_claims`), `resolveSession → SessionResolution` (validates both
+expiries, lazily transitions to `expired`, rolls the idle window via `UPDATE … RETURNING`),
+`revokeSession` (logout / admin kill), and **`isMfaFresh(session, ActionSensitivity)`** — the freshness
+gate every admin command will call (M3a minted the assertion, M3b consumes it; non-negotiable #2). New
+value types: `AuthSession`, `SessionResolution`, `TenantClaims` (typed JSONB view + per-kind factories),
+`ActionSensitivity`. Every session lifecycle event is audited via `AuditLog` (M2): `auth.Session.Established`,
+`auth.Session.Revoked`, `auth.Session.Expired`, `auth.TenantClaim.Issued` (B2 §3.10). Service substrate
+only — no HTTP/cookie layer. 11 new tests; 74 green.
+**Why (key decisions, as built):**
 1. **Session TTLs (proposed):** idle **30 min**, absolute **8 h** for admin sessions — final values
    are BC10 policy, tunable without schema change.
 2. **Lazy expire-on-`resolve`** — no scheduler in M3b; a sweep/cleanup job is deferred to M5/ops
@@ -539,8 +540,18 @@ service-substrate only (no HTTP layer yet). Audit envelopes: `SessionEstablished
    `{roles}` is populated by M4** (M3b only supplies the role values' container).
 6. **Idle-roll not audited** — establish/revoke/expire are audited; the per-request idle roll is not
    (noise); `last_seen_at` is the durable record.
-**Carried-forward from DL-BE-016 to address here:** thread one `correlation_id` (+ `session_id`) per
-request via a shared audit-envelope factory (DL-BE-016 watch-for #2); stand up the `SecurityFilterChain`
-with the cookie filter (watch-for #3).
-**Watch for (at build):** concurrent idle-roll vs revoke races (guarded/conditional update or the
-`aggregate_version` pattern); absolute-ceiling re-auth UX (`session_expired` to the frontend).
+**`/code-review` follow-ups applied (high effort):**
+(a) **Shared `correlation_id`** — `establishSession` emits two envelopes (`Session.Established` +
+`TenantClaim.Issued`) for one logical act; they now share one `correlation_id` so an auditor can tie the
+claim issuance back to the establishment (B2 §3.10). Partially addresses DL-BE-016 watch-for #2; full
+per-request threading arrives with the HTTP layer.
+(b) **`isMfaFresh` pins `purpose = 'login_mfa'`** — `assertion_id` is login_mfa-only by schema COMMENT,
+not by a DB CHECK, so the freshness query now constrains the purpose explicitly; the gate can never be
+satisfied by a non-login assertion.
+(c) **`resolveSession` folds the post-roll re-read into `UPDATE … RETURNING`** — the hot path (every
+authenticated request) now does SELECT-FOR-UPDATE + one UPDATE instead of three round-trips.
+**Carried forward (still open):** stand up the `SecurityFilterChain` + cookie filter at the first
+authenticated endpoint (DL-BE-016 watch-for #3); concurrent idle-roll vs revoke races (the
+status-guarded `WHERE … AND status='active'` updates serialise under the `FOR UPDATE` lock, but revisit
+if the lock is ever dropped); absolute-ceiling re-auth UX (`session_expired` to the frontend).
+Validated: 74 tests green.

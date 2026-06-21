@@ -9,7 +9,7 @@
 | **Module** | M3 — Auth & Identity (BC: auth shared kernel) |
 | **Slice** | M3b — `auth_session` lifecycle + `isMfaFresh` check + tenant-claim serialisation |
 | **Tier** | Foundation-critical (light ceremony · heavy security-invariant rigor) |
-| **Status** | Draft |
+| **Status** | Done (impl + tests green; `/code-review` findings fixed; DL-BE-017) |
 | **Owner** | Amit + Claude |
 | **Created** | 2026-06-21 |
 
@@ -118,11 +118,12 @@ Appended via `AuditLog.append()` ([[DL-BE-014]]): `SessionEstablished`, `Session
       `auth_session_idle_within_absolute` (proves the rule fires at *both* app and DB — §I of the plan).
 
 ## 8. Definition of Done (foundation-critical)
-- [ ] §7 tests green (the freshness + expiry invariants are the headline).
-- [ ] `/code-review` on the diff; findings fixed.
-- [ ] `DL-BE-017` entry (session TTLs, freshness window defaults, lazy-expiry-on-resolve vs sweep,
-      claims serialisation shape, idle-roll-not-audited).
-- [ ] Status flipped to **Done**.
+- [x] §7 tests green (the freshness + expiry invariants are the headline) — `SessionServiceTest`, 11 tests; 74 total green.
+- [x] `/code-review` on the diff; findings fixed (shared `correlation_id`, `isMfaFresh` purpose pin,
+      `UPDATE … RETURNING` on the resolve hot path).
+- [x] `DL-BE-017` entry (session TTLs, freshness window defaults, lazy-expiry-on-resolve vs sweep,
+      claims serialisation shape, idle-roll-not-audited + the three review follow-ups).
+- [x] Status flipped to **Done**.
 
 ## 9. Self-review resolutions (DoR-green)
 1. **Session TTLs — RESOLVED (proposed defaults):** idle **30 min**, absolute **8 h** for admin
