@@ -890,3 +890,37 @@ dedup, `/webhooks/...` routes) + BC16 payload archival + manual-fallback (G8) + 
 + the outage banner; and the JSON/Instant helpers are the first candidates for a shared ACL base once
 M5b/M5c land (not before).
 Validated: 116 tests green.
+
+---
+
+## DL-BE-025 — M5b Banking/Escrow ACL (BC18) *(RESERVED — planned, not yet built)*
+**Date:** 2026-06-21 (reserved at draft)
+**Status:** Reserved. Spec drafted (`docs/modules/M5b-banking-escrow-acl.md`, Status: Draft).
+Placeholder so the number is claimed and the planned decisions are on the record; **fill in the
+as-built `What` / `Why` / `/code-review` follow-ups at M5b DoD.**
+**Planned scope (M5 slice 2/4 — heaviest):** the BC18 escrow ACL, reusing [[DL-BE-024]]'s shape (fixed
+service + swappable vendor client). `EscrowPort` (createVa / payout single+multi-leg / refund / closeVa)
+keyed by `client_instruction_id` (= `vendor_instruction_id` PK, the idempotency key, VI.1); inbound
+webhook handlers (`processPayout/Refund/InflowWebhook`) with **`vendor_event_id` dedup** → first applies
+(fake UTR, executed), duplicate → `Webhook.DuplicateDropped`, no state change (VI.3); inflows recorded
+**provisional** in `gate_inflow_observation` (amount > 0, deduped on `vendor_event_id` AND `utr`).
+`StubEscrowVendorClient` returns a deterministic IFSC/account + fake UTR and fires webhooks in-process.
+Sole consumer is **BC4 Settlement (M13, not built)** — M5b ships the port BC4 will call. **No new
+migration** (both `gate_*` tables + enums exist V4).
+**Decisions taken to DoR-green (confirm/revise at build):**
+1. **One slice, with a split option** — heaviest M5 slice; if it balloons, split outbound (VA/payouts)
+   from inbound (inflow/webhook-dedup). Held together because they share the dedup substrate.
+2. **Idempotency = ACL keys** — `client_instruction_id` (retry = no-op, no double-execute) +
+   `vendor_event_id` webhook dedup — **not** the M4a `command_id` store.
+3. **Maker-checker/MFA is BC4's**, not the ACL's — the ACL executes an already-approved payout
+   instruction (PI.5 four-eyes is upstream, M4d).
+4. **Deferred to BC4 Settlement (M13):** reconciliation (`provisional → reconciled/unmatched`, the EoD
+   master-statement parser, corrective overlays X15); multi-leg partial-failure remediation (VI.5/G11);
+   TDS challan (VI.6). The stub leaves inflows provisional and auto-succeeds all legs.
+5. **Webhook ingress deferred to the real adapter** — `processXWebhook` is the entry; HMAC + 5-min
+   replay (A2 §1.2) + dead-letter + the `/webhooks/banking/...` routes are the real adapter's. Stub
+   stamps `hmac_verified_at` at the in-process webhook (VI.2).
+**Watch for (at build):** the failed-instruction path (like M5a, latent under the stub); the
+real-adapter webhook stack + TDS + BC16 archival; and — M5b being the **second** ACL consumer — the
+shared-ACL-base extraction (idempotent-instruction + `vendor_event_id` dedup + JSON/Instant helpers) is
+now in scope to consider after M5b lands.
