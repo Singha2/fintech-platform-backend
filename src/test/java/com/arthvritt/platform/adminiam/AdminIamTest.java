@@ -1,24 +1,13 @@
 package com.arthvritt.platform.adminiam;
 
-import com.arthvritt.platform.AbstractIntegrationTest;
-import com.arthvritt.platform.auth.ActionSensitivity;
-import com.arthvritt.platform.auth.AuthService;
 import com.arthvritt.platform.auth.AuthSession;
-import com.arthvritt.platform.auth.SessionService;
-import com.arthvritt.platform.auth.TenantClaims;
 import com.arthvritt.platform.command.CommandRejectedException;
-import com.arthvritt.platform.command.CommandRequest;
-import com.arthvritt.platform.notification.StubNotifier;
 import com.arthvritt.platform.shared.Ids;
-import com.arthvritt.platform.shared.crypto.SecretCipher;
 import com.arthvritt.platform.shared.error.ValidationException;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.Instant;
-import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -29,23 +18,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * AU10.1 activation gate, composable RBAC union, and role-authorization at the command boundary.
  * Integration against Testcontainers; commands run through the real M4a {@code CommandGateway}.
  */
-class AdminIamTest extends AbstractIntegrationTest {
+class AdminIamTest extends AbstractAdminIamTest {
 
     @Autowired private AdminUserService adminUsers;
     @Autowired private RbacService rbac;
     @Autowired private RoleResolver roleResolver;
     @Autowired private TotpService totp;
-    @Autowired private AdminBootstrap bootstrap;
-    @Autowired private AuthService auth;
-    @Autowired private SessionService sessions;
-    @Autowired private StubNotifier notifier;
-    @Autowired private SecretCipher cipher;
-    @Autowired private JdbcTemplate jdbc;
-
-    @BeforeEach
-    void clearNotifier() {
-        notifier.clear();
-    }
 
     @Test
     void totp_secret_is_stored_encrypted_and_confirm_stamps_last_used() { // INV-1, INV-2
@@ -192,60 +170,13 @@ class AdminIamTest extends AbstractIntegrationTest {
                 .isInstanceOf(ValidationException.class);
     }
 
-    // --- helpers -------------------------------------------------------------------------------
-
-    private Actor superAdminActor() {
-        AdminBootstrap.Seeded seeded = bootstrap.seedSuperAdmin(email(), "Root", phone());
-        return new Actor(seeded.adminUserId(), seeded.identityId(), sessionFor(seeded.identityId()));
-    }
-
-    private Actor activeAdminWithRole(AdminRole role) {
-        UUID identityId = auth.provisionIdentity("admin_user", email(), phone(), "Admin");
-        UUID adminUserId = Ids.newId();
-        jdbc.update("INSERT INTO admin_user (admin_user_id, identity_id, email, display_name, status) "
-                        + "VALUES (?, ?, ?, ?, 'active')",
-                adminUserId, identityId, "au-" + adminUserId + "@arthvritt.test", "Admin");
-        jdbc.update("INSERT INTO auth_mfa_factor (factor_id, identity_id, kind, secret_encrypted, label, last_used_at) "
-                        + "VALUES (?, ?, 'totp'::mfa_factor_kind_enum, ?, 'seed', now())",
-                Ids.newId(), identityId, cipher.encrypt(Totp.newSecret()));
-        jdbc.update("INSERT INTO admin_role_assignment (admin_user_id, role, status, assigned_by) "
-                        + "VALUES (?, ?::admin_role, 'active', ?)", adminUserId, role.wire(), adminUserId);
-        return new Actor(adminUserId, identityId, sessionFor(identityId));
-    }
-
-    /** An invited admin_user (no roles, no session) — the target of enroll/activate. */
-    private UUID invitedAdmin() {
-        UUID identityId = auth.provisionIdentity("admin_user", email(), phone(), "Invitee");
-        UUID adminUserId = Ids.newId();
-        jdbc.update("INSERT INTO admin_user (admin_user_id, identity_id, email, display_name, status) "
-                        + "VALUES (?, ?, ?, ?, 'invited')",
-                adminUserId, identityId, "au-" + adminUserId + "@arthvritt.test", "Invitee");
-        return adminUserId;
-    }
+    // --- helpers (slice-specific; shared ones are in AbstractAdminIamTest) ---------------------
 
     private void confirmTotpFor(UUID adminUserId) {
         TotpService.TotpEnrollment enrollment = totp.enrollTotp(adminUserId, "factor");
         byte[] stored = jdbc.queryForObject(
                 "SELECT secret_encrypted FROM auth_mfa_factor WHERE factor_id = ?", byte[].class, enrollment.factorId());
         totp.confirmTotp(enrollment.factorId(), Totp.generate(cipher.decrypt(stored), Instant.now()));
-    }
-
-    private AuthSession sessionFor(UUID identityId) {
-        UUID challengeId = auth.issueLoginOtp(identityId);
-        UUID assertionId = auth.verifyOtp(challengeId, notifier.lastCodeFor(identityId).orElseThrow())
-                .assertion().assertionId();
-        UUID sessionId = sessions.establishSession(identityId, assertionId, TenantClaims.empty(), null, null);
-        return sessions.resolveSession(sessionId).session();
-    }
-
-    private CommandRequest req(Actor actor, String commandType, UUID aggregateId, int expectedVersion) {
-        return new CommandRequest(actor.session(), Ids.newId(), "admin_iam", commandType, "AdminUser",
-                aggregateId, expectedVersion, "admin_user", ActionSensitivity.SENSITIVE);
-    }
-
-    private String status(UUID adminUserId) {
-        return jdbc.queryForObject("SELECT status::text FROM admin_user WHERE admin_user_id = ?",
-                String.class, adminUserId);
     }
 
     private int version(UUID adminUserId) {
@@ -256,16 +187,5 @@ class AdminIamTest extends AbstractIntegrationTest {
     private Instant lastUsed(UUID factorId) {
         return jdbc.queryForObject("SELECT last_used_at FROM auth_mfa_factor WHERE factor_id = ?",
                 Instant.class, factorId);
-    }
-
-    private static String email() {
-        return "user-" + UUID.randomUUID() + "@arthvritt.test";
-    }
-
-    private static String phone() {
-        return "+9198" + (10000000 + new java.util.Random().nextInt(89999999));
-    }
-
-    private record Actor(UUID adminUserId, UUID identityId, AuthSession session) {
     }
 }

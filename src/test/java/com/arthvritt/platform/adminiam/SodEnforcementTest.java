@@ -1,21 +1,10 @@
 package com.arthvritt.platform.adminiam;
 
-import com.arthvritt.platform.AbstractIntegrationTest;
-import com.arthvritt.platform.auth.ActionSensitivity;
-import com.arthvritt.platform.auth.AuthService;
-import com.arthvritt.platform.auth.AuthSession;
-import com.arthvritt.platform.auth.SessionService;
-import com.arthvritt.platform.auth.TenantClaims;
 import com.arthvritt.platform.command.CommandRejectedException;
-import com.arthvritt.platform.command.CommandRequest;
-import com.arthvritt.platform.notification.StubNotifier;
 import com.arthvritt.platform.shared.Ids;
-import com.arthvritt.platform.shared.crypto.SecretCipher;
 import com.arthvritt.platform.shared.error.ValidationException;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.List;
 import java.util.UUID;
@@ -28,26 +17,15 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * assignRole — strict block, soft-warn-with-deviation, rules-as-data policy supersession, and the
  * once-only quarterly review. Commands run through the real M4a gateway against Testcontainers.
  */
-class SodEnforcementTest extends AbstractIntegrationTest {
+class SodEnforcementTest extends AbstractAdminIamTest {
 
     @Autowired private RbacService rbac;
     @Autowired private SodPolicyService sod;
-    @Autowired private AdminBootstrap bootstrap;
-    @Autowired private AuthService auth;
-    @Autowired private SessionService sessions;
-    @Autowired private StubNotifier notifier;
-    @Autowired private SecretCipher cipher;
-    @Autowired private JdbcTemplate jdbc;
-
-    @BeforeEach
-    void clearNotifier() {
-        notifier.clear();
-    }
 
     @Test
     void a_strict_pair_is_system_blocked_with_no_envelope() { // INV-1
         Actor admin = adminWithPolicy();
-        UUID target = target();
+        UUID target = invitedAdmin();
         rbac.assignRole(req(admin, "admin_iam.Role.Assign", target, 0), AdminRole.CREDIT_REVIEWER);
 
         assertThatThrownBy(() -> rbac.assignRole(
@@ -65,7 +43,7 @@ class SodEnforcementTest extends AbstractIntegrationTest {
     @Test
     void a_soft_pair_requires_an_override_and_logs_exactly_one_deviation() { // INV-2
         Actor admin = adminWithPolicy();
-        UUID target = target();
+        UUID target = invitedAdmin();
         rbac.assignRole(req(admin, "admin_iam.Role.Assign", target, 0), AdminRole.OPS_EXECUTIVE);
 
         // ops_executive + treasury_and_settlement is a soft pair → reason required.
@@ -98,7 +76,7 @@ class SodEnforcementTest extends AbstractIntegrationTest {
         assertThat(jdbc.queryForObject(
                 "SELECT count(*) FROM admin_sod_policy WHERE superseded_by IS NULL", Integer.class)).isEqualTo(1);
 
-        UUID target = target();
+        UUID target = invitedAdmin();
         rbac.assignRole(req(admin, "admin_iam.Role.Assign", target, 0), AdminRole.CREDIT_REVIEWER);
         rbac.assignRole(req(admin, "admin_iam.Role.Assign", target, 0), AdminRole.TREASURY_AND_SETTLEMENT);
         assertThat(assignedRoles(target)).containsExactlyInAnyOrder("credit_reviewer", "treasury_and_settlement");
@@ -107,7 +85,7 @@ class SodEnforcementTest extends AbstractIntegrationTest {
     @Test
     void a_deviation_is_reviewed_exactly_once() { // INV-4
         Actor admin = adminWithPolicy();
-        UUID target = target();
+        UUID target = invitedAdmin();
         rbac.assignRole(req(admin, "admin_iam.Role.Assign", target, 0), AdminRole.OPS_EXECUTIVE);
         rbac.assignRole(req(admin, "admin_iam.Role.Assign", target, 0),
                 AdminRole.TREASURY_AND_SETTLEMENT, "ops cover");
@@ -138,7 +116,7 @@ class SodEnforcementTest extends AbstractIntegrationTest {
                 List.of(List.of("super_admin", "super_admin")), List.of()))
                 .isInstanceOf(ValidationException.class);
         // The original policy is still active and still enforces the strict pair.
-        UUID target = target();
+        UUID target = invitedAdmin();
         rbac.assignRole(req(admin, "admin_iam.Role.Assign", target, 0), AdminRole.CREDIT_REVIEWER);
         assertThatThrownBy(() -> rbac.assignRole(
                 req(admin, "admin_iam.Role.Assign", target, 0), AdminRole.TREASURY_AND_SETTLEMENT))
@@ -148,7 +126,7 @@ class SodEnforcementTest extends AbstractIntegrationTest {
     @Test
     void re_assigning_a_held_soft_role_does_not_duplicate_the_deviation() { // idempotent re-assign
         Actor admin = adminWithPolicy();
-        UUID target = target();
+        UUID target = invitedAdmin();
         rbac.assignRole(req(admin, "admin_iam.Role.Assign", target, 0), AdminRole.OPS_EXECUTIVE);
         rbac.assignRole(req(admin, "admin_iam.Role.Assign", target, 0), AdminRole.TREASURY_AND_SETTLEMENT, "cover");
         rbac.assignRole(req(admin, "admin_iam.Role.Assign", target, 0), AdminRole.TREASURY_AND_SETTLEMENT, "cover again");
@@ -160,7 +138,7 @@ class SodEnforcementTest extends AbstractIntegrationTest {
     @Test
     void a_non_super_admin_cannot_assign_roles() { // inherited authz still fires first
         Actor ops = activeAdminWithRole(AdminRole.OPS_EXECUTIVE);
-        UUID target = target();
+        UUID target = invitedAdmin();
 
         assertThatThrownBy(() -> rbac.assignRole(
                 req(ops, "admin_iam.Role.Assign", target, 0), AdminRole.CREDIT_REVIEWER))
@@ -169,64 +147,18 @@ class SodEnforcementTest extends AbstractIntegrationTest {
         assertThat(assignedRoles(target)).isEmpty();
     }
 
-    // --- helpers -------------------------------------------------------------------------------
+    // --- helpers (slice-specific; shared ones are in AbstractAdminIamTest) ---------------------
 
+    /** A super-admin actor with the Phase-1 SoD policy seeded. */
     private Actor adminWithPolicy() {
-        AdminBootstrap.Seeded seeded = bootstrap.seedSuperAdmin(email(), "Root", phone());
-        sod.seedDefaultPolicy(seeded.adminUserId());
-        return new Actor(seeded.adminUserId(), seeded.identityId(), sessionFor(seeded.identityId()));
-    }
-
-    private Actor activeAdminWithRole(AdminRole role) {
-        UUID identityId = auth.provisionIdentity("admin_user", email(), phone(), "Admin");
-        UUID adminUserId = Ids.newId();
-        jdbc.update("INSERT INTO admin_user (admin_user_id, identity_id, email, display_name, status) "
-                        + "VALUES (?, ?, ?, ?, 'active')",
-                adminUserId, identityId, "au-" + adminUserId + "@arthvritt.test", "Admin");
-        jdbc.update("INSERT INTO auth_mfa_factor (factor_id, identity_id, kind, secret_encrypted, label, last_used_at) "
-                        + "VALUES (?, ?, 'totp'::mfa_factor_kind_enum, ?, 'seed', now())",
-                Ids.newId(), identityId, cipher.encrypt(Totp.newSecret()));
-        jdbc.update("INSERT INTO admin_role_assignment (admin_user_id, role, status, assigned_by) "
-                        + "VALUES (?, ?::admin_role, 'active', ?)", adminUserId, role.wire(), adminUserId);
-        return new Actor(adminUserId, identityId, sessionFor(identityId));
-    }
-
-    private UUID target() {
-        UUID identityId = auth.provisionIdentity("admin_user", email(), phone(), "Target");
-        UUID adminUserId = Ids.newId();
-        jdbc.update("INSERT INTO admin_user (admin_user_id, identity_id, email, display_name, status) "
-                        + "VALUES (?, ?, ?, ?, 'invited')",
-                adminUserId, identityId, "au-" + adminUserId + "@arthvritt.test", "Target");
-        return adminUserId;
-    }
-
-    private AuthSession sessionFor(UUID identityId) {
-        UUID challengeId = auth.issueLoginOtp(identityId);
-        UUID assertionId = auth.verifyOtp(challengeId, notifier.lastCodeFor(identityId).orElseThrow())
-                .assertion().assertionId();
-        UUID sessionId = sessions.establishSession(identityId, assertionId, TenantClaims.empty(), null, null);
-        return sessions.resolveSession(sessionId).session();
-    }
-
-    private CommandRequest req(Actor actor, String commandType, UUID aggregateId, int expectedVersion) {
-        return new CommandRequest(actor.session(), Ids.newId(), "admin_iam", commandType, "AdminUser",
-                aggregateId, expectedVersion, "admin_user", ActionSensitivity.SENSITIVE);
+        Actor admin = superAdminActor();
+        sod.seedDefaultPolicy(admin.adminUserId());
+        return admin;
     }
 
     private List<String> assignedRoles(UUID adminUserId) {
         return jdbc.queryForList(
                 "SELECT role::text FROM admin_role_assignment WHERE admin_user_id = ? AND status = 'active'",
                 String.class, adminUserId);
-    }
-
-    private static String email() {
-        return "user-" + UUID.randomUUID() + "@arthvritt.test";
-    }
-
-    private static String phone() {
-        return "+9198" + (10000000 + new java.util.Random().nextInt(89999999));
-    }
-
-    private record Actor(UUID adminUserId, UUID identityId, AuthSession session) {
     }
 }
