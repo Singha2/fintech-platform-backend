@@ -35,7 +35,10 @@
       "Bash(awk '/CREATE TABLE sys_audit_event/{f=1} f{print} /^\\\\\\);/{if\\(f\\){f=0}}' src/main/resources/db/migration/V4__generic_acl.sql)",
       "Bash(grep -iE \"Tests run: [0-9]+, Failures.*Skipped: 0$|BUILD SUCCESS|BUILD FAILURE|validated [0-9]+ migrations\")",
       "Read(//private/tmp/**)",
-      "Bash(which psql *)"
+      "Bash(which psql *)",
+      "Bash(awk '/CREATE TABLE auth_otp_challenge/{f=1} f{print} /^\\\\\\);/{if\\(f\\){f=0}}' src/main/resources/db/migration/V3__auth.sql)",
+      "Bash(awk '/CREATE TABLE sys_notification_dispatch/{f=1} f{print} /^\\\\\\);/{if\\(f\\){f=0}}' src/main/resources/db/migration/V4__generic_acl.sql)",
+      "Bash(grep -iE \"Tests run: [0-9]+, Failures.*Skipped: 0$|BUILD SUCCESS|BUILD FAILURE|AuthServiceTest\")"
     ]
   }
 }

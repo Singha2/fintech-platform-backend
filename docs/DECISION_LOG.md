@@ -462,3 +462,51 @@ round-trip test (closing the gap that prior tests used only integer payloads); (
    can rewrite an entire shard could re-chain self-consistently — full protection is the WORM substrate
    + restricted non-owner role (G7, [[DL-BE-002]]/[[DL-BE-009]]) at the Production gate, plus possible
    HMAC/anchored checkpoints later.
+
+---
+
+## DL-BE-016 — M3a authentication: argon2id, SMS-OTP MFA, BC15 NotificationPort stub
+**Date:** 2026-06-21
+**What:** First auth slice (spec `docs/modules/M3a-authentication.md`). `AuthService` (native SQL onto
+the V3 auth tables): `provisionIdentity`, `setPassword` (argon2id), `authenticatePassword`
+→ `PasswordResult`, `issueLoginOtp`, `verifyOtp` → `OtpResult`; mints the `mfa_assertion_id`
+(non-negotiable #2) on OTP consume; every auth event is appended to the audit log (M2 — M3a is its
+first producer). BC15 `NotificationPort` + lean in-memory `StubNotifier` (no real SMS, no
+`sys_notification_dispatch`). Deps added: `bcprov-jdk18on` (argon2 backing). OTP = 6-digit, 5-min TTL,
+5 attempts. 63 tests green.
+**Why (key decisions):** (1) **argon2id** for passwords (Spring Security `Argon2PasswordEncoder`).
+(2) **OTP failure returns `OtpResult`, never throws** — a thrown failure under `@Transactional` would
+roll back the `attempts++` that enforces the lockout (caught test-first). (3) **Lean stub** behind a
+real port — Constitution-compliant; the real SMS adapter swaps in at M5/Production with no caller
+change. (4) M3a owns the auth-table **primitives**; the admin workflow is M4 (breaks M3↔M4 circularity).
+**`/code-review` follow-ups applied (high effort):**
+(a) **OTP verify race fixed** — `SELECT … FOR UPDATE OF c` + status-guarded consume; concurrent
+correct-code verifies previously minted *two* assertions / bypassed the attempt cap. Added a 2-thread
+regression test (exactly one verified, one consumed row).
+(b) **`setPassword` rotates** — revokes the prior active password credential before inserting (the
+schema allows only one active password per identity, so a second call used to fail).
+(c) **OTP sent on `afterCommit`** (TransactionSynchronization), not mid-transaction — a rolled-back
+tx no longer leaves a real SMS dispatched for a vanished challenge.
+(d) **Auditor validity window enforced** at login (`valid_from`/`valid_until`), independent of the
+auto-disable scheduler's lag.
+(e) **Stub hardened** — logs param *keys* only (no OTP/phone in logs), bounded retention (500);
+`NotificationRequest` defensively copies `params`. Folded `kindOf()` into existing queries (removed an
+N+1).
+**Watch for — ACCEPTED / DEFERRED (decisions on the record):**
+1. **`provisionIdentity` creates `status='active'` directly**, bypassing the enrollment matrix (A1/A2:
+   admin active only with MFA enrolled; auditor needs a validity window). It is a **primitive** for
+   M3a/tests; **M4 owns enrollment-gated activation** and real admin provisioning (and M17 the auditor
+   validity window). Auditor provisioning via this primitive will fail the DB time-bound CHECK by
+   design — provision auditors through M17.
+2. **`correlation_id` is per-event**, so a multi-step login flow isn't correlated yet. The HTTP caller
+   (controller) will thread one `correlation_id` (+ `session_id`) per request in **M3b**; consider a
+   shared audit-envelope factory then (also to set `is_state_transition`/snapshots consistently).
+3. **No `SecurityFilterChain`** — Spring Security's default still secures all (future) endpoints with a
+   generated password. The HTTP security config lands with **M3b** (sessions + endpoints); there are no
+   controllers yet, so it's latent.
+4. **argon2id also hashes the 6-digit OTP.** Secure but heavier than needed (TTL + 5-attempt cap
+   already bound brute force). Kept for simplicity (no key management); switch the OTP path to
+   HMAC-SHA256 with a server pepper once a secrets/pepper mechanism exists.
+5. **OTP rate-limiting / resend throttling** is minimal while stubbed — revisit with the real SMS
+   provider (cost + abuse), M5/Production.
+Validated: 63 tests green.
