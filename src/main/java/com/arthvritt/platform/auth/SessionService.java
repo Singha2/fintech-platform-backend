@@ -1,7 +1,7 @@
 package com.arthvritt.platform.auth;
 
 import com.arthvritt.platform.audit.Actor;
-import com.arthvritt.platform.audit.AuditEventEnvelope;
+import com.arthvritt.platform.audit.AuditEnvelopes;
 import com.arthvritt.platform.audit.AuditLog;
 import com.arthvritt.platform.shared.Ids;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -221,15 +221,9 @@ public class SessionService {
 
     private void audit(String eventType, UUID sessionId, UUID identityId, String actorKind,
                        UUID mfaAssertionId, UUID correlationId, Map<String, Object> payload) {
-        auditLog.append(AuditEventEnvelope.builder()
-                .eventId(Ids.newId())
+        auditLog.append(AuditEnvelopes.seed(AUDIT_CONTEXT, AGGREGATE_TYPE, sessionId)
                 .eventType(eventType)
-                .occurredAt(Instant.now())
                 .actor(new Actor(actorKind, identityId.toString(), sessionId.toString(), mfaAssertionId, null))
-                .context(AUDIT_CONTEXT)
-                .aggregateType(AGGREGATE_TYPE)
-                .aggregateId(sessionId)
-                .aggregateVersion(1)
                 .correlationId(correlationId)
                 .payload(payload)
                 .build());

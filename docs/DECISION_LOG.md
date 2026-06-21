@@ -671,3 +671,21 @@ proper last-step replay tracking; the **audit-envelope builder is now hand-assem
 kept out of this slice deliberately); keep the authz gate factor-agnostic so the AI-agent actor model
 (G31) composes later.
 Validated: 95 tests green.
+
+---
+
+## DL-BE-020 — Shared audit-envelope factory (`AuditEnvelopes`)
+**Date:** 2026-06-21
+**What:** Standalone cleanup closing the watch-for carried since [[DL-BE-018]]/[[DL-BE-019]]. The
+common `AuditEventEnvelope` builder spine (fresh `eventId`, `occurredAt = now`, fresh
+`correlationId`, default `aggregateVersion = 1`, context/aggregate) was hand-typed in four producers;
+extracted into `audit/AuditEnvelopes.seed(context, aggregateType, aggregateId)`. Migrated all four:
+`AuthService`, `SessionService` (overrides `correlationId` for the shared-correlation establish path),
+`TotpService`, and `CommandGateway` (overrides `aggregateVersion` + sets `commandId`/before/after).
+**Why:** A fourth producer (TotpService, M4b) made the duplication overdue — a future required-field or
+correlation change was an N-site edit. Pure refactor, behaviour-preserving; the 95-test suite (which
+asserts envelope `command_id`, `mfa_assertion_id`, chain integrity, and shared correlation) is the
+regression guard. No new producer-visible behaviour, no schema change.
+**Watch for:** the Actor sub-shape is still built at each call site (it genuinely varies — null vs
+session-bound); not worth abstracting further.
+Validated: 95 tests green.

@@ -2,16 +2,15 @@ package com.arthvritt.platform.command;
 
 import com.arthvritt.platform.audit.Actor;
 import com.arthvritt.platform.audit.AppendedEvent;
+import com.arthvritt.platform.audit.AuditEnvelopes;
 import com.arthvritt.platform.audit.AuditEventEnvelope;
 import com.arthvritt.platform.audit.AuditLog;
 import com.arthvritt.platform.auth.SessionService;
-import com.arthvritt.platform.shared.Ids;
 import com.arthvritt.platform.shared.error.ValidationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Instant;
 import java.util.Set;
 import java.util.UUID;
 
@@ -161,17 +160,11 @@ public class CommandGateway {
     }
 
     private AuditEventEnvelope envelope(CommandRequest req, CommandEvent e) {
-        return AuditEventEnvelope.builder()
-                .eventId(Ids.newId())
+        return AuditEnvelopes.seed(req.context(), req.aggregateType(), req.aggregateId())
                 .eventType(e.eventType())
-                .occurredAt(Instant.now())
                 .actor(new Actor(req.actorType(), req.actorId().toString(),
                         req.session().sessionId().toString(), req.session().mfaAssertionId(), null))
-                .context(req.context())
-                .aggregateType(req.aggregateType())
-                .aggregateId(req.aggregateId())
-                .aggregateVersion(e.aggregateVersion())
-                .correlationId(Ids.newId())
+                .aggregateVersion(e.aggregateVersion()) // override the seed default of 1
                 .commandId(req.commandId())
                 .payload(e.payload())
                 .beforeState(e.beforeState())

@@ -1,7 +1,7 @@
 package com.arthvritt.platform.auth;
 
 import com.arthvritt.platform.audit.Actor;
-import com.arthvritt.platform.audit.AuditEventEnvelope;
+import com.arthvritt.platform.audit.AuditEnvelopes;
 import com.arthvritt.platform.audit.AuditLog;
 import com.arthvritt.platform.notification.NotificationPort;
 import com.arthvritt.platform.notification.NotificationRequest;
@@ -236,16 +236,9 @@ public class AuthService {
 
     private void audit(String eventType, String aggregateType, UUID aggregateId,
                        String actorType, String actorId, Map<String, Object> payload) {
-        auditLog.append(AuditEventEnvelope.builder()
-                .eventId(Ids.newId())
+        auditLog.append(AuditEnvelopes.seed(AUDIT_CONTEXT, aggregateType, aggregateId)
                 .eventType(eventType)
-                .occurredAt(Instant.now())
                 .actor(new Actor(actorType, actorId, null, null, null))
-                .context(AUDIT_CONTEXT)
-                .aggregateType(aggregateType)
-                .aggregateId(aggregateId)
-                .aggregateVersion(1)
-                .correlationId(Ids.newId())
                 .payload(payload)
                 .build());
     }

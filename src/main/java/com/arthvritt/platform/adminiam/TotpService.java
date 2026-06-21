@@ -1,7 +1,7 @@
 package com.arthvritt.platform.adminiam;
 
 import com.arthvritt.platform.audit.Actor;
-import com.arthvritt.platform.audit.AuditEventEnvelope;
+import com.arthvritt.platform.audit.AuditEnvelopes;
 import com.arthvritt.platform.audit.AuditLog;
 import com.arthvritt.platform.shared.Ids;
 import com.arthvritt.platform.shared.crypto.SecretCipher;
@@ -91,16 +91,9 @@ public class TotpService {
     }
 
     private void audit(String eventType, UUID adminUserId, UUID identityId, Map<String, Object> payload) {
-        auditLog.append(AuditEventEnvelope.builder()
-                .eventId(Ids.newId())
+        auditLog.append(AuditEnvelopes.seed(AUDIT_CONTEXT, "AdminUser", adminUserId)
                 .eventType(eventType)
-                .occurredAt(Instant.now())
                 .actor(new Actor("admin_user", identityId.toString(), null, null, null))
-                .context(AUDIT_CONTEXT)
-                .aggregateType("AdminUser")
-                .aggregateId(adminUserId)
-                .aggregateVersion(1)
-                .correlationId(Ids.newId())
                 .payload(payload)
                 .build());
     }
