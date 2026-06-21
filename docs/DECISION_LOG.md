@@ -387,3 +387,78 @@ case; (d) hoisted the lib version to a `<java-uuid-generator.version>` property 
    persistence unit. Accepted: real aggregates (M6+) will populate the PU regardless, and `validate` runs
    once on the cached context; confine via a dedicated `@EntityScan` only if it becomes noisy.
 Validated: 47 tests green.
+
+---
+
+## DL-BE-014 — Event-backbone sequencing: "M1c" dissolved; envelope→M2, bus+outbox→Walking Skeleton
+**Date:** 2026-06-21
+**What:** Decided *when* and *where* to build the remaining "Event Backbone" half of M1 (the in-process
+pub/sub bus, the `AuditEventEnvelope` type, and the X13 transactional outbox). The monolithic "M1c" is
+**dissolved** and its three pieces re-plugged at their real first-consumers: (1) `AuditEventEnvelope`
+→ built **inside M2** (it is the audit log's own wire/record type); (2) in-process **pub/sub bus** +
+(3) **X13 outbox** → built at the **Walking Skeleton**, where the first cross-context subscriber and the
+first state-changing command co-exist. For Wave 0 (M2/M3/M4/M5), contexts reach the audit log via a
+**direct synchronous `AuditLog.append(envelope)` in the command's DB transaction**. Documented in
+`docs/modules/M1c-event-backbone.md` (status Deferred/Scheduled, with the build trigger). The M1b spec
+forward-reference was updated to point here.
+**Why:** A pub/sub bus has no rider until a **non-audit** subscriber exists (a cross-context reaction),
+which first appears in Wave 1 — building it sooner is infra-without-consumer (same reasoning as the
+idempotency deferral, [[DL-BE-013]]). Crucially, a **synchronous in-transaction append already satisfies
+audit-publish-before-success (X13/P8)**: the append commits or rolls back atomically with the command, so
+a 2xx genuinely means "the fact is logged" — no bus or outbox required for M2/M3/M4/M5. The full outbox
+(G27) earns its keep only for **cross-aggregate** coordination (X1 Listing+Subscription), a Walking-
+Skeleton concern. This keeps each Wave-0 module small and avoids designing the bus blind.
+**Watch for:** When the bus lands at the Walking Skeleton, the audit log is **refactored from a direct
+call into "the first subscriber"** — keep `AuditLog.append()` behind an interface in M2 so this is
+mechanical, not a rewrite. At-least-once (P4) means subscribers dedupe on `event_id` and producers on
+`(actor_id, command_id)` — the latter needs the deferred idempotency store ([[DL-BE-013]]), so the bus
+and the idempotency store will likely arrive together at the first command module. This sequencing is a
+backend *implementation* decision; the authoritative plan (`docs/spec/`) is unchanged (it lists "event
+bus" under M1 and "Audit Log" as M2 — both still true).
+
+---
+
+## DL-BE-015 — M2 Audit Log (BC14): RFC 8785 hashing, declarative chain linearity, native-SQL append
+**Date:** 2026-06-21
+**What:** Built the audit log (spec `docs/modules/M2-audit-log.md`). `AuditEventEnvelope` (B2 §2 record
++ `Actor` + builder); `AuditLog.append()` as the sole serialized write path (native SQL / JdbcTemplate,
+runs in the caller's tx → publish-before-success X13/P8); `AuditCanonicalizer` (SHA-256 over **RFC 8785
+JCS** canonical JSON of the persisted columns, `hash_encoding_version=1`, micro-truncated timestamps);
+`AuditChainVerifier` (recompute + walk). New migration **V5** adds `uidx_audit_chain_link (chain_shard,
+previous_envelope_hash) NULLS NOT DISTINCT`. `chain_shard = <context>:<business_date in IST>`;
+`aggregate_version` caller-supplied (≥1). 54 tests green.
+**Why (key decisions):** (1) **RFC 8785 JCS** over a bespoke encoding — a standardized canonicalization
+is far less likely to get tamper-evidence subtly wrong; a round-trip test (BigDecimal `12.50`, `0.1`,
+21-digit integer, unicode, nested) confirms the in-app hash and the JSONB-round-tripped verify hash are
+byte-identical. (2) **Declarative chain linearity** via a UNIQUE index + optimistic insert-retry
+(`ON CONFLICT DO NOTHING`, re-resolve head, retry) instead of a Postgres **advisory lock** — the user's
+call: a session lock is hard to observe when debugging and doesn't carry to multi-instance / Phase-2
+topologies; a constraint is the single source of truth everywhere ([[DL-BE-002]]). (3) **Native SQL**:
+the table is append-only with no updates, so a JPA entity adds nothing.
+**`/code-review` follow-ups applied (high effort):** (a) **cycle guard** in the verifier walk — a
+crafted cycle among raw-inserted rows previously looped forever (the verifier's threat model includes
+raw inserts); now returns broken; (b) **envelope validation** in `append()` (M1a `ValidationException`)
+so a null `occurredAt`/`actor` is a clean domain error, not an NPE deep in the write path — the
+state-transition snapshot rule is deliberately left to the DB CHECK; (c) added the number/unicode
+round-trip test (closing the gap that prior tests used only integer payloads); (d) dropped a redundant
+`StoredEvent.previousHash` field.
+**Watch for — ACCEPTED / DEFERRED (decisions on the record):**
+1. **`recorded_at` is the app clock**, bound explicitly (not the DB `now()`), because it must be known
+   pre-insert to be hashed. Fine for the Phase-1 single-JVM monolith; revisit for clock-skew when a
+   producer runs on a different host than the audit writer (Phase 2). The `occurred_at <= recorded_at`
+   CHECK then becomes skew-sensitive.
+2. **Append throughput ceiling:** all appends for a `<context>:<IST-day>` serialize through one chain
+   head; `MAX_CHAIN_RETRIES=50`, no backoff. Adequate for Phase-1 volume; if a single context gets hot,
+   narrow `chain_shard` granularity (add hour) and/or add backoff.
+3. **"`append()` is the only writer" is by-construction + review only — NOT yet enforced.** The spec's
+   ArchUnit guard is deferred to the M0 ArchUnit harness (ArchUnit intentionally deprioritized for now).
+   Until then, a stray `INSERT INTO sys_audit_event` elsewhere would bypass chaining. Tracked here.
+4. **`docs/sql/` is no longer the live schema source.** V4's `[AUDIT-FIX]` columns and V5's index are not
+   in `docs/sql/` — Flyway migrations are the **source of record post-baseline**; `docs/sql/` is the
+   original ported bundle/baseline and is not retro-updated. (CLAUDE.md's "docs/sql is the schema source
+   of truth" line predates this and should be amended — flagged, not yet changed.)
+5. **Verifier loads a whole shard into memory** — fine now; move to a streaming/cursor walk if a shard
+   grows large. And **tamper-evidence is unkeyed SHA-256**: it detects partial edits, but an actor who
+   can rewrite an entire shard could re-chain self-consistently — full protection is the WORM substrate
+   + restricted non-owner role (G7, [[DL-BE-002]]/[[DL-BE-009]]) at the Production gate, plus possible
+   HMAC/anchored checkpoints later.

@@ -33,8 +33,8 @@
   real handler than in the abstract. The contract is already fixed by the existing `sys_command_log`
   table (PK `(actor_id, command_id)`, `resulting_event_id`), so deferring carries no schema risk.
   **Guardrail: no money-moving command may ship without it.**
-- In-process **event bus** + `AuditEventEnvelope` type → **M1c** (pairs with M2; the X13 outbox
-  couples the bus to the audit sink).
+- In-process **event bus** + X13 outbox → built at the **Walking Skeleton**; `AuditEventEnvelope` type
+  → built in **M2**. The monolithic "M1c" is dissolved — see `M1c-event-backbone.md` + [[DL-BE-014]].
 - The **audit hash-chain** / `sys_audit_event` writer → **M2 (BC14)**.
 
 ## 2. Upstream dependencies
