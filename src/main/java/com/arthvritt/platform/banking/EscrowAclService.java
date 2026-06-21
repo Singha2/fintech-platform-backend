@@ -1,7 +1,6 @@
 package com.arthvritt.platform.banking;
 
-import com.arthvritt.platform.audit.Actor;
-import com.arthvritt.platform.audit.AuditEnvelopes;
+import com.arthvritt.platform.acl.AbstractAclService;
 import com.arthvritt.platform.audit.AuditLog;
 import com.arthvritt.platform.shared.Ids;
 import com.arthvritt.platform.shared.error.ValidationException;
@@ -9,7 +8,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.security.MessageDigest;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -24,18 +22,15 @@ import java.util.UUID;
  * from the audit stream.
  */
 @Service
-public class EscrowAclService implements EscrowPort {
-
-    private static final String CONTEXT = "banking";
+public class EscrowAclService extends AbstractAclService implements EscrowPort {
 
     private final JdbcTemplate jdbc;
     private final EscrowVendorClient vendorClient;
-    private final AuditLog auditLog;
 
     public EscrowAclService(JdbcTemplate jdbc, EscrowVendorClient vendorClient, AuditLog auditLog) {
+        super(auditLog, "banking", "escrow_acl", "VendorInstruction");
         this.jdbc = jdbc;
         this.vendorClient = vendorClient;
-        this.auditLog = auditLog;
     }
 
     @Override
@@ -47,7 +42,7 @@ public class EscrowAclService implements EscrowPort {
         }
         EscrowVendorClient.VaAck ack = vendorClient.createVa(clientInstructionId, vaRef);
         complete(clientInstructionId, ack.vendorEventId(), ack.rawPayload());
-        audit("banking.Va.LifecycleObserved", clientInstructionId, Map.of(
+        auditAclEvent(clientInstructionId, "banking.Va.LifecycleObserved", Map.of(
                 "va_ref", vaRef.toString(), "ifsc", ack.ifsc(), "account_no", ack.accountNo(),
                 "vendor_event_id", ack.vendorEventId()));
         return new VaResult(ack.ifsc(), ack.accountNo());
@@ -63,7 +58,7 @@ public class EscrowAclService implements EscrowPort {
         }
         EscrowVendorClient.PayoutAck ack = vendorClient.executePayout(clientInstructionId, amountPaise, beneficiary);
         complete(clientInstructionId, ack.vendorEventId(), ack.rawPayload());
-        audit("banking.PayoutLegWebhookProcessed", clientInstructionId, Map.of(
+        auditAclEvent(clientInstructionId, "banking.PayoutLegWebhookProcessed", Map.of(
                 "payout_ref", payoutRef.toString(), "utr", ack.utr(),
                 "vendor_event_id", ack.vendorEventId(), "amount", amountPaise));
         return new PayoutResult(ack.utr());
@@ -81,7 +76,7 @@ public class EscrowAclService implements EscrowPort {
         // One PayoutLegWebhookProcessed per leg — the stub auto-succeeds all (partial-failure remediation
         // is BC4/G11). Distinct UTR per leg.
         for (int i = 0; i < ack.legUtrs().size(); i++) {
-            audit("banking.PayoutLegWebhookProcessed", clientInstructionId, Map.of(
+            auditAclEvent(clientInstructionId, "banking.PayoutLegWebhookProcessed", Map.of(
                     "payout_ref", payoutRef.toString(), "leg_index", i, "utr", ack.legUtrs().get(i),
                     "vendor_event_id", ack.vendorEventId(), "amount", legs.get(i).amountPaise()));
         }
@@ -97,7 +92,7 @@ public class EscrowAclService implements EscrowPort {
         }
         EscrowVendorClient.PayoutAck ack = vendorClient.executeRefund(clientInstructionId, amountPaise);
         complete(clientInstructionId, ack.vendorEventId(), ack.rawPayload());
-        audit("banking.RefundWebhookProcessed", clientInstructionId, Map.of(
+        auditAclEvent(clientInstructionId, "banking.RefundWebhookProcessed", Map.of(
                 "inflow_ref", inflowRef.toString(), "utr", ack.utr(),
                 "vendor_event_id", ack.vendorEventId(), "amount", amountPaise));
         return new RefundResult(ack.utr());
@@ -121,11 +116,11 @@ public class EscrowAclService implements EscrowPort {
             UUID original = jdbc.query(
                     "SELECT inflow_id FROM gate_inflow_observation WHERE vendor_event_id = ? OR utr = ? LIMIT 1",
                     rs -> rs.next() ? rs.getObject(1, UUID.class) : null, vendorEventId, utr);
-            audit("banking.Webhook.DuplicateDropped", original == null ? vaRef : original, Map.of(
+            auditAclEvent(original == null ? vaRef : original, "banking.Webhook.DuplicateDropped", Map.of(
                     "kind", "inflow", "va_ref", vaRef.toString(), "utr", utr, "vendor_event_id", vendorEventId));
             return WebhookOutcome.DUPLICATE_DROPPED;
         }
-        audit("banking.InflowWebhookProcessed", inflowId, Map.of(
+        auditAclEvent(inflowId, "banking.InflowWebhookProcessed", Map.of(
                 "va_ref", vaRef.toString(), "amount", amountPaise, "utr", utr, "vendor_event_id", vendorEventId));
         return WebhookOutcome.APPLIED;
     }
@@ -172,21 +167,4 @@ public class EscrowAclService implements EscrowPort {
                 String.class, field, aggregateId, eventType);
     }
 
-    private void audit(String eventType, UUID aggregateId, Map<String, Object> payload) {
-        auditLog.append(AuditEnvelopes.seed(CONTEXT, "VendorInstruction", aggregateId)
-                .eventType(eventType)
-                // System/vendor-side ACL events (stub completes in-process). The real adapter's inbound
-                // webhook would carry actor_type = vendor_escrow.
-                .actor(new Actor("system", "escrow_acl", null, null, null))
-                .payload(payload)
-                .build());
-    }
-
-    private static byte[] sha256(byte[] data) {
-        try {
-            return MessageDigest.getInstance("SHA-256").digest(data);
-        } catch (Exception e) {
-            throw new IllegalStateException("SHA-256 unavailable", e);
-        }
-    }
 }

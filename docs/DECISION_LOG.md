@@ -945,3 +945,23 @@ archival; **reconciliation/remediation are BC4/M13** (provisional inflows are me
 M5b is the **second** ACL consumer — the shared-ACL-base extraction (idempotent-instruction +
 `vendor_event_id` dedup + JSON/Instant helpers) is now worth doing before/with M5c.
 Validated: 122 tests green.
+
+---
+
+## DL-BE-026 — Shared ACL base (`AbstractAclService`)
+**Date:** 2026-06-22
+**What:** Standalone refactor closing the shared-ACL-base watch-for ([[DL-BE-024]]/[[DL-BE-025]]) before
+M5c lands. Extracted `acl/AbstractAclService` — the two pieces every integration-ACL fixed service
+repeats: `auditAclEvent(aggregateId, eventType, payload)` (the system-actor ACL envelope) and
+`sha256(byte[])` (verbatim-payload hash). The per-ACL `context` / actor-id / aggregate-type are
+constructor args. `VerificationService` (BC17) and `EscrowAclService` (BC18) now extend it; M5c
+Signing and M5d Notifications will too.
+**Why:** Two near-identical `audit()` + identical `sha256()` copies today, heading for four. Sharing
+them keeps the ACL audit shape and the hash-only (V.3) discipline in one place. Behaviour-preserving;
+the 122-test suite (envelope assertions across both ACLs) is the regression guard.
+**Scope decision:** deliberately kept the base **minimal** — the JSON↔jsonb and Instant↔OffsetDateTime
+helpers stay in `VerificationService` (the only user; Escrow doesn't serialise JSON), and the
+idempotency mechanisms are **not** shared (Verification caches by `(subject, api)`; Banking claims by
+`client_instruction_id` via `ON CONFLICT` — genuinely different, table-specific). Forcing them into a
+base would be a wrong-altitude abstraction.
+Validated: 122 tests green.

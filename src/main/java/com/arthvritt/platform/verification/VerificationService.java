@@ -1,7 +1,6 @@
 package com.arthvritt.platform.verification;
 
-import com.arthvritt.platform.audit.Actor;
-import com.arthvritt.platform.audit.AuditEnvelopes;
+import com.arthvritt.platform.acl.AbstractAclService;
 import com.arthvritt.platform.audit.AuditLog;
 import com.arthvritt.platform.shared.Ids;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -9,7 +8,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.security.MessageDigest;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -25,20 +23,17 @@ import java.util.UUID;
  * {@code verification_id}) + the cache, not the M4a {@code command_id} store.
  */
 @Service
-public class VerificationService implements VerificationPort {
-
-    private static final String CONTEXT = "verification";
+public class VerificationService extends AbstractAclService implements VerificationPort {
 
     private final JdbcTemplate jdbc;
     private final VerificationVendorClient vendorClient;
-    private final AuditLog auditLog;
     private final ObjectMapper mapper;
 
     public VerificationService(JdbcTemplate jdbc, VerificationVendorClient vendorClient,
                                AuditLog auditLog, ObjectMapper mapper) {
+        super(auditLog, "verification", "verification_acl", "Verification");
         this.jdbc = jdbc;
         this.vendorClient = vendorClient;
-        this.auditLog = auditLog;
         this.mapper = mapper;
     }
 
@@ -55,7 +50,7 @@ public class VerificationService implements VerificationPort {
         jdbc.update("INSERT INTO gate_verification (verification_id, subject_id, api_name, status) "
                         + "VALUES (?, ?, ?::verification_api_enum, 'requested')",
                 verificationId, request.subjectId(), request.api().wire());
-        audit("verification.Verification.Requested", verificationId, request, Map.of(
+        auditAclEvent(verificationId, "verification.Verification.Requested", Map.of(
                 "subject_id", request.subjectId().toString(), "api", request.api().wire()));
 
         VerificationVendorClient.VendorResponse response =
@@ -66,7 +61,7 @@ public class VerificationService implements VerificationPort {
                         + "ttl_until = ?, vendor_payload_hash = ?, hmac_verified_at = now(), updated_at = now() "
                         + "WHERE verification_id = ?",
                 toJson(response.extractedFields()), odt(ttlUntil), sha256(response.rawPayload()), verificationId);
-        audit("verification.Verification.Completed", verificationId, request, Map.of(
+        auditAclEvent(verificationId, "verification.Verification.Completed", Map.of(
                 "subject_id", request.subjectId().toString(), "api", request.api().wire()));
 
         return new VerificationResult(verificationId, VerificationStatus.COMPLETED,
@@ -96,25 +91,6 @@ public class VerificationService implements VerificationPort {
                         instantOf(rs.getObject("ttl_until", OffsetDateTime.class)))
                         : null,
                 subjectId, api.wire());
-    }
-
-    private void audit(String eventType, UUID verificationId, VerificationRequest request,
-                       Map<String, Object> payload) {
-        auditLog.append(AuditEnvelopes.seed(CONTEXT, "Verification", verificationId)
-                .eventType(eventType)
-                // System-triggered (the stub completes in-process). The real adapter's webhook completion
-                // would carry actor_type = vendor_aggregator.
-                .actor(new Actor("system", "verification_acl", null, null, null))
-                .payload(payload)
-                .build());
-    }
-
-    private static byte[] sha256(byte[] data) {
-        try {
-            return MessageDigest.getInstance("SHA-256").digest(data);
-        } catch (Exception e) {
-            throw new IllegalStateException("SHA-256 unavailable", e);
-        }
     }
 
     private String toJson(Map<String, Object> fields) {
