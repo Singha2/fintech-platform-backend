@@ -689,3 +689,34 @@ regression guard. No new producer-visible behaviour, no schema change.
 **Watch for:** the Actor sub-shape is still built at each call site (it genuinely varies — null vs
 session-bound); not worth abstracting further.
 Validated: 95 tests green.
+
+---
+
+## DL-BE-021 — M4c SoD enforcement & deviation register *(RESERVED — planned, not yet built)*
+**Date:** 2026-06-21 (reserved at draft)
+**Status:** Reserved. Spec drafted (`docs/modules/M4c-sod-enforcement.md`, Status: Draft).
+Placeholder so the number is claimed and the planned decisions are on the record; **fill in the
+as-built `What` / `Why` / `/code-review` follow-ups at M4c DoD.**
+**M4 re-slice (flagged for the architect):** the original plan grouped M4c = "SoD + maker-checker."
+Built M4a/M4b show these are independently large, unrelated mechanisms, so **M4c = SoD enforcement +
+deviation register** and **maker-checker (#1) → M4d**. Recorded so the split is on the record; trivial
+to recombine if the architect prefers.
+**Planned scope (M4 slice 3 of N):** the two-tier SoD engine (C5/DL-033) on M4b's `assignRole` —
+**strict block** (credit_reviewer ⊕ treasury_and_settlement → `sod_role_block`, 403, no envelope) and
+**soft warn** (the three soft pairs → require `override_reason`, create exactly one
+`admin_deviation_log` entry, emit `SodSoftDeviation.Logged`); a rules-as-data `SodPolicyEvaluator`
+reading the current `admin_sod_policy`; `reviewDeviation` (quarterly, DE.1/DE.2); `publishSodPolicy`
+(supersession, SP.1). Builds **non-negotiable #3** and **lifts the M4b role-assign guardrail**. All
+commands route through the M4a gateway (#2/#4/#5 + super_admin authz). **No new migration**
+(`admin_sod_policy`, `admin_deviation_log` exist V2).
+**Decisions taken to DoR-green (confirm/revise at build):**
+1. **Rules-as-data evaluator:** the SP.2 fixed policy is seeded and read from `admin_sod_policy` (not
+   hard-coded), so a future `publishSodPolicy` changes behaviour without code change.
+2. **Strict block is app-only** (no DB CHECK spans the two-row pair); the handler **locks the admin's
+   active role rows (`SELECT … FOR UPDATE`)** before check+insert to close the read-then-insert TOCTOU.
+   A DB exclusion constraint is the stronger long-term guard (watch-for).
+3. **Maker-checker (#1) → M4d**, with the Walking-Skeleton guardrail (go-live/disbursement need it).
+4. **RA.4 (auditor ⊕ operational role) deferred to M17** (no `audit_account` to cross-check yet).
+5. **Quarterly-review scheduler → M5/ops**; M4c ships only the `reviewDeviation` command.
+**Watch for (at build):** strict-SoD concurrency (FOR UPDATE now; consider a DB exclusion later);
+policy supersession must not orphan in-flight deviations.
