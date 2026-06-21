@@ -770,11 +770,20 @@ Validated: 96 tests green.
 
 ---
 
-## DL-BE-023 — M4d maker-checker engine *(RESERVED — planned, not yet built)*
-**Date:** 2026-06-21 (reserved at draft)
-**Status:** Reserved. Spec drafted (`docs/modules/M4d-maker-checker.md`, Status: Draft).
-Placeholder so the number is claimed and the planned decisions are on the record; **fill in the
-as-built `What` / `Why` / `/code-review` follow-ups at M4d DoD.**
+## DL-BE-023 — M4d maker-checker engine
+**Date:** 2026-06-21
+**What:** M4 slice 4/4 — the last foundation control, **non-negotiable #1** (spec
+`docs/modules/M4d-maker-checker.md`). `MakerCheckerGate` (C4, X11): reads the most-recent *unanswered*
+proposal envelope from `sys_audit_event` and compares its `actor_id` (= the human identity) to the
+checker's; `evaluate` returns blocked/clear + the proposed `aggregate_version`; `pendingApprovals` is
+the queue projection (excludes the maker). Proving flow on `AdminUserService`: `proposeDisableAdmin`
+(maker; one-open-proposal guard) + `approveDisableAdmin` (checker; **Blocked = a committed
+`MakerChecker.Blocked` envelope returned as the command event, no rollback**; **Approved = the disable
+cascade anchored to the proposed version + a `MakerChecker.Approved` side-envelope**, one transaction).
+`applyDisableTransition` extracted so the direct (M4b) and four-eyes (M4d) disables share it. Built
+**test-first** (7 `MakerCheckerTest`, red → green). **No new migration** — maker-checker state IS the
+envelope stream. 110 green.
+**Why (key decisions, as built):**
 **Planned scope (M4 slice 4/4 — last foundation control):** the record-level maker≠checker primitive
 (C4, X11, DL-033) — a `MakerCheckerGate` the checker command invokes: read the most-recent maker
 (proposal) envelope on the originating aggregate, compare `actor.actor_id` to the checker's. Equal →
@@ -798,6 +807,27 @@ migration** — maker-checker state IS the envelope stream (`sys_audit_event`); 
 5. **Maker-checker state read from `sys_audit_event`** (latest proposal envelope = the maker; unanswered
    = no later Approved/Blocked); the queue is a projection over it.
 6. **G29 scope:** the check is on the initiating aggregate only; dependents inherit via `causation_id`.
-**Watch for (at build):** audit-log-as-read-model can get query-heavy → a projection table is the later
-optimisation (audit log stays canonical); concurrent checkers on one proposal (idempotency + optimistic
-lock should serialise); `maker_aggregate_state_invalid` full state-machine check arrives with M9+.
+**`/code-review` follow-ups applied (high effort):** the review found a structural weakness — the gate
+answered "does a proposal exist" rather than "is the latest proposal still *unanswered*", and approve
+used the current (not proposed) version. Fixed:
+(a) **Answer-aware gate** — `evaluate` now returns the most-recent proposal with **no later
+Approved/Blocked** (so a resolved proposal is not actionable, and re-answering is impossible); ordering
+uses `event_id` (UUIDv7, time-ordered) not microsecond-truncated `recorded_at`.
+(b) **Proposed-version anchor** — approve applies the transition guarded on the **proposed** version
+(returned by the gate), so a state drift between propose and approve conflicts rather than
+blind-approving the current state; the `MakerChecker.Approved` envelope is stamped with that version
+(was the default 1).
+(c) **One open proposal per aggregate** — propose locks the admin row `FOR UPDATE` and rejects if an
+unanswered proposal exists, closing the "interpose a second proposer so the original maker can approve"
+hole (the maker-of-record is now unambiguous).
+(d) Shared event-type constants (`MakerCheckerGate.APPROVED_EVENT/BLOCKED_EVENT`, `DISABLE_PROPOSED`);
+dropped the redundant `currentVersion`; refreshed the stale `AdminUserService` class javadoc.
+**Watch for (carry forward):** audit-log-as-read-model can get query-heavy → a projection table is the
+later optimisation (audit log stays canonical); `maker_aggregate_state_invalid` full state-machine check
+arrives with M9+; the `MakerChecker.Approved` side-envelope and the transition envelope are not yet
+correlation-linked (the broader correlation-threading deferral from [[DL-BE-018]]); **test-helper
+duplication is now in three admin-IAM test classes** — the `AbstractAdminIamTest` base extraction
+(flagged in [[DL-BE-021]]) is overdue; **four-eyes coverage** — the direct M4b disable still bypasses
+maker-checker (close before production). Maker-checker'd disable could move to its own service if
+`AdminUserService` grows further.
+Validated: 110 tests green.

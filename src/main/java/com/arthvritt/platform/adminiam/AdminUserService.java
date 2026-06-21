@@ -6,6 +6,9 @@ import com.arthvritt.platform.command.CommandOutcome;
 import com.arthvritt.platform.command.CommandRejectedException;
 import com.arthvritt.platform.command.CommandRequest;
 import com.arthvritt.platform.command.CommandResult;
+import com.arthvritt.platform.audit.Actor;
+import com.arthvritt.platform.audit.AuditEnvelopes;
+import com.arthvritt.platform.audit.AuditLog;
 import com.arthvritt.platform.auth.SessionService;
 import com.arthvritt.platform.shared.Ids;
 import com.arthvritt.platform.shared.error.ValidationException;
@@ -18,27 +21,97 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * BC10 Admin IAM — the surface that issues admin commands through the {@link CommandGateway}. In M4a
- * this exists to <b>prove the substrate</b> with the thinnest real command ({@link #disableAdminUser}).
- * The admin lifecycle proper (provisioning, the {@code invited→active} MFA gate), RBAC role-authz, and
- * TOTP enrollment are M4b; SoD + maker-checker are M4c. There is no HTTP surface yet, so the
- * not-yet-role-authorized path is not externally reachable (DL-BE-018).
+ * BC10 Admin IAM — the admin-user lifecycle commands, all issued through the {@link CommandGateway}
+ * (so each inherits idempotency, MFA-freshness, super_admin authz, and audit). Provisioning, the
+ * {@code invited→active} MFA gate (AU10.1), and disable/enable with the identity+session cascade are
+ * M4b/M4d; the four-eyes disable (propose → approve via {@link MakerCheckerGate}) is the M4d proving
+ * flow (C4). There is no HTTP surface yet. RBAC is {@link RbacService}; SoD is {@link SodPolicyService}.
  */
 @Service
 public class AdminUserService {
 
     private static final Set<String> SUPER_ADMIN_ONLY = Set.of(AdminRole.SUPER_ADMIN.wire());
+    private static final String DISABLE_PROPOSED = "admin_iam.AdminUser.DisableProposed";
 
     private final JdbcTemplate jdbc;
     private final CommandGateway gateway;
     private final SessionService sessions;
     private final RoleResolver roles;
+    private final MakerCheckerGate makerChecker;
+    private final AuditLog auditLog;
 
-    public AdminUserService(JdbcTemplate jdbc, CommandGateway gateway, SessionService sessions, RoleResolver roles) {
+    public AdminUserService(JdbcTemplate jdbc, CommandGateway gateway, SessionService sessions,
+                            RoleResolver roles, MakerCheckerGate makerChecker, AuditLog auditLog) {
         this.jdbc = jdbc;
         this.gateway = gateway;
         this.sessions = sessions;
         this.roles = roles;
+        this.makerChecker = makerChecker;
+        this.auditLog = auditLog;
+    }
+
+    /**
+     * Maker side of the four-eyes disable (M4d): records the intent as a {@code DisableProposed}
+     * envelope. No state change — the admin stays active until a <i>different</i> super_admin approves.
+     * Only one open proposal is allowed per admin (the row is locked so concurrent proposes serialise),
+     * so the maker-of-record is unambiguous.
+     */
+    public CommandResult<Void> proposeDisableAdmin(CommandRequest request) {
+        return gateway.execute(request, SUPER_ADMIN_ONLY, () -> {
+            UUID targetId = request.aggregateId();
+            lockAdmin(targetId);
+            AdminRow row = loadFor(targetId, "active"); // can only propose disabling an active admin
+            if (makerChecker.hasOpenProposal("AdminUser", targetId, DISABLE_PROPOSED)) {
+                throw new ValidationException("a disable proposal is already pending for admin: " + targetId);
+            }
+            CommandEvent proposal = new CommandEvent(DISABLE_PROPOSED, row.version(),
+                    Map.of("admin_user_id", targetId.toString(), "action", "disable"),
+                    null, null, false); // a proposal records intent; it is not a state transition
+            return new CommandOutcome<>(null, proposal);
+        });
+    }
+
+    /**
+     * Checker side (M4d, C4): a different super_admin approves the open proposal. The
+     * {@link MakerCheckerGate} compares the proposal's maker to the checker's {@code actor_id} — equal ⇒
+     * {@code BLOCKED} (a committed {@code MakerChecker.Blocked} envelope, no transition); distinct ⇒
+     * apply the disable cascade (anchored to the <i>proposed</i> version, so a state drift since the
+     * proposal conflicts) and emit {@code MakerChecker.Approved} alongside the transition.
+     */
+    public CommandResult<MakerCheckerOutcome> approveDisableAdmin(CommandRequest request) {
+        return gateway.execute(request, SUPER_ADMIN_ONLY, () -> {
+            UUID targetId = request.aggregateId();
+            UUID checkerActorId = request.actorId();
+            MakerCheckerGate.MakerCheckerDecision decision = makerChecker.evaluate(
+                    "AdminUser", targetId, DISABLE_PROPOSED, checkerActorId);
+            if (!decision.hasProposal()) {
+                throw new ValidationException("no open disable proposal to approve for admin: " + targetId);
+            }
+            if (decision.blocked()) {
+                // Committed reject (X11/G22): emit MakerChecker.Blocked as the command's event, no transition.
+                CommandEvent blocked = new CommandEvent(MakerCheckerGate.BLOCKED_EVENT, decision.proposedVersion(),
+                        Map.of("record_id", targetId.toString(), "admin_user_id", targetId.toString(),
+                                "action", "disable"),
+                        null, null, false);
+                return new CommandOutcome<>(MakerCheckerOutcome.BLOCKED, blocked);
+            }
+            // Approved: apply the transition (guarded on the proposed version), then record
+            // MakerChecker.Approved beside it (one transaction).
+            AdminRow row = loadFor(targetId, "active");
+            UUID checkerAdminId = roles.adminUserId(checkerActorId);
+            int sessionsRevoked = applyDisableTransition(targetId, row.identityId(), checkerAdminId,
+                    decision.proposedVersion());
+            auditLog.append(AuditEnvelopes.seed("admin_iam", "AdminUser", targetId)
+                    .eventType(MakerCheckerGate.APPROVED_EVENT)
+                    .aggregateVersion(decision.proposedVersion() + 1)
+                    .actor(new Actor("admin_user", checkerActorId.toString(), null, null, null))
+                    .payload(Map.of("record_id", targetId.toString(),
+                            "maker_user_id", decision.makerActorId().toString(),
+                            "checker_user_id", checkerActorId.toString(), "decision", "approved"))
+                    .build());
+            return new CommandOutcome<>(MakerCheckerOutcome.APPROVED,
+                    disabledEvent(targetId, decision.proposedVersion() + 1, sessionsRevoked));
+        });
     }
 
     /** Provisions a new admin (its {@code auth_identity} + an {@code invited} {@code admin_user} row). */
@@ -114,28 +187,46 @@ public class AdminUserService {
             UUID targetId = request.aggregateId();
             AdminRow row = loadFor(targetId, "active");
             UUID actorAdminId = roles.adminUserId(request.actorId());
-            int updated = jdbc.update(
-                    "UPDATE admin_user SET status = 'disabled', disabled_at = now(), disabled_by = ?, "
-                            + "aggregate_version = aggregate_version + 1 "
-                            + "WHERE admin_user_id = ? AND status = 'active' AND aggregate_version = ?",
-                    actorAdminId, targetId, request.expectedVersion());
-            if (updated == 0) { // lost the optimistic race between loadFor and this write
-                throw versionConflict(targetId, request.expectedVersion());
-            }
-            // Cascade (defense beyond the RoleResolver authz filter): block re-authentication by
-            // disabling the auth identity, and kill any live sessions so existing ones die at once.
-            jdbc.update("UPDATE auth_identity SET status = 'disabled' WHERE identity_id = ?", row.identityId());
-            int sessionsRevoked = sessions.revokeAllForIdentity(row.identityId());
-
-            CommandEvent event = new CommandEvent("admin_iam.AdminUser.Disabled",
-                    request.expectedVersion() + 1,
-                    Map.of("admin_user_id", targetId.toString(), "sessions_revoked", sessionsRevoked),
-                    Map.of("status", "active"), Map.of("status", "disabled"), true);
-            return new CommandOutcome<>(null, event);
+            // Direct command: honour the caller-supplied optimistic version (P8). (The four-eyes approve
+            // path instead uses the freshly-read version — the checker approves the current state.)
+            int sessionsRevoked = applyDisableTransition(targetId, row.identityId(), actorAdminId,
+                    request.expectedVersion());
+            return new CommandOutcome<>(null, disabledEvent(targetId, request.expectedVersion() + 1, sessionsRevoked));
         });
     }
 
     // --- shared command-handler helpers --------------------------------------------------------
+
+    /** The disable state transition + cascade, shared by the direct (M4b) and four-eyes (M4d) paths. */
+    private int applyDisableTransition(UUID targetId, UUID identityId, UUID actorAdminId, int expectedVersion) {
+        int updated = jdbc.update(
+                "UPDATE admin_user SET status = 'disabled', disabled_at = now(), disabled_by = ?, "
+                        + "aggregate_version = aggregate_version + 1 "
+                        + "WHERE admin_user_id = ? AND status = 'active' AND aggregate_version = ?",
+                actorAdminId, targetId, expectedVersion);
+        if (updated == 0) { // lost the optimistic race between loadFor and this write
+            throw versionConflict(targetId, expectedVersion);
+        }
+        // Cascade (defense beyond the RoleResolver authz filter): block re-authentication by disabling
+        // the auth identity, and kill any live sessions so existing ones die at once.
+        jdbc.update("UPDATE auth_identity SET status = 'disabled' WHERE identity_id = ?", identityId);
+        return sessions.revokeAllForIdentity(identityId);
+    }
+
+    private CommandEvent disabledEvent(UUID targetId, int newVersion, int sessionsRevoked) {
+        return new CommandEvent("admin_iam.AdminUser.Disabled", newVersion,
+                Map.of("admin_user_id", targetId.toString(), "sessions_revoked", sessionsRevoked),
+                Map.of("status", "active"), Map.of("status", "disabled"), true);
+    }
+
+    /** Locks the admin row so concurrent proposals for one admin serialise (the one-open-proposal guard). */
+    private void lockAdmin(UUID adminUserId) {
+        UUID locked = jdbc.query("SELECT admin_user_id FROM admin_user WHERE admin_user_id = ? FOR UPDATE",
+                rs -> rs.next() ? rs.getObject(1, UUID.class) : null, adminUserId);
+        if (locked == null) {
+            throw new ValidationException("admin user not found: " + adminUserId);
+        }
+    }
 
     private boolean emailTaken(String email) {
         Integer n = jdbc.queryForObject("SELECT count(*) FROM admin_user WHERE email = ?", Integer.class, email);

@@ -9,7 +9,7 @@
 | **Module** | M4 — Admin IAM + Maker-Checker + SoD (BC10, BC16) |
 | **Slice** | M4d — the record-level maker≠checker primitive (C4, X11, DL-033) + the queue projection |
 | **Tier** | Foundation-critical (light ceremony · heavy control-invariant rigor) |
-| **Status** | Draft |
+| **Status** | Done (impl test-first + tests green; `/code-review` findings fixed; DL-BE-023) |
 | **Owner** | Amit + Claude |
 | **Created** | 2026-06-21 |
 
@@ -112,11 +112,13 @@ envelope (here `admin_iam.AdminUser.Disabled`). Emitted by **BC10**, not the ori
 - [ ] Inherited: a non-authorised checker → `role_not_held`; a stale-MFA checker → `mfa_assertion_expired` (INV-6).
 
 ## 8. Definition of Done (foundation-critical)
-- [ ] §7 tests green (maker≠checker + Blocked-is-committed are the headline invariants).
-- [ ] `/code-review` on the diff; findings fixed.
-- [ ] `DL-BE-023` entry (the `actor_id` check, Blocked-is-committed model vs M4a rollback-rejects,
+- [x] §7 tests green — `MakerCheckerTest` (7, written test-first: red on the stubbed commands → green);
+      110 total green.
+- [x] `/code-review` on the diff; findings fixed (answer-aware gate, proposed-version anchor on approve,
+      one-open-proposal guard + row lock, version-stamped Approved envelope, `event_id` ordering).
+- [x] `DL-BE-023` entry (the `actor_id` check, Blocked-is-committed model vs M4a rollback-rejects,
       envelope-stream-as-state + queue projection, G29 scope, the proving-flow + retrofit decision).
-- [ ] Status flipped to **Done**.
+- [x] Status flipped to **Done**.
 
 ## 9. Self-review resolutions (DoR-green)
 1. **Slicing — RESOLVED:** M4d is the maker-checker engine; M4 is then complete (M4a–M4d). Real
