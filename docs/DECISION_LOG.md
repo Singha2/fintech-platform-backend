@@ -604,3 +604,39 @@ hooks (same discipline as the M1b #4 deferral). Also: full payload-hash idempote
 builder spine is now hand-assembled in three services (`AuthService`, `SessionService`,
 `CommandGateway`) — extract a shared factory when the next producer lands (deferred, not a bug).
 Validated: 83 tests green.
+
+---
+
+## DL-BE-019 — M4b Admin IAM + RBAC + TOTP enrollment *(RESERVED — planned, not yet built)*
+**Date:** 2026-06-21 (reserved at draft)
+**Status:** Reserved. Spec drafted (`docs/modules/M4b-admin-iam-rbac-totp.md`, Status: Draft).
+Placeholder so the number is claimed and the planned decisions are on the record; **fill in the
+as-built `What` / `Why` / `/code-review` follow-ups at M4b DoD.**
+**Planned scope (M4 slice 2 of 3):** admin user lifecycle (`provisionAdminUser` invited →
+`activateAdminUser`, gated on AU10.1 → `disable`/`enable`), **TOTP enrollment** into `auth_mfa_factor`
+(the C7 factor admin activation requires), **composable RBAC** (`assignRole`/`revokeRole`,
+`activeRoles` = union of active assignments, C18/DL-032), and **role-authorization at the command
+boundary** — extending the M4a `CommandGateway` so a command declares `requiredRoles` and a non-holder
+is rejected `role_not_held` (403, no envelope, G22). Every command runs through the M4a gateway,
+inheriting #2/#4/#5. **No new migration** (`admin_user`, `admin_role_assignment`, `auth_mfa_factor`
+exist V2/V3).
+**Decisions taken to DoR-green (confirm/revise at build):**
+1. **SoD (#3) + maker-checker (#1) deferred to M4c.** M4b writes `admin_role_assignment` **without**
+   the SoD gate. **Guardrail:** role-assign must not be exposed (and SoD must gate it) before M4c —
+   an un-gated assign can create the strict credit_reviewer⊕treasury_and_settlement pair.
+2. **TOTP secret:** a `SecretCipher` port (dev AES-GCM with a config key) writes
+   `auth_mfa_factor.secret_encrypted`; real KMS at Production (ACL-port pattern). `last_used_at IS NOT
+   NULL` is the "confirmed" signal for the AU10.1 activation gate — no schema column added.
+3. **TOTP algorithm:** RFC-6238 via JDK `javax.crypto.Mac` (HMAC-SHA1, 6-digit, 30s, ±1 window) +
+   Base32; add `commons-codec` only if Base32 is not already transitive. No heavyweight lib.
+4. **Permission model = role-based:** the five `admin_role` values are the Phase-1 permission units
+   (the corpus defines no fine-grained catalog); authz = `activeRoles ∩ requiredRoles ≠ ∅` (C18).
+5. **Bootstrap:** the first `super_admin` is **seeded** outside the authz'd flow (no Super Admin exists
+   to provision the first).
+6. **Authz home:** wired into the M4a `CommandGateway` (authz step after the MFA gate, before claim);
+   closes M4a's `disableAdminUser` authz gap.
+7. **TOTP-at-login assertion minting deferred** (small follow-up); admins use the SMS-OTP fallback
+   (M3a) meanwhile; the gateway is factor-agnostic.
+**Watch for (at build):** revoking an admin's last active factor must downgrade `status` from active
+(schema comment); KMS + secret rotation at Production; keep the authz gate factor-agnostic so the
+AI-agent actor model (G31) composes later.
