@@ -31,6 +31,40 @@
 
 ---
 
+## 0. Naming — how `WS-n` maps to the module register (M0–M17)
+
+The plan has **two axes**: the **module register** (`M0–M17`, plan §C — units of functionality, each built
+to full rigor *eventually*) and the **build sequence** (plan §H — the *order*). §H is explicit that after
+**Wave 0 (M0–M5)** you do **not** build M6–M13 to full rigor next; you first build **Milestone 1, the
+Walking Skeleton**: *"the thin vertical slice … touching the foundation (M0–M5) plus **just enough** of
+M6–M13."*
+
+So a Walking-Skeleton slice is a **thin cut across one (or several) Wave-1 modules**, not a full module.
+The plan refers to these cuts as "M7 min", "M8 min", etc.; we label them `WS-0…WS-7` because a single slice
+(e.g. WS-4) spans several modules and no one `M`-number fits, and to keep skeleton-thin work visibly
+distinct from the later full-module work. The mapping is 1:1:
+
+| Slice | Plan's name (§H) | Module (built *full* at Milestone 2) | BC | Status |
+|---|---|---|---|---|
+| **WS-0** · HTTP edge | *(added — B4 API conventions, [[DL-BE-030]])* | — (cross-cutting infra) | — | ✅ Done |
+| **WS-1** · Supplier active | M7 min | M7 Supplier Onboarding | BC8 | ✅ Done |
+| **WS-2** · Buyer + ack user | M8 min | M8 Buyer Management | BC9 | ✅ Done |
+| **WS-3** · Investor active | M10 min | M10 Investor Onboarding | BC7 | ◻ next |
+| **WS-4** · Listing priced + gone-live | M9 min (+ M6 pricing, + M13 VA) | M9 Listing & Invoice | BC1/3/4 | ◻ |
+| **WS-5** · Subscribe to 100% | M11 min | M11 Subscription | BC2 | ◻ |
+| **WS-6** · Assignment single-leg signed | M12 min | M12 Assignment & Signing | BC5 | ◻ |
+| **WS-7** · Disbursement | M13 min | M13 Settlement | BC4 | ◻ |
+
+**Two things to keep straight:**
+- **`WS-0` is an addition, not a module-min.** It stands up the B4 HTTP edge (request envelope, error
+  taxonomy, bearer auth) — there is no `M`-numbered "API module"; B4 was meant to be applied per-module.
+  We front-loaded it because the foundation (M0–M5) was built headless. ([[DL-BE-030]].)
+- **The `M`-numbers return at Milestone 2.** "Widen Wave 1 to full rigor" builds `M6`, `M7-full`,
+  `M8-full`, … so each money-flow module is touched **twice**: once skeleton-thin here (e.g. `WS-1`), then
+  to its complete spec later (`M7`). The decision log cross-references the two (e.g. [[DL-BE-031]] ↔ M7).
+
+---
+
 ## 1. Goal — what "done" looks like
 
 One green integration test (`WalkingSkeletonE2ETest`, **MockMvc / `TestRestTemplate`**) drives this golden
