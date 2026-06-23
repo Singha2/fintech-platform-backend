@@ -44,6 +44,15 @@ public class CommandRejectedException extends PlatformException {
                 "command_id already used for a different command", HttpStatus.CONFLICT);
     }
 
+    /**
+     * The checker equals the maker on the same record (C4/X11). 409, no envelope here — the
+     * {@code MakerChecker.Blocked} <i>envelope-emitting</i> variant lands at WS-4.
+     */
+    public static CommandRejectedException checkerEqualsMaker() {
+        return new CommandRejectedException("checker_equals_maker",
+                "the checker cannot be the maker on this record", HttpStatus.CONFLICT);
+    }
+
     /** The actor holds none of the roles the command requires (C18). 403, no envelope (G22). */
     public static CommandRejectedException roleNotHeld() {
         return new CommandRejectedException("role_not_held",

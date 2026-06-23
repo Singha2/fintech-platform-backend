@@ -24,6 +24,7 @@ public final class ApiError {
             Map.entry("mfa_assertion_expired", "mfa_missing_or_expired"),
             Map.entry("role_not_held", "role_not_authorised"),
             Map.entry("sod_role_block", "role_not_authorised"),
+            Map.entry("checker_equals_maker", "maker_checker_violation"),
             Map.entry("access_denied", "role_not_authorised"),
             Map.entry("aggregate_version_stale", "version_conflict"),
             Map.entry("command_id_payload_mismatch", "idempotency_conflict"),

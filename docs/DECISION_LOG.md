@@ -1190,3 +1190,71 @@ domain logic; no new migration.
 align to B4's flat snake_case contract; the 422 / `MakerChecker.Blocked` *envelope-emitting* reject
 (B4 §4.3) is **not** WS-0's — it lands at WS-4 and reuses this same error body; keep authz at the command
 boundary (the gateway), so the security filter only authenticates, never authorises.
+
+---
+
+## DL-BE-031 — WS-1 Supplier active (BC8)
+**Date:** 2026-06-23
+**Status:** Built. Spec `docs/modules/WS-1-supplier-active.md` (Status: Done). Second sub-slice of
+[[DL-BE-029]]. The first business slice over the WS-0 edge: 9/9 supplier tests green, full suite **153**.
+
+**What shipped.** A `supplier` package (`SupplierService` + `SupplierController`) driving the linear
+`sup_account` machine `created → identity_verified → kyc_submitted → kyc_approved → credit_reviewed →
+maa_signed → active` over HTTP, all admin-on-behalf, each command through `CommandGateway` (idempotency #4,
+MFA-fresh #2, per-command SoD role #3, audit #5). Each transition is a status-guarded optimistic UPDATE
+(`WHERE status=<prior> AND aggregate_version=?`) — that guard IS the SA8.2 gate. A thin `compliance`
+package (`ComplianceService` over `comp_kyc_file`) is the M15 swap-point. Decisions as planned: outcomes
+recorded (no inline M5a/M5c), one slice, compliance seam. No new migration.
+
+**Notable discovery — KYC is DB-enforced maker-checker.** The inline `comp_kyc_file` DDL hid ALTER-added
+columns/constraints (`submitted_by`, `approver_mfa_assertion_id`; `comp_kyc_file_maker_ne_checker` +
+`comp_kyc_file_approver_mfa_chk`): KYC approval requires submitter (ops, maker) ≠ approver (compliance,
+checker) + the checker's MFA. So WS-1 already exercises a real maker-checker control. (Recurring lesson:
+trust the migration, not the inline `CREATE TABLE` — the truth is the ALTERs too. [[db-declarative-no-triggers]].)
+`uidx_sup_account_gstin`/`_cin` (UNIQUE) were likewise only in separate `CREATE UNIQUE INDEX` statements.
+
+**`/code-review` (6 findings, all fixed; 3 regression tests added).**
+1. *(high)* `grant-agency-consent` built a Postgres array literal by string-joining client scope values —
+   a comma/brace corrupts the stored consent scope (or 500). Fixed: typed `String[]` via `createArrayOf`
+   + per-element validation. Test: a comma-bearing scope value stored as one element.
+2. *(high, CLAUDE.md money rule)* `paise()` read `exposure_cap_paise` as `Number.longValue()`, silently
+   truncating a JSON float on a regulated credit-cap field. Fixed: reject non-integral. Test added.
+3. *(med)* maker=checker on KYC surfaced as a 500 (only the DB CHECK stopped it). Fixed: app-layer guard
+   in `ComplianceService.approveKyc` (checker ≠ submitter) → clean **409 `checker_equals_maker`**, with the
+   DB CHECK as backstop (app rule AND DB constraint both fire). New `CommandRejectedException.checkerEqualsMaker`.
+   Test: a dual-role admin's self-approval → 409, not 500.
+4. *(med)* create idempotency keyed the derived `supplier_id` on only `(command_id, legal_name, pan)` —
+   a divergent gstin/cin under the same `command_id` silently replayed. Fixed: derive from the full body.
+5. *(med)* `submit-financial-profile` re-submit hit the one-per-supplier UNIQUE → 500. Fixed: clean 400 guard.
+6. *(med)* `grant-agency-consent` could insert multiple active consents. Fixed: idempotent single-active-consent.
+
+**Deferred (noted, not bugs).** The **HTTP login/seed test helper** is now duplicated across
+`WalkingSkeletonEdgeTest` + `SupplierOnboardingTest`, and `deriveAggregateId`/`str`/GET-404 across two
+controllers — extract a shared test base + edge helpers at **WS-2** (rule of three). Child-row commands
+(grant-consent, financial-profile) accept `X-Aggregate-Version` but are **version-advisory** (additive
+inserts, no optimistic check) — deliberate. `X-Agency-Consent-Id` enforcement + AC.1 *rejection* and the
+separate `compliance.KycFile.Approved` envelope remain deferred (the supplier command envelope carries the
+fact for WS-1).
+
+### DL-BE-031 — original reservation (planned, pre-build)
+Second sub-slice of [[DL-BE-029]]; **fill in the as-built state machine + decisions at WS-1 DoD.**
+**Planned scope:** the first business slice through the WS-0 edge — one supplier, `created → active`, all
+commands admin-on-behalf (no supplier login, DL-012), each routed through `CommandGateway` (idempotency #4,
+MFA-fresh #2, per-command SoD role #3, audit #5). A new `supplier` package (`SupplierService` +
+`SupplierController`) over `sup_account`/`sup_agency_consent`/`sup_financial_profile`, plus a thin
+`compliance` package (`ComplianceService` over `comp_kyc_file`) as the M15 swap-point. No new migration.
+**DoR decisions (settled at the gate):** (A) **record outcomes** — the M5a verify / M5c sign round-trips are
+proven in their own tests; WS-1 records the verified-identity (pan/gstin/cin) and signed-MAA
+(`maa_agreement_id`) outcomes on the aggregate, deferring inline ACL calls + event-bus consumption to
+Milestone 2. (B) **one slice** — nine uniform state-machine commands, test-first, one E2E supplier test +
+per-transition + gate-reject asserts. (C) **compliance seam** — `ComplianceService.submitKyc/approveKyc` is
+the one-place swap-point for the real BC11 engine.
+**Invariants:** SA8.2 activation gate (kyc_approved ∧ credit cap ∧ MAA id — enforced by the linear
+status-guarded UPDATEs); agency consent *established* in the happy path (AC.1 *rejection* deferred); MAA is
+the supplier's own signatory (AC.2, recorded); exposure < ₹10 Cr keeps the BC3 four-eyes (C6) out;
+creating-command `supplier_id` derived from `(command_id, payload)` for stable replay (the WS-0 pattern).
+**Watch for (at build):** the `comp_kyc_file` CHECK requires `approver_id` (FK → admin_user, must be a
+compliance_reviewer) + `decided_at` when status is approved; `sup_financial_profile` has a one-per-supplier
+UNIQUE; the credit-review snapshot column is `credit_exposure_cap_paise` (paise) on `sup_account` — the real
+four-eyes lives in BC3 `risk_supplier_profile` (deferred); `X-Agency-Consent-Id` is advisory in WS-1 (the
+gateway does not yet stamp/enforce it — deferred with AC.1 rejection).
