@@ -14,8 +14,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 /**
- * M1a: an unhandled exception is mapped to a ProblemDetail (no stack trace leaks) and carries the
- * request correlation id, which is also echoed in the response header (see §7).
+ * M1a / WS-0: an unhandled exception is mapped to the B4 §4.1 error body (no stack trace leaks) and
+ * carries the request correlation id, which is also echoed in the response header (see §7).
  * Standalone setup — no Spring context / Docker needed; exercises filter + advice together.
  */
 class GlobalExceptionHandlerTest {
@@ -39,19 +39,21 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void uncaught_exception_becomes_problem_detail_with_correlation_id() throws Exception {
+    void uncaught_exception_becomes_b4_error_body_with_correlation_id() throws Exception {
         mockMvc.perform(get("/boom"))
                 .andExpect(status().isInternalServerError())
                 .andExpect(header().string(RequestIdFilter.REQUEST_ID_HEADER, not(blankOrNullString())))
-                .andExpect(jsonPath("$.requestId").isNotEmpty())
-                .andExpect(jsonPath("$.detail").isNotEmpty());
+                .andExpect(jsonPath("$.error_code").value("internal"))
+                .andExpect(jsonPath("$.error_category").value("internal"))
+                .andExpect(jsonPath("$.correlation_id").isNotEmpty())
+                .andExpect(jsonPath("$.message").isNotEmpty());
     }
 
     @Test
-    void inbound_request_id_is_propagated() throws Exception {
+    void inbound_request_id_is_propagated_as_correlation_id() throws Exception {
         mockMvc.perform(get("/boom").header(RequestIdFilter.REQUEST_ID_HEADER, "trace-123"))
                 .andExpect(header().string(RequestIdFilter.REQUEST_ID_HEADER, "trace-123"))
-                .andExpect(jsonPath("$.requestId").value("trace-123"));
+                .andExpect(jsonPath("$.correlation_id").value("trace-123"));
     }
 
     @Test
@@ -59,6 +61,6 @@ class GlobalExceptionHandlerTest {
         String forged = "real ERROR forged-log-line";
         mockMvc.perform(get("/boom").header(RequestIdFilter.REQUEST_ID_HEADER, forged))
                 .andExpect(header().string(RequestIdFilter.REQUEST_ID_HEADER, not(forged)))
-                .andExpect(jsonPath("$.requestId").value(not(forged)));
+                .andExpect(jsonPath("$.correlation_id").value(not(forged)));
     }
 }

@@ -1112,3 +1112,81 @@ at the edge / propagated via `X-Correlation-Id`; **webhook correlation re-establ
 never echo the platform id; re-link via the stored `client_instruction_id`/`va_id`/`signature_request_id`
 mapping); use **DB-enum-true** state names (`operational_checks_in_progress`, `awaiting_acknowledgment`;
 the disbursement gate is the `deal_listing.all_signed` boolean, **not** a separate state).
+
+---
+
+## DL-BE-030 — WS-0 the HTTP edge (B4 command surface)
+**Date:** 2026-06-23
+**Status:** Built. Spec `docs/modules/WS-0-http-edge.md` (Status: Done). First sub-slice of [[DL-BE-029]].
+The headless core (M1–M5) now has an HTTP skin: 11 MockMvc edge tests green, full suite 144.
+
+**What shipped.** A stateless B4 command surface over the already-built services (no new domain logic, no
+migration):
+- `infrastructure/security/SecurityConfig` — a `SecurityFilterChain` replacing Spring Security's
+  locked-down default: CSRF/formLogin/httpBasic off, `STATELESS`, permit `/auth/login/**` + Actuator
+  health, everything else authenticated. `SessionBearerAuthFilter` (`Authorization: Bearer <sessionId>` →
+  `SessionService.resolveSession` → a fresh `SecurityContext` whose principal is the `AuthSession`) +
+  `BearerAuthenticationEntryPoint` (B4 401) + `B4AccessDeniedHandler` (B4 403). **Authentication only —
+  authz/SoD/MFA stay at the command boundary** in `CommandGateway`, so an endpoint cannot under-enforce by
+  forgetting an annotation.
+- `infrastructure/web/` — `CommandResponse`/`EmittedEvent` (B4 §2.3) assembled by
+  `CommandResponseAssembler` (reads the appended `sys_audit_event` row back by `event_id`, so a replay
+  reconstructs the original body even when `CommandResult.result` is null); `ApiError` — the single B4 §4.1
+  flat snake_case error body; `GlobalExceptionHandler` now renders it for domain rejects **and** (via a
+  `handleExceptionInternal` override) every Spring MVC framework exception, so missing/malformed headers
+  and bodies never leak a non-B4 ProblemDetail.
+- Demonstrator controllers: `AuthController` (`/auth/login/password` → `/verify-otp` → bearer),
+  `AdminUserController` (`provision` 201 / `disable` / `GET` aggregate read).
+
+**Decisions (deviations from B4 documented per its own deviation clause).**
+1. **Bearer = `auth_session.session_id`** (opaque; no JWT in Phase 1 — every other principal field loaded
+   server-side via `resolveSession`). INV-1.
+2. **MFA freshness is session-carried**, re-checked per sensitive command via `isMfaFresh`; B4's per-command
+   `X-Mfa-Assertion-Id` header models **step-up MFA** and is deferred. Deviation from B4 §2.2. INV-3.
+3. **Audit-before-2xx without an outbox table** — M2's same-tx append already satisfies X13 in the monolith;
+   the edge test asserts the named `event_id` is durable before 2xx, so the contract survives the Phase-2
+   broker swap (G27). INV-2.
+4. **Creating-command identity = `nameUUID(command_id, payload)`** — so a same-`command_id` replay resolves
+   to the same aggregate id (the gateway keys idempotency structurally on `(command_type, aggregate_type,
+   aggregate_id)`, not a payload hash), while a divergent body under the same id maps to a different id →
+   409 `command_id_payload_mismatch`. A payload-hash column (G32) is the later refinement.
+
+**`/code-review` (8 findings — the edge's error-taxonomy completeness; all fixed, 3 regression tests added).**
+The headline (both finders): Spring MVC framework exceptions (missing `X-Command-Id`, malformed body/UUID)
+were rendering Spring's default RFC-7807 ProblemDetail, **leaking a non-B4 shape on the commonest 4xx
+paths** → fixed by the `handleExceptionInternal` override + a `MethodArgumentTypeMismatchException` handler.
+Plus: unauthenticated 500s on the open `/auth/login/**` routes (unchecked `body.get`/`UUID.fromString`) →
+input validation → 400; `provision` NPE on missing fields → validation; `GET` unknown id → 500 → now 404
+(`NotFoundException`); no filter-chain `accessDeniedHandler` → added; filter mutated the shared
+`SecurityContext` → now builds a fresh one.
+
+**Watch for.** Step-up MFA + the `X-Mfa-Assertion-Id` header (deferred); the 422 / `MakerChecker.Blocked`
+*envelope-emitting* reject (B4 §4.3) lands at WS-4 and reuses `ApiError`; RBAC tenant-scoping on reads
+(B4 §3.5) is deferred — any authenticated actor can currently read any admin aggregate (no sensitive
+field exposed). The earlier reserved-stub text follows for history.
+
+### DL-BE-030 — original reservation (planned, pre-build)
+First sub-slice of [[DL-BE-029]]; **fill in the as-built edge + deviations at WS-0 DoD.**
+**Planned scope:** turn the headless core (M1–M5) into an HTTP surface per B4 — a **stateless**
+`SecurityFilterChain` (replacing Spring Security's locked-down default), a `SessionBearerAuthFilter`
+(`Authorization: Bearer <sessionId>` → `SessionService.resolveSession` → authenticated principal) with a
+custom `AuthenticationEntryPoint` for the B4 401 body, a `RequestEnvelope` resolver (B4 §2.2 headers →
+`CommandRequest`), a `CommandResponse` assembler (B4 §2.3 `emitted_events`, read back by `event_id`), the
+full **B4 §4.1 error body** on `GlobalExceptionHandler` (flat snake_case: `error_code`, `error_category`,
+`violating_rule`, `correlation_id`, `retryable`), and two demonstrator controllers wiring already-built
+services (`AuthController` login; `AdminUserController` provision/disable + a GET aggregate read). No new
+domain logic; no new migration.
+**Decisions to confirm at build (deviations need a DL entry per B4):**
+1. **Bearer = `auth_session.session_id` UUID** (opaque; no JWT in Phase 1 — every other principal field
+   loaded server-side via `resolveSession`).
+2. **MFA freshness is session-carried**, re-checked per sensitive command via `isMfaFresh` — B4's
+   per-command `X-Mfa-Assertion-Id` header models **step-up MFA** and is **deferred**. Documented
+   deviation from B4 §2.2.
+3. **Audit-before-2xx without an outbox table** — M2's same-tx append already satisfies X13 in the
+   monolith; WS-0 asserts the contract at the HTTP boundary so it survives the Phase-2 broker swap (G27).
+4. `CommandResponse.emitted_events` reconstructed by reading `sys_audit_event` by `event_id` (the
+   gateway's `CommandResult` carries only the id).
+**Watch for (at build):** the existing default `GlobalExceptionHandler` emits camelCase `errorCode` —
+align to B4's flat snake_case contract; the 422 / `MakerChecker.Blocked` *envelope-emitting* reject
+(B4 §4.3) is **not** WS-0's — it lands at WS-4 and reuses this same error body; keep authz at the command
+boundary (the gateway), so the security filter only authenticates, never authorises.
