@@ -52,7 +52,7 @@ public class BuyerController {
                                                     @RequestBody(required = false) Map<String, Object> body) {
         String legalName = RequestBodies.requiredString(body, "legal_name");
         String mcaCin = RequestBodies.requiredString(body, "mca_cin");
-        String gstin = RequestBodies.requiredString(body, "gstin");
+        String gstin = RequestBodies.requiredGstin(body, "gstin");
         String sector = RequestBodies.requiredString(body, "sector");
         UUID buyerId = RequestBodies.deriveAggregateId("buyer", commandId,
                 String.join(":", legalName, mcaCin, gstin, sector));

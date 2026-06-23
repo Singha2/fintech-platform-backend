@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 /**
  * Shared edge helpers for reading + validating JSON command bodies into typed values, and for minting a
@@ -15,6 +16,13 @@ import java.util.UUID;
  * or mistyped field is a clean 400 (B4), never an NPE/500 or a silent coercion.
  */
 public final class RequestBodies {
+
+    // Format-validate identity fields at the edge so an operator typo is a clean 400, not a 500 from the
+    // DB domain CHECK (the schema's last line of defence). Patterns match the V1 domains exactly.
+    private static final Pattern PAN = Pattern.compile("^[A-Z]{5}[0-9]{4}[A-Z]$");
+    private static final Pattern GSTIN =
+            Pattern.compile("^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$");
+    private static final Pattern FOUR_DIGITS = Pattern.compile("^[0-9]{4}$");
 
     private RequestBodies() {
     }
@@ -64,6 +72,29 @@ public final class RequestBodies {
             throw new ValidationException("field '" + field + "' must be a positive amount in paise");
         }
         return paise;
+    }
+
+    /** A required PAN (`pan_type`: 5 letters + 4 digits + 1 letter). */
+    public static String requiredPan(Map<String, Object> body, String field) {
+        return requiredMatching(body, field, PAN, "a valid PAN");
+    }
+
+    /** A required GSTIN (`gstin_type`: the 15-char GSTIN format). */
+    public static String requiredGstin(Map<String, Object> body, String field) {
+        return requiredMatching(body, field, GSTIN, "a valid GSTIN");
+    }
+
+    /** A required 4-digit string (Aadhaar last-4, bank account last-4 — `CHAR(4)` / digit CHECK). */
+    public static String requiredFourDigits(Map<String, Object> body, String field) {
+        return requiredMatching(body, field, FOUR_DIGITS, "exactly 4 digits");
+    }
+
+    private static String requiredMatching(Map<String, Object> body, String field, Pattern pattern, String shape) {
+        String value = requiredString(body, field);
+        if (!pattern.matcher(value).matches()) {
+            throw new ValidationException("field '" + field + "' must be " + shape);
+        }
+        return value;
     }
 
     /**

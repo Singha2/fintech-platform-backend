@@ -1315,3 +1315,56 @@ buyer **suspension is DB-enforced maker-checker** (ALTER-added `suspend_maker_id
 active path is clear); `buyer_payment_rule` has a partial UNIQUE on `(buyer_id) WHERE superseded_by IS NULL`
 (one current rule — guard re-confirm like WS-1's financial profile); ack-user identity kind is
 `acknowledgment_user` (identity_kind_enum); `buyer_ack_user` UNIQUE(identity_id).
+
+---
+
+## DL-BE-033 — WS-3 Investor active (BC7, = M10 min)
+**Date:** 2026-06-23
+**Status:** Built. Spec `docs/modules/WS-3-investor-active.md` (Status: Done). Fourth sub-slice of
+[[DL-BE-029]]. Mirrors WS-1/2; 8/8 investor tests green, full suite **169**.
+
+**What shipped.** An `investor` package (`InvestorService` + `InvestorController`) driving the linear
+`inv_account` machine `signed_up → identity_verified → kyc_submitted → suitability_assessed →
+financial_profile_completed → kyc_approved → mia_signed → active` over HTTP, **invite-gated** and
+admin-on-behalf. Compliance issues the invite (`/investor-invites/issue`, stores SHA-256 of email/phone
+only); an ops `sign-up` consumes it (pending + unexpired + hash-match — C20/DL-008) and provisions the
+investor identity (direct `auth_identity` insert, kind `investor`; one envelope, `DuplicateKey`→400) +
+`inv_account`. KYC reuses `ComplianceService` (maker-checker, subject_type=investor). `activate` sets
+`kyc_refresh_due_at = activated_at + 12 months` (both via `now()` in one UPDATE — stable in-statement,
+C17). PII (pan/aadhaar/bank) lands on columns, never in an audit payload. No new migration.
+
+**`/code-review` (3 findings; fixed + a platform-wide hardening).** The two real findings were a
+**platform-wide input-validation gap**: identity fields cast to DB domains (`pan_type`, `aadhaar_last4_type`,
+`CHAR(4)`) with no edge format-check → an operator typo 500'd on the DB CHECK instead of a clean 400. Fixed
+**once** in the shared `RequestBodies` (`requiredPan` / `requiredGstin` / `requiredFourDigits`, regexes
+matching the V1 domains) and applied across **all three** onboarding controllers (investor pan/aadhaar/bank;
+supplier pan/gstin; buyer gstin). Third (low): the invite-consume UPDATE ignored its rowcount — added an
+`updated == 1` defence-in-depth check. 2 regression tests (bad bank-last4, bad pan → 400).
+
+**Deferred (noted).** The investor self-service portal + login flow (M10-full); suitability mismatch +
+override-ack (skeleton uses `mismatch=false`); penny-drop realism; KYC-refresh scheduler; suspension/exit
+(DB maker-checker, ALTER-added). `mca_cin`/`cin` are `CHAR(21)` (no domain CHECK) — a >21-char value still
+pads/errors at the DB; a length guard is a minor future add.
+
+### DL-BE-033 — original reservation (planned, pre-build)
+Fourth sub-slice of [[DL-BE-029]] (= M10 min); **fill in the as-built state machine + decisions at WS-3 DoD.**
+**Planned scope:** the third onboarding flow — one investor `signed_up → active` over HTTP, invite-gated.
+A new `investor` package (`InvestorService` + `InvestorController`) over `inv_invite`/`inv_account`/
+`inv_suitability`, reusing `ComplianceService` (comp_kyc_file, subject_type='investor'). Mirrors WS-1/2
+([[DL-BE-031]]/[[DL-BE-032]]); decisions inherited (record outcomes, one slice, full-body create id). No
+new migration.
+**DoR decision (settled at gate):** **admin-driven signup** — an ops_executive command consumes the invite
++ provisions the investor identity + account (fully admin-on-behalf); the C20 invite-gate is still enforced
+(pending + unexpired + email/phone SHA-256 hash-match). The investor self-service portal + login flow is
+deferred to M10-full.
+**New this slice:** the **invite-gate** (`investor-invites/issue` by compliance → consume at sign-up,
+C20/DL-008); the `inv_account` activation CHECK `kyc_refresh_due_at = activated_at + 12 months` (both set
+via `now()` in one UPDATE — stable in-statement, C17); the investor identity is a direct `auth_identity`
+insert (kind `investor`) — one envelope, no PII (pan/aadhaar/bank) in any audit payload.
+**Watch for (at build):** linear status order is `signed_up → identity_verified → kyc_submitted →
+suitability_assessed → financial_profile_completed → kyc_approved → mia_signed → active` (DB-enum truth —
+KYC *approval* comes AFTER suitability + financial profile, not adjacent to submission); `inv_account` has
+UNIQUE(identity_id) + UNIQUE(invite_id) (one account per invite); `auth_identity.email` is UNIQUE
+(DuplicateKey→400 like the WS-2 ack user); sub_type CHECK locks `resident_individual`/`huf`;
+`inv_suitability.mismatch=false` keeps the override path out; suspension/exit are DB maker-checker
+(ALTER-added, deferred).

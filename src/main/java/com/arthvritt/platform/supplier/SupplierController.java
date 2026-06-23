@@ -54,8 +54,8 @@ public class SupplierController {
                                                   @RequestBody(required = false) Map<String, Object> body) {
         String legalName = RequestBodies.requiredString(body, "legal_name");
         String constitutionType = RequestBodies.requiredString(body, "constitution_type");
-        String pan = RequestBodies.requiredString(body, "pan");
-        String gstin = RequestBodies.requiredString(body, "gstin");
+        String pan = RequestBodies.requiredPan(body, "pan");
+        String gstin = RequestBodies.requiredGstin(body, "gstin");
         String cin = RequestBodies.requiredString(body, "cin");
         // Derive the supplier id from the FULL body so a same-command_id replay maps to the same id, while
         // any divergent field (e.g. a corrected gstin) yields a different id → the gateway 409s the conflict.
