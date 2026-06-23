@@ -6,8 +6,8 @@ import com.arthvritt.platform.command.CommandRequest;
 import com.arthvritt.platform.command.CommandResult;
 import com.arthvritt.platform.infrastructure.web.CommandResponse;
 import com.arthvritt.platform.infrastructure.web.CommandResponseAssembler;
+import com.arthvritt.platform.infrastructure.web.RequestBodies;
 import com.arthvritt.platform.shared.error.NotFoundException;
-import com.arthvritt.platform.shared.error.ValidationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -20,8 +20,6 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.nio.charset.StandardCharsets;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -54,14 +52,14 @@ public class SupplierController {
     public ResponseEntity<CommandResponse> create(@AuthenticationPrincipal AuthSession session,
                                                   @RequestHeader("X-Command-Id") UUID commandId,
                                                   @RequestBody(required = false) Map<String, Object> body) {
-        String legalName = str(body, "legal_name");
-        String constitutionType = str(body, "constitution_type");
-        String pan = str(body, "pan");
-        String gstin = str(body, "gstin");
-        String cin = str(body, "cin");
+        String legalName = RequestBodies.requiredString(body, "legal_name");
+        String constitutionType = RequestBodies.requiredString(body, "constitution_type");
+        String pan = RequestBodies.requiredString(body, "pan");
+        String gstin = RequestBodies.requiredString(body, "gstin");
+        String cin = RequestBodies.requiredString(body, "cin");
         // Derive the supplier id from the FULL body so a same-command_id replay maps to the same id, while
         // any divergent field (e.g. a corrected gstin) yields a different id → the gateway 409s the conflict.
-        UUID supplierId = deriveAggregateId(commandId,
+        UUID supplierId = RequestBodies.deriveAggregateId("supplier", commandId,
                 String.join(":", legalName, constitutionType, pan, gstin, cin));
         CommandRequest request = create(session, commandId, supplierId, ".Supplier.Create", 0);
         CommandResult<UUID> result = suppliers.create(request, legalName, constitutionType, pan, gstin, cin);
@@ -75,7 +73,7 @@ public class SupplierController {
                                               @RequestHeader("X-Aggregate-Version") int version,
                                               @RequestBody Map<String, Object> body) {
         CommandRequest request = create(session, commandId, id, ".AgencyConsent.Grant", version);
-        return responses.from(suppliers.grantAgencyConsent(request, strings(body, "scope")));
+        return responses.from(suppliers.grantAgencyConsent(request, RequestBodies.requiredStrings(body, "scope")));
     }
 
     @PostMapping("/{id}/record-identity-verified")
@@ -116,8 +114,8 @@ public class SupplierController {
                                               @RequestHeader("X-Aggregate-Version") int version,
                                               @RequestBody Map<String, Object> body) {
         CommandRequest request = create(session, commandId, id, ".Supplier.RecordCreditReview", version);
-        return responses.from(suppliers.recordCreditReview(request, paise(body, "exposure_cap_paise"),
-                str(body, "risk_rating")));
+        return responses.from(suppliers.recordCreditReview(request, RequestBodies.requiredPaise(body, "exposure_cap_paise"),
+                RequestBodies.requiredString(body, "risk_rating")));
     }
 
     @PostMapping("/{id}/record-maa-signed")
@@ -157,44 +155,5 @@ public class SupplierController {
     private CommandRequest create(AuthSession session, UUID commandId, UUID supplierId, String command, int version) {
         return new CommandRequest(session, commandId, CONTEXT, CONTEXT + command, AGGREGATE_TYPE, supplierId,
                 version, "admin_user", ActionSensitivity.SENSITIVE);
-    }
-
-    private static String str(Map<String, Object> body, String field) {
-        Object value = body == null ? null : body.get(field);
-        if (value == null || value.toString().isBlank()) {
-            throw new ValidationException("missing required field: " + field);
-        }
-        return value.toString();
-    }
-
-    private static List<String> strings(Map<String, Object> body, String field) {
-        Object value = body == null ? null : body.get(field);
-        if (!(value instanceof List<?> list) || list.isEmpty()) {
-            throw new ValidationException("missing required array field: " + field);
-        }
-        List<String> result = new java.util.ArrayList<>(list.size());
-        for (Object element : list) {
-            if (!(element instanceof String s) || s.isBlank()) {
-                throw new ValidationException("field '" + field + "' must be an array of non-blank strings");
-            }
-            result.add(s);
-        }
-        return result;
-    }
-
-    private static long paise(Map<String, Object> body, String field) {
-        Object value = body == null ? null : body.get(field);
-        if (!(value instanceof Number number)) {
-            throw new ValidationException("missing required numeric field: " + field);
-        }
-        // Money is integer paise — never a float. Reject a fractional value rather than silently truncating.
-        if (number.longValue() != number.doubleValue()) {
-            throw new ValidationException("field '" + field + "' must be an integer amount in paise");
-        }
-        return number.longValue();
-    }
-
-    private static UUID deriveAggregateId(UUID commandId, String payload) {
-        return UUID.nameUUIDFromBytes(("supplier:" + commandId + ":" + payload).getBytes(StandardCharsets.UTF_8));
     }
 }

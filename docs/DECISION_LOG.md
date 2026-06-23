@@ -1258,3 +1258,60 @@ compliance_reviewer) + `decided_at` when status is approved; `sup_financial_prof
 UNIQUE; the credit-review snapshot column is `credit_exposure_cap_paise` (paise) on `sup_account` — the real
 four-eyes lives in BC3 `risk_supplier_profile` (deferred); `X-Agency-Consent-Id` is advisory in WS-1 (the
 gateway does not yet stamp/enforce it — deferred with AC.1 rejection).
+
+---
+
+## DL-BE-032 — WS-2 Buyer + ack user (BC9)
+**Date:** 2026-06-23
+**Status:** Built. Spec `docs/modules/WS-2-buyer-active.md` (Status: Done). Third sub-slice of
+[[DL-BE-029]]. Mirrors WS-1 ([[DL-BE-031]]); 8/8 buyer tests green, full suite **161**.
+
+**What shipped.** A `buyer` package (`BuyerService` + `BuyerController`) driving the linear `buyer_account`
+machine `nominated → identity_verified → credit_assessed → engagement_started → active` over HTTP, all
+admin-on-behalf through `CommandGateway`. The acknowledgment user is a login principal —
+`designate-ack-user` provisions an `acknowledgment_user` identity (OTP-only: no password, no MFA — AU.1/
+DL-021) + a `buyer_ack_user` row. **BA.3 gate** on `activate` is part state-machine (status guard), part
+app-check (≥1 active ack user ∧ a current payment rule). No new migration.
+
+**Shared-helper extraction (committed at WS-1, rule of three).** `RequestBodies`
+(requiredString/Strings/Paise/PositivePaise, deriveAggregateId) now shared by the admin/supplier/buyer
+controllers; `AbstractEdgeHttpTest` (seedAdminWithRoles + HTTP bearerFor) shared by the WS-0/WS-1/WS-2
+tests. Migrated the existing controllers + tests; suite stayed green throughout.
+
+**`/code-review` (4 findings, all fixed; 2 regression tests added).**
+1. *(high)* `designate-ack-user` used `AuthService.provisionIdentity`, which **500s on a duplicate email**
+   and emits a **second audit envelope leaking the ack user's email (PII)** — defeating the buyer
+   envelope's PII-avoidance. Fixed: a direct `auth_identity` insert (mirroring `AdminUserService`) with a
+   `DuplicateKeyException`→400 catch → one envelope, no PII in the log, clean dup handling. Test added.
+2. *(med)* `RequestBodies.requiredPaise` didn't enforce `> 0`, so a zero/negative `credit_limit_paise`
+   (`positive_money_paise`) 500'd on the DB CHECK. Fixed: `requiredPositivePaise` rejects ≤ 0 at the edge.
+   Test added.
+3. *(med)* `activate` ran the BA.3 check before the state guard → a wrong-state buyer got a misleading
+   "ack user required". Fixed: check state first, then BA.3, then the version-guarded transition.
+
+**Deferred (noted, not bugs).** Buyer **suspension is DB maker-checker** (ALTER-added
+`suspend_maker_id`/`suspend_checker_id`/`suspend_checker_mfa_assertion_id` — only bites when `suspended_at`
+is set, so the active path is clear) — Milestone 2. The ack user's OTP **login flow** (WS-2 only provisions
+the identity). A `nominate` with a duplicate gstin still 500s on the UNIQUE — consistent with WS-1's
+supplier create; a uniform "translate UNIQUE → 409" pass is a future cleanup across both.
+
+### DL-BE-032 — original reservation (planned, pre-build)
+Third sub-slice of [[DL-BE-029]]; **fill in the as-built state machine + decisions at WS-2 DoD.**
+**Planned scope:** the second counterparty — one buyer `nominated → active` over HTTP, admin-on-behalf,
+each command through `CommandGateway`. A new `buyer` package (`BuyerService` + `BuyerController`) over
+`buyer_account`/`buyer_ack_user`/`buyer_payment_rule`. Mirrors WS-1 ([[DL-BE-031]]); decisions inherited
+(record outcomes, one slice, full-body create id). No new migration.
+**New this slice:** the acknowledgment user is a login principal — `designate-ack-user` provisions an
+`acknowledgment_user` `auth_identity` (OTP-only: no password, no MFA factor — AU.1/DL-021) + a
+`buyer_ack_user` row. **BA.3 activation gate** is part status-machine, part app-check: `activate` requires
+`engagement_started` ∧ ≥1 active ack user ∧ a current payment rule.
+**Also lands here (committed at WS-1):** the **shared-helper extraction** (rule of three) — `RequestBodies`
+(requiredString/Strings/Paise, deriveAggregateId) now shared by the admin/supplier/buyer controllers, and
+`AbstractEdgeHttpTest` (seedAdminWithRoles + HTTP bearerFor) shared by the WS-0/WS-1/WS-2 tests. Migrated
+the existing controllers + tests; full suite stayed green (153).
+**Watch for (at build):** `buyer_account` has UNIQUE on gstin + mca_cin (vary per buyer in tests, as WS-1);
+buyer **suspension is DB-enforced maker-checker** (ALTER-added `suspend_maker_id`/`suspend_checker_id`/
+`suspend_checker_mfa_assertion_id` + CHECKs — deferred, only bites when `suspended_at` is set, so the
+active path is clear); `buyer_payment_rule` has a partial UNIQUE on `(buyer_id) WHERE superseded_by IS NULL`
+(one current rule — guard re-confirm like WS-1's financial profile); ack-user identity kind is
+`acknowledgment_user` (identity_kind_enum); `buyer_ack_user` UNIQUE(identity_id).

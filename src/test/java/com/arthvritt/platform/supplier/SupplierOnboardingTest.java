@@ -1,23 +1,15 @@
 package com.arthvritt.platform.supplier;
 
-import com.arthvritt.platform.AbstractIntegrationTest;
-import com.arthvritt.platform.auth.AuthService;
-import com.arthvritt.platform.notification.StubNotifier;
-import com.arthvritt.platform.shared.Ids;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.arthvritt.platform.web.AbstractEdgeHttpTest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -30,18 +22,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * WS-1 supplier onboarding (see docs/modules/WS-1-supplier-active.md §7): one supplier driven
  * {@code created → active} over HTTP, all commands admin-on-behalf through the WS-0 edge. Asserts the
  * linear state machine + the SA8.2 activation gate, per-command SoD, and idempotency. MockMvc over the
- * Testcontainers Postgres.
+ * Testcontainers Postgres (login + admin-seed helpers from {@link AbstractEdgeHttpTest}).
  */
-@AutoConfigureMockMvc
-class SupplierOnboardingTest extends AbstractIntegrationTest {
+class SupplierOnboardingTest extends AbstractEdgeHttpTest {
 
-    private static final java.util.Random RND = new java.util.Random();
-
-    @Autowired private MockMvc mvc;
-    @Autowired private ObjectMapper json;
-    @Autowired private AuthService auth;
-    @Autowired private StubNotifier notifier;
-    @Autowired private JdbcTemplate jdbc;
+    private static final Random RND = new Random();
 
     private String ops;
     private String compliance;
@@ -50,9 +35,9 @@ class SupplierOnboardingTest extends AbstractIntegrationTest {
     @BeforeEach
     void seedActors() {
         notifier.clear();
-        ops = bearerFor(seedAdmin("ops_executive"));
-        compliance = bearerFor(seedAdmin("compliance_reviewer"));
-        credit = bearerFor(seedAdmin("credit_reviewer"));
+        ops = bearerFor(seedAdminWithRoles("ops_executive"));
+        compliance = bearerFor(seedAdminWithRoles("compliance_reviewer"));
+        credit = bearerFor(seedAdminWithRoles("credit_reviewer"));
     }
 
     @Test
@@ -229,56 +214,5 @@ class SupplierOnboardingTest extends AbstractIntegrationTest {
     private int versionOf(UUID supplier) {
         return jdbc.queryForObject("SELECT aggregate_version FROM sup_account WHERE supplier_id = ?",
                 Integer.class, supplier);
-    }
-
-    private JsonNode node(MvcResult res) throws Exception {
-        return json.readTree(res.getResponse().getContentAsString());
-    }
-
-    /** A seeded active admin holding {@code role}, with a password (for HTTP login). */
-    private Seeded seedAdmin(String role) {
-        return seedAdminWithRoles(role);
-    }
-
-    /** A seeded active admin holding all {@code roles} (e.g. to exercise a maker=checker SoD violation). */
-    private Seeded seedAdminWithRoles(String... roles) {
-        String email = "adm-" + UUID.randomUUID() + "@arthvritt.test";
-        String password = "Pw-" + UUID.randomUUID();
-        UUID identityId = auth.provisionIdentity("admin_user", email, phone(), "Admin");
-        UUID adminUserId = Ids.newId();
-        jdbc.update("INSERT INTO admin_user (admin_user_id, identity_id, email, display_name, status) "
-                + "VALUES (?, ?, ?, ?, 'active')", adminUserId, identityId, email, "Admin");
-        for (String role : roles) {
-            jdbc.update("INSERT INTO admin_role_assignment (admin_user_id, role, status, assigned_by) "
-                    + "VALUES (?, ?::admin_role, 'active', ?)", adminUserId, role, adminUserId);
-        }
-        auth.setPassword(identityId, password);
-        return new Seeded(identityId, email, password);
-    }
-
-    /** Logs the seeded admin in over HTTP (password → verify-otp) and returns the bearer. */
-    private String bearerFor(Seeded admin) {
-        try {
-            MvcResult pw = mvc.perform(post("/auth/login/password")
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content(json.writeValueAsString(Map.of("email", admin.email(), "password", admin.password()))))
-                    .andExpect(status().isOk()).andReturn();
-            String challengeId = node(pw).get("challenge_id").asText();
-            String code = notifier.lastCodeFor(admin.identityId()).orElseThrow();
-            MvcResult otp = mvc.perform(post("/auth/login/verify-otp")
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content(json.writeValueAsString(Map.of("challenge_id", challengeId, "code", code))))
-                    .andExpect(status().isOk()).andReturn();
-            return node(otp).get("bearer").asText();
-        } catch (Exception e) {
-            throw new IllegalStateException("login failed for " + admin.email(), e);
-        }
-    }
-
-    private static String phone() {
-        return "+9198" + (10000000 + new java.util.Random().nextInt(89999999));
-    }
-
-    private record Seeded(UUID identityId, String email, String password) {
     }
 }

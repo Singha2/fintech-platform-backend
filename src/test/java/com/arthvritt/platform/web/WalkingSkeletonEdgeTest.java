@@ -1,18 +1,8 @@
 package com.arthvritt.platform.web;
 
-import com.arthvritt.platform.AbstractIntegrationTest;
-import com.arthvritt.platform.adminiam.AdminBootstrap;
-import com.arthvritt.platform.auth.AuthService;
-import com.arthvritt.platform.notification.StubNotifier;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
 import java.util.Map;
@@ -28,28 +18,21 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * WS-0 edge tests (see docs/modules/WS-0-http-edge.md §7): the B4 command surface over real controllers.
  * Drives the foundation's already-built services through HTTP — login → command → query — and asserts the
  * wire contract: the request envelope, the {@code emitted_events} body, audit-before-2xx, idempotency, and
- * the no-envelope reject taxonomy. MockMvc over the Testcontainers Postgres.
+ * the no-envelope reject taxonomy. Login + admin-seed helpers from {@link AbstractEdgeHttpTest}.
  */
-@AutoConfigureMockMvc
-class WalkingSkeletonEdgeTest extends AbstractIntegrationTest {
+class WalkingSkeletonEdgeTest extends AbstractEdgeHttpTest {
 
-    @Autowired private MockMvc mvc;
-    @Autowired private ObjectMapper json;
-    @Autowired private AuthService auth;
-    @Autowired private AdminBootstrap bootstrap;
-    @Autowired private StubNotifier notifier;
-    @Autowired private JdbcTemplate jdbc;
-
-    private SuperAdmin admin;
+    private Seeded admin;
 
     @BeforeEach
     void seedSuperAdmin() {
         notifier.clear();
-        String email = "root-" + UUID.randomUUID() + "@arthvritt.test";
-        String password = "Sup3r-Secret-" + UUID.randomUUID();
-        AdminBootstrap.Seeded seeded = bootstrap.seedSuperAdmin(email, "Root", phone());
-        auth.setPassword(seeded.identityId(), password);
-        admin = new SuperAdmin(seeded.adminUserId(), seeded.identityId(), email, password);
+        admin = seedAdminWithRoles("super_admin");
+    }
+
+    /** The WS-0 super-admin's bearer (the slice's commands all require super_admin + a live session). */
+    private String login() {
+        return bearerFor(admin);
     }
 
     // --- the headline edge invariants --------------------------------------------------------------
@@ -196,22 +179,6 @@ class WalkingSkeletonEdgeTest extends AbstractIntegrationTest {
 
     // --- helpers -----------------------------------------------------------------------------------
 
-    /** Drives the two-step login over HTTP and returns the bearer (the session id). */
-    private String login() throws Exception {
-        MvcResult pw = mvc.perform(post("/auth/login/password")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(json.writeValueAsString(java.util.Map.of("email", admin.email(), "password", admin.password()))))
-                .andExpect(status().isOk()).andReturn();
-        String challengeId = node(pw).get("challenge_id").asText();
-        String code = notifier.lastCodeFor(admin.identityId()).orElseThrow();
-
-        MvcResult otp = mvc.perform(post("/auth/login/verify-otp")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(json.writeValueAsString(java.util.Map.of("challenge_id", challengeId, "code", code))))
-                .andExpect(status().isOk()).andReturn();
-        return node(otp).get("bearer").asText();
-    }
-
     private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder provision(
             String bearer, UUID commandId, String email) throws Exception {
         return post("/admin-users/provision")
@@ -229,10 +196,6 @@ class WalkingSkeletonEdgeTest extends AbstractIntegrationTest {
                         + "VALUES (?, ?, ?, ?, 'active')",
                 adminUserId, identityId, "t-" + adminUserId + "@arthvritt.test", "Target");
         return adminUserId;
-    }
-
-    private JsonNode node(MvcResult res) throws Exception {
-        return json.readTree(res.getResponse().getContentAsString());
     }
 
     private long auditCount() {
@@ -256,12 +219,5 @@ class WalkingSkeletonEdgeTest extends AbstractIntegrationTest {
 
     private static String newEmail() {
         return "user-" + UUID.randomUUID() + "@arthvritt.test";
-    }
-
-    private static String phone() {
-        return "+9198" + (10000000 + new java.util.Random().nextInt(89999999));
-    }
-
-    private record SuperAdmin(UUID adminUserId, UUID identityId, String email, String password) {
     }
 }

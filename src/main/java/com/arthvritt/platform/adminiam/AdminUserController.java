@@ -6,8 +6,8 @@ import com.arthvritt.platform.command.CommandRequest;
 import com.arthvritt.platform.command.CommandResult;
 import com.arthvritt.platform.infrastructure.web.CommandResponse;
 import com.arthvritt.platform.infrastructure.web.CommandResponseAssembler;
+import com.arthvritt.platform.infrastructure.web.RequestBodies;
 import com.arthvritt.platform.shared.error.NotFoundException;
-import com.arthvritt.platform.shared.error.ValidationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -20,7 +20,6 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.UUID;
 
@@ -51,14 +50,14 @@ public class AdminUserController {
     @PostMapping("/provision")
     public ResponseEntity<CommandResponse> provision(@AuthenticationPrincipal AuthSession session,
                                                      @RequestHeader("X-Command-Id") UUID commandId,
-                                                     @RequestBody(required = false) Map<String, String> body) {
-        String email = required(body, "email");
-        String displayName = required(body, "display_name");
-        String phone = required(body, "phone");
+                                                     @RequestBody(required = false) Map<String, Object> body) {
+        String email = RequestBodies.requiredString(body, "email");
+        String displayName = RequestBodies.requiredString(body, "display_name");
+        String phone = RequestBodies.requiredString(body, "phone");
         // Creating command: the new aggregate's id is derived from (command_id, payload), so a replay of
         // the same command_id+body resolves to the same id (the gateway keys idempotency on the aggregate
         // id), while a divergent body under the same command_id maps to a different id → 409 conflict.
-        UUID newAdminId = deriveAggregateId(commandId, email);
+        UUID newAdminId = RequestBodies.deriveAggregateId("admin", commandId, email);
         CommandRequest request = new CommandRequest(session, commandId, CONTEXT, CONTEXT + ".AdminUser.Create",
                 AGGREGATE_TYPE, newAdminId, 0, "admin_user", ActionSensitivity.SENSITIVE);
 
@@ -94,17 +93,5 @@ public class AdminUserController {
             throw new NotFoundException("admin user not found: " + adminUserId);
         }
         return row;
-    }
-
-    private static String required(Map<String, String> body, String field) {
-        String value = body == null ? null : body.get(field);
-        if (value == null || value.isBlank()) {
-            throw new ValidationException("missing required field: " + field);
-        }
-        return value;
-    }
-
-    private static UUID deriveAggregateId(UUID commandId, String email) {
-        return UUID.nameUUIDFromBytes(("admin:" + commandId + ":" + email).getBytes(StandardCharsets.UTF_8));
     }
 }
