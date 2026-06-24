@@ -74,6 +74,16 @@ public final class RequestBodies {
         return paise;
     }
 
+    /** A required strictly-positive {@code int} (counts like tenor_days, rate_bps) — range-checked so a
+     *  large JSON number is a clean 400, never a silent {@code (int)} wrap to an in-range value. */
+    public static int requiredPositiveInt(Map<String, Object> body, String field) {
+        long value = requiredPaise(body, field); // reuses the integral (no-fraction) guard
+        if (value <= 0 || value > Integer.MAX_VALUE) {
+            throw new ValidationException("field '" + field + "' must be a positive integer");
+        }
+        return (int) value;
+    }
+
     /** A required PAN (`pan_type`: 5 letters + 4 digits + 1 letter). */
     public static String requiredPan(Map<String, Object> body, String field) {
         return requiredMatching(body, field, PAN, "a valid PAN");

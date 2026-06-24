@@ -1368,3 +1368,76 @@ UNIQUE(identity_id) + UNIQUE(invite_id) (one account per invite); `auth_identity
 (DuplicateKey→400 like the WS-2 ack user); sub_type CHECK locks `resident_individual`/`huf`;
 `inv_suitability.mismatch=false` keeps the override path out; suspension/exit are DB maker-checker
 (ALTER-added, deferred).
+
+---
+
+## DL-BE-034 — WS-4 Listing priced + gone-live (BC1/3/4, = M9 min)
+**Date:** 2026-06-24
+**Status:** Built. Spec `docs/modules/WS-4-listing-golive.md` (Status: Done). The **inflection slice** —
+first money math + first two-endpoint maker-checker+MFA gate. 10/10 listing tests green, full suite **179**.
+
+**What shipped.** A `listing` package (`ListingService` + `ListingController` + `FundingMath`) driving
+invoice → ops-checks → pricing snapshot → go-live → VA over HTTP. Go-live is a two-endpoint maker-checker
+(B4 §6.1): `snapshot-and-ready` (ops, maker — freezes the snapshot + `funding_target`, stamps
+`golive_maker_id`) then `approve-go-live` (treasury, checker — checker≠maker + MFA, creates the VA inline).
+
+**Rounding worked example (HALF_EVEN per line item, asserted to the paise).** face=100000000 (₹10L),
+rate=1200bps, tenor=60d, fee=200bps → discount = round(1972602.74) = **1972603**; fee = **2000000**;
+**funding_target = 96027397**. `FundingMath` keeps the arithmetic in `BigDecimal` and narrows to `long`
+only after the `>0` guard (a valid target is in `(0, face_value]`, so it never overflows).
+
+**Resolved the open maker-checker question — no M4d extraction.** `deal_listing` carries its own
+`golive_maker_id`/`golive_checker_id`/`golive_mfa_assertion_id` columns + DB CHECKs (`maker_ne_checker`,
+`checker ⟹ maker+MFA`), exactly like `comp_kyc_file`. App-guard checker≠maker → clean 409
+`checker_equals_maker`, DB CHECK as backstop.
+
+**`/code-review` (3 findings, all fixed; 2 regression tests).** All were 500-on-edge-input (the reviewer
+cleared the structural risks — maker-checker atomicity, snapshot immutability, no orphan VA, no floats):
+1. *(high)* `tenor_days`/`rate_bps` read via the **money** helper `requiredPositivePaise` then `(int)` cast
+   → a large JSON number silently wrapped to an in-range value, bypassing the band/tenor guards. Fixed:
+   new `RequestBodies.requiredPositiveInt` (range-checked). Test added.
+2. *(med)* two concurrent `approve-go-live` could both insert the VA → UNIQUE → 500 on the loser. Fixed by
+   **reordering**: the version-guarded listing UPDATE runs first (loser → clean 409 before any VA insert;
+   `va_id` has no FK so it can name the VA inserted next).
+3. *(low)* `longValueExact` on a line item → `ArithmeticException` (500) for an absurd-but-BIGINT-legal
+   face×rate. Fixed by the `BigDecimal`-to-the-end refactor. Test added.
+
+**Deferred (noted).** Real per-invoice OTP acknowledgment; the BC3 pricing-band *command* + BC8/9 caps
+(seeded in tests; the cross-context reads are a documented shortcut → BC query ports + event bus at M2 when
+ArchUnit is wired); business-day funding-window (L.8 — uses 5 calendar days); the funding-window-expiry
+scheduler; L.11 counterparty-active re-check; ops-check failure / rejected_operational.
+
+### DL-BE-034 — original reservation (planned, pre-build)
+Fifth sub-slice of [[DL-BE-029]]; the **inflection slice** — first money math + first maker-checker+MFA gate.
+**Planned scope:** invoice → ops checks → pricing snapshot (freeze `funding_target`) → go-live
+(maker-checker + MFA, two endpoints) → VA. A new `listing` package (`ListingService` + `ListingController`
++ `FundingMath`) over `deal_invoice`/`deal_listing`, creating `cash_virtual_account` inline at go-live. No
+new migration.
+**DoR decisions (settled at gate):**
+1. **`funding_target` rounding = HALF_EVEN per line item** (banker's, unbiased): `funding_target =
+   face_value − round(face_value·rate_bps/10000·tenor_days/365) − round(face_value·fee_bps/10000)`, each
+   round HALF_EVEN to integer paise via `BigDecimal`; guard `> 0` at the edge; frozen at snapshot (L.7/
+   DL-024/G20). The user's call (compliance can re-pin later — documented + reversible).
+2. **Maker-checker = column-based on `deal_listing`** (`golive_maker_id`/`golive_checker_id`/
+   `golive_mfa_assertion_id` + DB CHECKs `maker_ne_checker`, `checker ⟹ maker+MFA`) — **resolves the open
+   "M4d extraction may precede WS-4" question: NO extraction needed.** The listing carries its own
+   purpose-built maker-checker columns, exactly like `comp_kyc_file` (WS-1/3); app-guard checker≠maker →
+   clean 409 `checker_equals_maker`, DB CHECK as backstop. M4d's envelope-stream `MakerCheckerGate` is the
+   alternative for aggregates *without* dedicated columns. (New `CommandRejectedException.checkerEqualsMaker`
+   already exists from WS-1.) Maker = actor at `snapshot-and-ready`; checker ∈ treasury_and_settlement at
+   `approve-go-live`.
+3. **Inline VA** at go-live (real BC4 subscribes to `Listing.GoneLive` — no bus yet). One VA per listing
+   (DB UNIQUE), `expected_inflow_total = funding_target`, `deal_listing.va_id` set once.
+4. **OTP per-invoice acknowledgment deferred** (needs the buyer ack-user login flow, itself deferred WS-2);
+   skeleton enters/exits `awaiting_acknowledgment` via ops; transient `operational_checks_in_progress`
+   collapsed.
+5. **Cross-context reads** (buyer credit limit, supplier exposure cap, active pricing band) are
+   **documented pragmatic direct reads** in the listing service for the skeleton — replaced by BC3/8/9
+   query ports + event bus at Milestone 2 (when ArchUnit is wired). Pricing band + counterparty caps are
+   **seeded** in WS-4 tests (upstream context state, like seeding admins).
+**Watch for (at build):** `face_value`/`funding_target` overflow — use `BigDecimal` for the products
+(face_value up to ~10^9 paise × bps × tenor); `funding_window_close_at = now + 5 calendar days` (L.8
+business-day calc deferred); tenor_bucket from tenor_days (≤30 lte_30d / 31-60 / 61-90 / 91-180);
+`risk_pricing_policy` active band = `superseded_by IS NULL` partial UNIQUE; `cash_virtual_account.va_id`
+has NO FK from `deal_listing` (soft ref) — insert VA (FKs to listing) then set `listing.va_id`; keep
+face_value < ₹1 Cr in tests to keep four-eyes (C6) out.
