@@ -1441,3 +1441,68 @@ business-day calc deferred); tenor_bucket from tenor_days (≤30 lte_30d / 31-60
 `risk_pricing_policy` active band = `superseded_by IS NULL` partial UNIQUE; `cash_virtual_account.va_id`
 has NO FK from `deal_listing` (soft ref) — insert VA (FKs to listing) then set `listing.va_id`; keep
 face_value < ₹1 Cr in tests to keep four-eyes (C6) out.
+
+---
+
+## DL-BE-035 — WS-5 Subscribe to 100% → fully-funded (BC2/1/18/4, = M11 min)
+**Date:** 2026-06-24
+**Status:** Built. Spec `docs/modules/WS-5-subscribe-fully-funded.md` (Status: Done). The **funding-equality
+(G10)** slice + the platform's first **inbound webhook**. 8/8 tests green, full suite **187**.
+
+**What shipped.** `subscription` (BC2: `SubscriptionService.commit` via gateway + `confirmFromInflow`;
+`SubscriptionController`) · `settlement` (BC4: `SettlementService.recordReconciledInflow`) · a banking
+webhook ingress (`BankingWebhookController` + `HmacVerifier`, B4 §5). The G10 chain runs end-to-end over
+HTTP: commit (ops on-behalf) bumps `committed_total` atomically and flips `live → fully_funded` at exact
+equality (L.6); a HMAC-signed inflow → `EscrowAclService` (dedup) → settlement reconcile (VA `observed`
++= amount) → subscription `confirmed` (S.3). **G10 asserted to the paise:** `Σ confirmed = committed_total
+= observed_inflow_total = funding_target` (= 50000000 in the test). HMAC over `(timestamp‖body)` against a
+config secret (`platform.webhook.banking.secret`), 5-min replay, constant-time compare; invalid → 401 +
+`WebhookSignature.Invalid`; re-delivery (same `vendor_event_id`/`utr`) → 200, counted once. No new migration.
+
+**The coordinated commit (INV-3).** Over-subscription is impossible by construction: the cap predicate
+`committed_total + amount ≤ funding_target` lives **inside** the bump UPDATE (rowcount 0 → 422-class reject),
+and the `fully_funded` flip is folded into the **same statement** via
+`status = CASE WHEN committed_total + ? = funding_target THEN 'fully_funded' ELSE status END … RETURNING
+status` — so the flip is driven off the true post-bump value, never a racy before-image.
+
+**`/code-review` (3 findings, all fixed; 2 regression tests).** The review's highest-value catch:
+1. *(high, must-fix)* the `fully_funded` flip originally used the **stale before-image** `committed_total`
+   (read before the bump), so under concurrent commits the flip could be **missed** (listing stuck `live`
+   at full funding). Fixed by the atomic single-statement bump+CASE+RETURNING above. Regression: a 2-investor
+   partial-fill (30M + 20M → fully_funded).
+2. *(med, money)* the webhook parsed `amount_paise` via `(Number).longValue()` → a JSON float was silently
+   truncated. Fixed: reject non-integral at parse. Test added.
+3. *(low)* `SettlementService` flipped the observation to `reconciled` before the unknown-VA guard → a
+   reconciled-but-unfunded orphan. Fixed by resolving the listing first.
+
+**Deferred (noted).** Investor self-service commit + login (M11-full); multi-investor allocation / partial
+fills beyond the sequential case / concentration warnings; funding shortfall + refund; pre-confirmation
+cancellation; the EoD master-statement reconciliation overlay (provisional→reconciled collapsed); the
+funding-window-expiry scheduler (L.9); full G24 correlation re-establishment (uses `va_id`→listing). The
+non-deterministic dedup-correlation SELECT in M5b's `processInflowWebhook` is latent/audit-only (the two
+UNIQUEs make a true partial-collision impossible) — left as-is, out of WS-5 scope.
+
+### DL-BE-035 — original reservation (planned, pre-build)
+Sixth sub-slice of [[DL-BE-029]]; the **funding-equality (G10)** slice + the platform's first **inbound
+webhook**. **Planned scope:** subscription commit → fully-funded → HMAC inflow webhook → confirmed.
+**Planned scope:** subscription commit → fully-funded → HMAC inflow webhook → confirmed. New `subscription`
+(BC2) + `settlement` (BC4) packages + a banking webhook ingress (`BankingWebhookController` + `HmacVerifier`).
+Reuses M5b `EscrowAclService.processInflowWebhook` (dedup/audit). No new migration.
+**DoR decisions (settled at gate):** one slice (G10 end-state needs commit+inflow+confirm together); commit
+actor = `ops_executive` on-behalf (investor login → M11-full; commit is unilateral, no maker-checker);
+over-subscription blocked at commit (S.5 app-guard `committed_total+amount ≤ funding_target` → 422, DB CHECK
+`committed_lte_target` backstop); **FullyFunded fires at commit** (`committed_total == funding_target`, L.6 —
+"fully funded" = fully *subscribed*); **HMAC** over `(timestamp‖body)` against a per-vendor config secret
+(`platform.webhook.banking.secret`), 5-min replay, invalid → 401 + `WebhookSignature.Invalid`; provisional→
+reconciled collapsed (EoD overlay deferred), inflow auto-confirms; cross-BC coordination via inline calls
+(webhook → EscrowAcl → settlement → subscription) pending the event bus.
+**G10 (the headline):** `Σ confirmed sub.amount = deal_listing.committed_total =
+cash_virtual_account.observed_inflow_total = funding_target`, paise-exact.
+**Watch for (at build):** the **coordinated commit** must bump `committed_total` in the same tx as the
+subscription insert (over-subscription impossible by construction, not check-then-act); the webhook handler
+must verify HMAC **before** any parse/DB-read (C10) and emit `WebhookSignature.Invalid` on failure; the
+webhook body must be hashed as the **exact received bytes** (controller takes the raw String, parses after
+verify) so the test can sign the identical payload; `gate_inflow_observation` inserts as `'provisional'` then
+WS-5 reconciles to `'reconciled'`; FullyFunded is a 2nd envelope from the commit command (gateway emits
+`Committed`, the handler appends `Listing.FullyFunded` like `approveDisableAdmin`); webhook returns **200
+even on duplicate** (B4 §5.2, stop re-delivery); single-investor inflow↔subscription match only.

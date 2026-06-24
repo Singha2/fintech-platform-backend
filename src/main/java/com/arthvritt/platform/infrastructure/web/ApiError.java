@@ -20,6 +20,7 @@ public final class ApiError {
             Map.entry("bearer_expired", "auth_failure"),
             Map.entry("bad_credentials", "auth_failure"),
             Map.entry("unauthenticated", "auth_failure"),
+            Map.entry("signature_invalid", "auth_failure"),
             Map.entry("mfa_assertion_missing", "mfa_missing_or_expired"),
             Map.entry("mfa_assertion_expired", "mfa_missing_or_expired"),
             Map.entry("role_not_held", "role_not_authorised"),

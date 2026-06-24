@@ -125,6 +125,18 @@ public class EscrowAclService extends AbstractAclService implements EscrowPort {
         return WebhookOutcome.APPLIED;
     }
 
+    /**
+     * Records a failed inbound-webhook HMAC verification (B4 §5.1, C10) — one of the few cases where an
+     * unauthenticated source produces an audit fact, because a signature failure is security-relevant. The
+     * raw payload is never stored; only its SHA-256 is recorded. Runs in its own transaction so the envelope
+     * persists independently of the 401 response.
+     */
+    @Transactional
+    public void recordSignatureInvalid(String vendor, byte[] rawBody) {
+        auditAclEvent(Ids.newId(), "banking.WebhookSignature.Invalid", Map.of(
+                "vendor", vendor, "payload_sha256", java.util.HexFormat.of().formatHex(sha256(rawBody))));
+    }
+
     // --- internals -----------------------------------------------------------------------------
 
     /**
