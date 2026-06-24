@@ -1506,3 +1506,55 @@ verify) so the test can sign the identical payload; `gate_inflow_observation` in
 WS-5 reconciles to `'reconciled'`; FullyFunded is a 2nd envelope from the commit command (gateway emits
 `Committed`, the handler appends `Listing.FullyFunded` like `approveDisableAdmin`); webhook returns **200
 even on duplicate** (B4 §5.2, stop re-delivery); single-investor inflow↔subscription match only.
+
+---
+
+## DL-BE-036 — WS-6 Assignment single-leg signed → all_signed (BC5, = M12 min)
+**Date:** 2026-06-24
+**Status:** Built. Spec `docs/modules/WS-6-assignment-all-signed.md` (Status: Done). The **C27 disbursement
+gate** (single-investor cut). 4/4 tests green, full suite **191**.
+
+**What shipped.** An `assignment` package (`AssignmentService` + `AssignmentController`): `request` opens the
+`legal_assignment_set` (one per listing, AS.1; `total_count=1`) + the investor's MIA (`legal_master_agreement`,
+`initiated`) + `legal_signature_request`, and initiates the signature via the M5c `SignatureAclService`
+(inline — no signing webhook); `complete-signing` drives `completeSignature` (cert), marks the request
+`completed` + the MIA `signed` (cert) + the leg `signed`, and at `signed_count == total_count` flips the set
+to `all_signed` and **`deal_listing.all_signed = TRUE`** — the C27 gate WS-7 reads. The leg is a JSONB value
+object carrying the `vsr_id` to complete. No new migration.
+
+**`/code-review` (3 findings, all fixed; 1 regression assertion).**
+1. *(high)* `complete-signing` derived a **synthetic** command aggregate_id (`assignment-set-complete:…`) ≠
+   the real `legal_assignment_set` id, so the `AssignmentSet.AllSigned` envelope was chained to a
+   non-existent aggregate — the gate-opening event orphaned from its aggregate. Fixed: the controller
+   resolves the real set id from the listing and targets it. Regression: assert the AllSigned envelope's
+   `aggregate_id` equals the real set id.
+2. *(med)* the C27 `deal_listing.all_signed` flip was guarded `WHERE status='fully_funded'` with the rowcount
+   ignored → a 0-row flip would leave the set `all_signed` but the gate flag false (silent, and WS-7 would be
+   silently blocked). Fixed: assert `flipped == 1`, else throw (clean rollback).
+3. *(low, defensive)* `legs.get(0)` hard-coded the single-leg invariant — added a guard
+   (`legs.size()==1 && total_count==1`) so a future multi-leg widening can't silently mis-gate C27.
+
+**Deferred (noted).** Multi-leg assignment (multi-investor); the 24h `sign_deadline` *incomplete* path +
+scheduler (AS.4/G13); the signing *webhook* (M12-full — the inbound mechanism is already proven by WS-5);
+per-invoice stamping (AS.7/G2); signing retry/failure paths.
+
+### DL-BE-036 — original reservation (planned, pre-build)
+Seventh sub-slice of [[DL-BE-029]]; the **C27 disbursement gate** (the single-investor cut).
+**Planned scope:** on `fully_funded`, request the assignment set (total_count=1), initiate the investor's
+MIA signature via the M5c `SignatureAclService` (inline), complete it, and flip `deal_listing.all_signed =
+TRUE` (C27/L.5 — the gate WS-7's disbursement requires). A new `assignment` package (`AssignmentService` +
+`AssignmentController`) over `legal_assignment_set`/`legal_master_agreement`/`legal_signature_request`,
+reusing M5c. No new migration.
+**DoR decisions (settled at gate):** **inline completion** — a `complete-signing` ops step calls
+`completeSignature` (the M5c stub completes in-process); the signing *webhook* is deferred to M12-full
+(WS-5 already proved the inbound-webhook mechanism, so a signing webhook repeats it with a different
+vendor). **Single leg** (`total_count = 1`); multi-leg + the 24h `sign_deadline` *incomplete* path (AS.4,
+G13) deferred. **Admin-on-behalf** — investor signs (`legal_signer_type='investor'`) but ops initiates +
+completes; request is an explicit ops command (real BC5 subscribes to `Listing.FullyFunded`).
+**Watch for (at build):** `legal_assignment_set` UNIQUE(listing_id) (AS.1) + counts CHECK
+(`signed+unsigned=total`, AS.5) — request sets unsigned=total=1, completion moves one to signed=1; the MIA
+`status_shape_chk` requires `signature_cert_serial` NOT NULL when status leaves `initiated`/`failed` (set it
+with the `signed` transition); `legal_signature_request_cert_only_on_completed_chk` (cert only on
+`completed`); the M5c `initiateSignature(vsrId, signatureRequestId, docHash bytes, signerRef, SignMethod)` →
+`completeSignature(vsrId)` → `certSerial` (store `vsr_id` in the leg JSONB to complete later); `SignMethod`
+= AADHAAR_OTP/DSC; the `all_signed` flip is on `deal_listing` (boolean), listing stays `fully_funded`.
