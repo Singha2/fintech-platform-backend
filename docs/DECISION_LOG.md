@@ -1070,11 +1070,44 @@ it (ND.2). Add a `(recipient, type, reference)` dedup key if duplicate notificat
 
 ---
 
-## DL-BE-029 — Walking Skeleton: one invoice `listed → disbursed` *(RESERVED — planned, not yet built)*
-**Date:** 2026-06-22 (reserved at draft)
-**Status:** Reserved. Spec drafted (`docs/modules/WS-walking-skeleton.md`, Status: Draft).
-Umbrella number for Milestone 1; **fill in the as-built strategy + cross-cutting proofs at the WS DoD.**
-Each sub-slice's non-obvious decisions claim their own subsequent `DL-BE-030+` numbers as built.
+## DL-BE-029 — Walking Skeleton: one invoice `listed → disbursed` — **MILESTONE 1 COMPLETE**
+**Date:** 2026-06-24 (completed)
+**Status:** Built. Spec `docs/modules/WS-walking-skeleton.md` (Status: Done). **Milestone 1 — the Walking
+Skeleton — is complete.** One invoice walks `listed → disbursed` end-to-end **over HTTP through real
+controllers** (`WalkingSkeletonE2ETest`); full suite **198** green.
+
+**The eight sub-slices, all built (each with its own as-built DL):**
+- **WS-0** the B4 HTTP edge ([[DL-BE-030]]) — request envelope, error taxonomy, bearer auth.
+- **WS-1** Supplier active ([[DL-BE-031]]) · **WS-2** Buyer + ack user ([[DL-BE-032]]) · **WS-3** Investor
+  active ([[DL-BE-033]]) — the three counterparties (admin-on-behalf onboarding).
+- **WS-4** Listing priced + gone-live ([[DL-BE-034]]) — first money math (`funding_target`, HALF_EVEN) +
+  first maker-checker+MFA gate (go-live) + VA.
+- **WS-5** Subscribe → fully-funded ([[DL-BE-035]]) — funding equality **G10** + the first inbound webhook
+  (HMAC).
+- **WS-6** Assignment single-leg signed ([[DL-BE-036]]) — the **C27** `all_signed` gate.
+- **WS-7** Disbursement ([[DL-BE-037]]) — the second maker-checker+MFA gate (payout) → `disbursed`.
+
+**The five hardest invariants, proven early and at the wire boundary** (the whole point of the skeleton):
+**maker-checker** (go-live WS-4 + payout WS-7, proposer ≠ approver, column-based, no M4d extraction);
+**MFA-freshness** (the two checker steps); **funding equality G10** (`Σ confirmed = committed_total =
+observed_inflow_total = funding_target`, paise-exact, over-subscription blocked at commit by construction);
+**idempotency** (`command_id` + vendor `event_id`/`client_instruction_id`); **audit chaining + audit-before-
+2xx** (X13). Compliance auto-approved behind the same command the real BC11 will call (M15); all vendors are
+the M5 in-process stubs (the inbound seam exercised for real via the WS-5 HMAC webhook).
+
+**Process that held across all eight slices:** spec → reserve DL → **test-first red→green** → `/code-review`
+(adversarial sub-agent finders) → fix → DoD → commit. The review caught a real, non-obvious bug on **every**
+money/gate slice (WS-4 int-cast wrap; WS-5 stale-before-image `fully_funded` miss; WS-6 orphaned audit
+envelope + swallowed gate flip; WS-7 concurrent double-draft) — the discipline paid for itself repeatedly.
+
+**Carried forward to Milestone 2 (widen Wave 1 to full rigor — the `M`-numbers return):** multi-investor
+allocation + partial fills + concentration (M11); the real BC11 compliance engine (M15); the BC18 payout
+webhook + EoD reconciliation overlay; the signing webhook (M12); business-day windows + schedulers; all the
+reject/alternate state-machine branches; ArchUnit + the BC query-ports that replace the documented
+cross-context-read shortcuts; the `docs/sql/` bundle reconciled with the V6 index.
+
+### DL-BE-029 — original reservation (planned, pre-build)
+Umbrella number for Milestone 1; sub-slices claim their own subsequent `DL-BE-030+` numbers as built.
 **Planned scope (Milestone 1 — the first end-to-end money-flow, *over HTTP*):** the thin vertical cut that
 takes ONE invoice through the **B4 HTTP edge** + BC1/2/3/4/5 + BC7/8/9 + BC11(auto-approve stub), on top of
 the finished foundation (M0–M5). M1–M5 built the hexagonal *core* (services proven headless); **there is no
@@ -1558,3 +1591,60 @@ with the `signed` transition); `legal_signature_request_cert_only_on_completed_c
 `completed`); the M5c `initiateSignature(vsrId, signatureRequestId, docHash bytes, signerRef, SignMethod)` →
 `completeSignature(vsrId)` → `certSerial` (store `vsr_id` in the leg JSONB to complete later); `SignMethod`
 = AADHAAR_OTP/DSC; the `all_signed` flip is on `deal_listing` (boolean), listing stays `fully_funded`.
+
+---
+
+## DL-BE-037 — WS-7 Disbursement → disbursed (BC4, = M13 min)
+**Date:** 2026-06-24
+**Status:** Built. Spec `docs/modules/WS-7-disbursement.md` (Status: Done). **The finale** — the second
+maker-checker+MFA gate (the payout) → `listed → disbursed`. **Milestone 1 (Walking Skeleton) complete.**
+6/6 disbursement tests + the capstone green, full suite **198**.
+
+**What shipped.** A `DisbursementService` + `DisbursementController` (settlement, BC4): `draft` (Treasury
+maker, PI.2 gate `fully_funded ∧ all_signed`) records the `cash_payout_instruction` (PK = the bank
+`client_instruction_id`, PI.1; gross=net=funding_target, fee=0); `approve` (Treasury checker ≠ maker + fresh
+MFA, PI.5 — column-based, twin of WS-4 go-live) instructs the M5b escrow payout (inline) → `executed` and
+flips the listing `fully_funded → disbursed` (rowcount-asserted, the WS-6 lesson). `approve` targets the
+**real** instruction id so its audit envelope chains to the aggregate. **Plus the milestone capstone**
+`WalkingSkeletonE2ETest` — one invoice walks the money-flow spine **WS-4→WS-7 over HTTP**: create → go-live
+(maker-checker #1) → subscribe → HMAC inflow → assign → sign → disburse (maker-checker #2) → `disbursed`,
+with G10 still holding at the end.
+
+**`/code-review` (2 findings — one root cause; fixed + a V6 migration + a regression test).** The
+one-disbursement-per-listing guard was **check-then-insert with no DB UNIQUE**, so a concurrent double-draft
+could create two payout rows (then the approve resolver would silently pick one, orphaning the other). The
+WS-6 twin avoided this with a real UNIQUE; WS-7 had dropped that backstop. **Fix (Constitution-aligned —
+declarative + app both fire):** new migration **V6** adds a partial UNIQUE index
+`uidx_cash_payout_disbursement_per_listing ON cash_payout_instruction(listing_id) WHERE kind='disbursement'`,
+and `draft` now catches `DuplicateKeyException` → clean 400 (the app guard stays as the fast path). The
+reviewer cleared everything else — the concurrent-**approve** race (guarded UPDATE + reject), double-flip
+(rowcount assert), amounts (`funding_target > 0` domain), idempotency, and the audit aggregate-id.
+
+> **First migration since M0.** WS-7 was planned as no-migration, but the review surfaced a genuine missing
+> constraint; V6 is the right-depth fix. The canonical `docs/sql/` bundle should gain this index when the
+> schema is revisited at Milestone 2 (the bundle is the documented stale-able source; the running schema is
+> Flyway's).
+
+**Deferred (noted).** The distribution leg (maturity → investor payout + TDS; WS-8/M13-full); the BC18
+payout *webhook* + EoD reconciliation overlay (PI.7); partial/failed legs + remediation (PI.6); T+1 SLA
+*enforcement* (PI.8 — date recorded); refund.
+
+### DL-BE-037 — original reservation (planned, pre-build)
+**The finale** — eighth sub-slice of [[DL-BE-029]]; the second maker-checker+MFA gate (the payout) →
+`listed → disbursed`, completing Milestone 1.
+**Planned scope:** disbursement draft (T&S maker, PI.2 gate: only when `fully_funded ∧ all_signed`) →
+approve (checker ≠ maker + fresh MFA) → escrow payout via M5b `instructPayoutSingle` (inline) → flip listing
+`fully_funded → disbursed`. A `DisbursementService` + `DisbursementController` (settlement package, BC4) over
+`cash_payout_instruction`. No new migration. **Plus the milestone capstone** `WalkingSkeletonE2ETest` — the
+money-flow spine WS-4→WS-7 over HTTP.
+**DoR decisions (settled at gate):** column-based maker-checker (twin of WS-4 go-live — `cash_payout_
+instruction.maker_id`/`checker_id`/`checker_mfa_assertion_id` + DB CHECKs `maker_ne_checker`/`checker_mfa`,
+no M4d extraction); inline payout execution (BC18 payout webhook + EoD overlay PI.7 → M13-full); disbursement
+amount = `funding_target` (gross=net=funding_target, fee=0, tds=null — TDS/fee at distribution); PI.1
+`payout_instruction_id` = the bank `client_instruction_id`; one disbursement per listing (app guard, no DB
+UNIQUE); `approve` targets the REAL instruction id (the WS-6 audit-aggregate lesson, applied proactively).
+**Watch for (at build):** `cash_payout_instruction_kind_target_chk` (disbursement ⟹ listing_id NOT NULL,
+subscription_id NULL); gross/net positive_money_paise (>0), fee money_paise (>=0); `instructPayoutSingle(
+payout_instruction_id, payoutRef, amount, beneficiary)` → utr, idempotent on the instruction id; the listing
+flip guarded `WHERE status='fully_funded'` with the rowcount asserted (the WS-6 lesson); PI.2 reads the C27
+gate `deal_listing.all_signed`.

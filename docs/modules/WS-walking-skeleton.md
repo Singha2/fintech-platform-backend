@@ -12,7 +12,7 @@
 | **Milestone** | M1 — Walking Skeleton (highest-value first build) |
 | **Touches** | the **HTTP edge** (B4) · BC1/2/3/4/5 (money-flow) · BC7/8/9 (counterparties) · BC11 (compliance, auto-approve stub) — minimal cut of M6–M13 |
 | **Tier** | Light (skeleton-thin — happy path only; Milestone 2 widens each to full rigor) |
-| **Status** | Draft |
+| **Status** | Done — **Milestone 1 complete** |
 | **Owner** | Amit + Claude |
 | **Created** | 2026-06-22 |
 
@@ -49,11 +49,11 @@ distinct from the later full-module work. The mapping is 1:1:
 | **WS-0** · HTTP edge | *(added — B4 API conventions, [[DL-BE-030]])* | — (cross-cutting infra) | — | ✅ Done |
 | **WS-1** · Supplier active | M7 min | M7 Supplier Onboarding | BC8 | ✅ Done |
 | **WS-2** · Buyer + ack user | M8 min | M8 Buyer Management | BC9 | ✅ Done |
-| **WS-3** · Investor active | M10 min | M10 Investor Onboarding | BC7 | ◻ next |
-| **WS-4** · Listing priced + gone-live | M9 min (+ M6 pricing, + M13 VA) | M9 Listing & Invoice | BC1/3/4 | ◻ |
-| **WS-5** · Subscribe to 100% | M11 min | M11 Subscription | BC2 | ◻ |
-| **WS-6** · Assignment single-leg signed | M12 min | M12 Assignment & Signing | BC5 | ◻ |
-| **WS-7** · Disbursement | M13 min | M13 Settlement | BC4 | ◻ |
+| **WS-3** · Investor active | M10 min | M10 Investor Onboarding | BC7 | ✅ Done |
+| **WS-4** · Listing priced + gone-live | M9 min (+ M6 pricing, + M13 VA) | M9 Listing & Invoice | BC1/3/4 | ✅ Done |
+| **WS-5** · Subscribe to 100% | M11 min | M11 Subscription | BC2 | ✅ Done |
+| **WS-6** · Assignment single-leg signed | M12 min | M12 Assignment & Signing | BC5 | ✅ Done |
+| **WS-7** · Disbursement | M13 min | M13 Settlement | BC4 | ✅ Done |
 
 **Two things to keep straight:**
 - **`WS-0` is an addition, not a module-min.** It stands up the B4 HTTP edge (request envelope, error
