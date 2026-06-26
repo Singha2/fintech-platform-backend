@@ -11,6 +11,9 @@ import com.arthvritt.platform.command.CommandResult;
 import com.arthvritt.platform.shared.Ids;
 import com.arthvritt.platform.shared.error.NotFoundException;
 import com.arthvritt.platform.shared.error.ValidationException;
+import com.arthvritt.platform.verification.VerificationPort;
+import com.arthvritt.platform.verification.VerificationResult;
+import com.arthvritt.platform.verification.VerificationStatus;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -40,11 +43,13 @@ public class BuyerService {
     private final JdbcTemplate jdbc;
     private final CommandGateway gateway;
     private final RoleResolver roles;
+    private final VerificationPort verification;
 
-    public BuyerService(JdbcTemplate jdbc, CommandGateway gateway, RoleResolver roles) {
+    public BuyerService(JdbcTemplate jdbc, CommandGateway gateway, RoleResolver roles, VerificationPort verification) {
         this.jdbc = jdbc;
         this.gateway = gateway;
         this.roles = roles;
+        this.verification = verification;
     }
 
     public CommandResult<UUID> nominate(CommandRequest request, String legalName, String mcaCin,
@@ -62,9 +67,37 @@ public class BuyerService {
     }
 
     public CommandResult<Void> recordIdentityVerified(CommandRequest request) {
-        // Decision A: identity is captured at nominate; this records the M5a verification outcome.
-        return gateway.execute(request, OPS, () -> transitionOutcome(request, "nominated", "identity_verified",
-                CONTEXT + ".Buyer.IdentityVerified", ""));
+        return gateway.execute(request, OPS, () -> {
+            UUID buyerId = request.aggregateId();
+            // BA.4/C24: the buyer's GSTIN + CIN (captured at nominate) are verified through the BC17 ACL,
+            // not self-attested (mirrors M7-A; the buyer has no PAN). Both are NOT NULL at nominate.
+            Identity id = loadIdentity(buyerId);
+            requireVerified(verification.verifyGstin(buyerId, id.gstin()), "gstin_status", "ACTIVE", "GSTIN");
+            requireVerified(verification.fetchMca21(buyerId, id.mcaCin()), "cin_valid", "true", "CIN (MCA21)");
+            return transitionOutcome(request, "nominated", "identity_verified",
+                    CONTEXT + ".Buyer.IdentityVerified", "");
+        });
+    }
+
+    /**
+     * Rejects (422 {@code verification_failed}) unless the ACL result is COMPLETED and its {@code field}
+     * (string- or boolean-valued) equals {@code expected}. Fail-closed: a null/missing field never passes.
+     */
+    private void requireVerified(VerificationResult result, String field, String expected, String label) {
+        Object raw = result.extractedFields() == null ? null : result.extractedFields().get(field);
+        String value = raw == null ? null : String.valueOf(raw);
+        if (result.status() != VerificationStatus.COMPLETED || !expected.equals(value)) {
+            throw CommandRejectedException.verificationFailed(label);
+        }
+    }
+
+    private Identity loadIdentity(UUID buyerId) {
+        Identity id = jdbc.query("SELECT gstin::text AS gstin, mca_cin FROM buyer_account WHERE buyer_id = ?",
+                rs -> rs.next() ? new Identity(rs.getString("gstin"), rs.getString("mca_cin")) : null, buyerId);
+        if (id == null) {
+            throw new NotFoundException("buyer not found: " + buyerId);
+        }
+        return id;
     }
 
     public CommandResult<Void> recordCreditAssessment(CommandRequest request, long creditLimitPaise) {
@@ -232,5 +265,8 @@ public class BuyerService {
     }
 
     private record BuyerRow(String status, int version) {
+    }
+
+    private record Identity(String gstin, String mcaCin) {
     }
 }

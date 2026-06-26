@@ -21,6 +21,8 @@ public class StubVerificationVendorClient implements VerificationVendorClient {
     public static final String FAIL_PAN = "ZZZZZ9999Z";
     /** Test seam: a bank-last4 of this value makes {@code verify_penny_drop} return {@code account_status=INVALID}. */
     public static final String FAIL_BANK_LAST4 = "0000";
+    /** Test seam: a GSTIN of this value makes {@code verify_gstin} return {@code gstin_status=INACTIVE}. */
+    public static final String FAIL_GSTIN = "27ZZZZZ9999Z1Z5";
 
     private final ObjectMapper mapper;
 
@@ -48,7 +50,8 @@ public class StubVerificationVendorClient implements VerificationVendorClient {
                     "pan_status", FAIL_PAN.equals(inputs.get("pan")) ? "INVALID" : "VALID",
                     "aadhaar_seeded", true);
             case VERIFY_AADHAAR_EKYC -> Map.of("name", "STUB HOLDER", "ekyc_status", "VERIFIED");
-            case VERIFY_GSTIN -> Map.of("legal_name", "STUB ENTERPRISES PVT LTD", "gstin_status", "ACTIVE");
+            case VERIFY_GSTIN -> Map.of("legal_name", "STUB ENTERPRISES PVT LTD",
+                    "gstin_status", FAIL_GSTIN.equals(inputs.get("gstin")) ? "INACTIVE" : "ACTIVE");
             case FETCH_MCA21 -> Map.of("company_status", "ACTIVE", "cin_valid", true);
             case FETCH_GST_RETURNS -> Map.of("last_filed_period", "STUB", "filing_status", "REGULAR");
             case FETCH_BUREAU -> Map.of("score", 750, "bureau", "STUB");

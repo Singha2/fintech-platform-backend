@@ -2208,3 +2208,20 @@ maker-checker + rowcount guards come from the already-fixed `ComplianceService`.
 Remaining gaps unchanged (see [[DL-BE-055]]): supplier/agency portal + login; Suspend/Blacklist (SA8.1,
 *flagged — pull forward on request*); voluntary exit (SA8.4); agency-consent enforcement (AC.1/AC.3);
 KYC-refresh scheduler; UDYAM.
+
+---
+
+## DL-BE-058 — M8 Buyer Management (BC9) full rigor — **COMPLETE** (Milestone 2, module 7, single slice)
+**Date:** 2026-06-26
+**Status:** **Done.** Spec `docs/modules/M8-buyer-full.md` (Status: Done). `BuyerIdentityVerificationTest`
+2/2; full suite **267**. `/code-review` **clean** (the CIN boolean compare holds on both fresh + cache-hit
+paths — `fetch_mca21` is TTL-cached). Widens BC9 from the WS-2 skeleton
+([[DL-BE-032]]) by its full-rigor TDS-free addition: **BC17-verified identity** (BA.4 — `verify_gstin` +
+`fetch_mca21` on the buyer's GSTIN + CIN), mirroring M7-A. **Single slice** — the buyer has **no PAN and no
+KYC flow** (BA.3 = credit-assessment + ack user + payment instructions), so M7's `verify_pan` + KYC-rejected
+branch have no analog.
+
+**Precedents applied:** admin-on-behalf retained; identity verified via the ACL, not self-attested.
+**Deferred:** Suspend (BA.1, Credit+Treasury maker-checker — *flagged, pull forward on request*);
+`RecordLimitReduced` (BA.5 → BC3/M6); ack-user OTP login/portal. **No new migration; no new ArchUnit
+boundary.** New stub sentinel `FAIL_GSTIN` to drive the reject test.
