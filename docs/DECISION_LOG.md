@@ -2114,3 +2114,36 @@ row-lock is the remedy (the standard fix, same class as the WS-4 concurrent-go-l
 time-box → incomplete + HoldForReview, and leg failure → retry (SR.2). Remaining gaps unchanged (see
 [[DL-BE-051]]): BC19 signing webhook; auto time-box cron; per-invoice + master stamping; the refund of held
 subscriptions after an incomplete set (cross-module BC1/BC2).
+
+---
+
+## DL-BE-054 — M13 Settlement (BC4) maturity recording — **COMPLETE** (Milestone 2, module 5, narrowed)
+**Date:** 2026-06-26
+**Status:** **Done.** Spec `docs/modules/M13-settlement-maturity.md` (Status: Done). `ListingMaturityTest`
+5/5; full suite **260**. Widens WS-7 ([[DL-BE-037]]) by the next spine step buildable **without BC12/Tax**:
+maturity recording — the buyer's full repayment flips the listing `disbursed → matured_payment_received`
+(`Listing.Matured`). New `MaturityService` + `MaturityController` (settlement, BC4): one ops command,
+status-guarded + rowcount-asserted (the WS-7 twin), `amount == face_value` (under-payment → reject, M14
+Collections). `/code-review` **clean** (reviewer noted the event `aggregateVersion = version+1` is more
+correct than the WS-7 twin's hardcoded `1`).
+
+**The three scope forks (DoR, user-decided 2026-06-26):** (1) scope = the distribution/maturity **spine**
+(not the reconciliation/remediation engine); (2) **TDS investor distribution DEFERRED entirely** (no payout
+until BC12); (3) **inline + ops-triggered** (no maturity/payout webhook, no EoD overlay).
+
+**Why the slice is narrow (the schema forces it).** The only TDS-free part of the spine is **maturity
+recording**. `deal_terminal_outcome` has only `{distributed, funding_failed_refunded,
+cancelled_pre_disbursement, defaulted}` and `deal_listing_terminal_outcome_shape_chk` makes `closed ⟺
+terminal_outcome NOT NULL` — so a matured deal can close **only** as `distributed`, i.e. **close requires the
+distribution to have happened**. Distribution is deferred (TDS), so **close defers with it**; M13 stops at
+`matured_payment_received`. A maturity **shortfall** (buyer pays < face value) routes to BC6 Collections
+(`col_maturity_case`, M14) — also deferred; M13 records the **full** repayment and rejects under-payment.
+
+**Sub-slice (single):** A maturity recording ([[DL-BE-054]]). **No new migration**
+(`matured_payment_received` already in `deal_listing_status`).
+
+**Remaining BC4 (the large deferred surface — future M13-distribution + M13-reconciliation):** the TDS
+investor distribution (S.9/PI.3, blocked on BC12/M16); deal close (coupled to distribution); the
+reconciliation/remediation engine (RL/RC, V.2 discrepancy, PI.6 partial legs, PI.7 webhook+EoD, PI.8 T+1);
+maturity shortfall → Collections (BC6/M14); the subscription assignment_executed/distribution_received
+lifecycle; the VA maturity-inflow ledger + VA close.
