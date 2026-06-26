@@ -1,0 +1,306 @@
+### Fintech platform — interactive golden path (IntelliJ HTTP client).
+### Run the app first:  ./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
+### Then run these requests top-to-bottom (click the ▶ gutter icon). Bearers / ids / versions are captured
+### into global vars by the response handlers, so later requests just work. See docs/MANUAL_TESTING.md.
+
+@host = http://localhost:8080
+@pw = DevPass123!
+### funding_target for face=100000000, rate=1200bps, tenor=60d, fee=200bps (HALF_EVEN):
+@target = 96027397
+@face = 100000000
+
+############################################################
+# 1. LOGIN — ops, treasury, treasury2 (capture bearers)
+############################################################
+
+### 1a. ops: password
+POST {{host}}/auth/login/password
+Content-Type: application/json
+
+{ "email": "ops@dev.local", "password": "{{pw}}" }
+
+> {% client.global.set("ops_challenge", response.body.challenge_id); %}
+
+### 1b. ops: read the OTP (dev only)
+GET {{host}}/dev/last-otp?email=ops@dev.local
+
+> {% client.global.set("ops_code", response.body.code); %}
+
+### 1c. ops: verify → bearer
+POST {{host}}/auth/login/verify-otp
+Content-Type: application/json
+
+{ "challenge_id": "{{ops_challenge}}", "code": "{{ops_code}}" }
+
+> {% client.global.set("ops", response.body.bearer); %}
+
+### 1d. treasury: password → otp → verify
+POST {{host}}/auth/login/password
+Content-Type: application/json
+
+{ "email": "treasury@dev.local", "password": "{{pw}}" }
+
+> {% client.global.set("t_challenge", response.body.challenge_id); %}
+
+### 1e.
+GET {{host}}/dev/last-otp?email=treasury@dev.local
+
+> {% client.global.set("t_code", response.body.code); %}
+
+### 1f.
+POST {{host}}/auth/login/verify-otp
+Content-Type: application/json
+
+{ "challenge_id": "{{t_challenge}}", "code": "{{t_code}}" }
+
+> {% client.global.set("treasury", response.body.bearer); %}
+
+### 1g. treasury2 (disbursement checker): password → otp → verify
+POST {{host}}/auth/login/password
+Content-Type: application/json
+
+{ "email": "treasury2@dev.local", "password": "{{pw}}" }
+
+> {% client.global.set("t2_challenge", response.body.challenge_id); %}
+
+### 1h.
+GET {{host}}/dev/last-otp?email=treasury2@dev.local
+
+> {% client.global.set("t2_code", response.body.code); %}
+
+### 1i.
+POST {{host}}/auth/login/verify-otp
+Content-Type: application/json
+
+{ "challenge_id": "{{t2_challenge}}", "code": "{{t2_code}}" }
+
+> {% client.global.set("treasury2", response.body.bearer); %}
+
+############################################################
+# 2. Seeded counterparty ids
+############################################################
+
+### 2. seed-info
+GET {{host}}/dev/seed-info
+
+> {%
+    client.global.set("supplier_id", response.body.supplier_id);
+    client.global.set("buyer_id", response.body.buyer_id);
+    client.global.set("investor_id", response.body.investor_id);
+%}
+
+############################################################
+# 3. LISTING — create → ops-checks → ack → snapshot → go-live
+############################################################
+
+### 3. create listing  [ops]
+POST {{host}}/listings
+Authorization: Bearer {{ops}}
+X-Command-Id: {{$uuid}}
+Content-Type: application/json
+
+{ "supplier_id": "{{supplier_id}}", "buyer_id": "{{buyer_id}}", "invoice_number": "INV-{{$uuid}}",
+  "face_value_paise": {{face}}, "invoice_date": "2026-06-01", "tenor_days": 60 }
+
+> {%
+    client.global.set("listing", response.body.aggregate_id);
+    client.global.set("v", response.body.aggregate_version);
+%}
+
+### 4. start ops-checks  [ops]
+POST {{host}}/listings/{{listing}}/start-ops-checks
+Authorization: Bearer {{ops}}
+X-Command-Id: {{$uuid}}
+X-Aggregate-Version: {{v}}
+
+> {% client.global.set("v", response.body.aggregate_version); %}
+
+### 5a. record ops-check: irn_validity (vendor — no outcome)  [ops]
+POST {{host}}/listings/{{listing}}/record-ops-check
+Authorization: Bearer {{ops}}
+X-Command-Id: {{$uuid}}
+X-Aggregate-Version: {{v}}
+Content-Type: application/json
+
+{ "check_name": "irn_validity" }
+
+> {% client.global.set("v", response.body.aggregate_version); %}
+
+### 5b. eway_bill_match
+POST {{host}}/listings/{{listing}}/record-ops-check
+Authorization: Bearer {{ops}}
+X-Command-Id: {{$uuid}}
+X-Aggregate-Version: {{v}}
+Content-Type: application/json
+
+{ "check_name": "eway_bill_match", "outcome": "passed" }
+
+> {% client.global.set("v", response.body.aggregate_version); %}
+
+### 5c. buyer_supplier_relationship
+POST {{host}}/listings/{{listing}}/record-ops-check
+Authorization: Bearer {{ops}}
+X-Command-Id: {{$uuid}}
+X-Aggregate-Version: {{v}}
+Content-Type: application/json
+
+{ "check_name": "buyer_supplier_relationship", "outcome": "passed" }
+
+> {% client.global.set("v", response.body.aggregate_version); %}
+
+### 5d. duplicate_check
+POST {{host}}/listings/{{listing}}/record-ops-check
+Authorization: Bearer {{ops}}
+X-Command-Id: {{$uuid}}
+X-Aggregate-Version: {{v}}
+Content-Type: application/json
+
+{ "check_name": "duplicate_check", "outcome": "passed" }
+
+> {% client.global.set("v", response.body.aggregate_version); %}
+
+### 5e. supplier_exposure_cap
+POST {{host}}/listings/{{listing}}/record-ops-check
+Authorization: Bearer {{ops}}
+X-Command-Id: {{$uuid}}
+X-Aggregate-Version: {{v}}
+Content-Type: application/json
+
+{ "check_name": "supplier_exposure_cap", "outcome": "passed" }
+
+> {% client.global.set("v", response.body.aggregate_version); %}
+
+### 5f. buyer_limit_headroom
+POST {{host}}/listings/{{listing}}/record-ops-check
+Authorization: Bearer {{ops}}
+X-Command-Id: {{$uuid}}
+X-Aggregate-Version: {{v}}
+Content-Type: application/json
+
+{ "check_name": "buyer_limit_headroom", "outcome": "passed" }
+
+> {% client.global.set("v", response.body.aggregate_version); %}
+
+### 5g. document_completeness
+POST {{host}}/listings/{{listing}}/record-ops-check
+Authorization: Bearer {{ops}}
+X-Command-Id: {{$uuid}}
+X-Aggregate-Version: {{v}}
+Content-Type: application/json
+
+{ "check_name": "document_completeness", "outcome": "passed" }
+
+> {% client.global.set("v", response.body.aggregate_version); %}
+
+### 6. complete ops-checks  [ops] → awaiting_acknowledgment
+POST {{host}}/listings/{{listing}}/complete-ops-checks
+Authorization: Bearer {{ops}}
+X-Command-Id: {{$uuid}}
+X-Aggregate-Version: {{v}}
+
+> {% client.global.set("v", response.body.aggregate_version); %}
+
+### 7. record buyer ack (admin-captured)  [ops]
+POST {{host}}/listings/{{listing}}/record-buyer-ack
+Authorization: Bearer {{ops}}
+X-Command-Id: {{$uuid}}
+X-Aggregate-Version: {{v}}
+Content-Type: application/json
+
+{ "outcome": "acknowledged", "method": "email" }
+
+> {% client.global.set("v", response.body.aggregate_version); %}
+
+### 8. snapshot-and-ready (freeze funding_target, maker)  [ops] → ready_for_review
+POST {{host}}/listings/{{listing}}/snapshot-and-ready
+Authorization: Bearer {{ops}}
+X-Command-Id: {{$uuid}}
+X-Aggregate-Version: {{v}}
+Content-Type: application/json
+
+{ "rate_bps": 1200 }
+
+> {% client.global.set("v", response.body.aggregate_version); %}
+
+### 9. approve go-live (checker ≠ maker + MFA)  [treasury] → live + VA
+POST {{host}}/listings/{{listing}}/approve-go-live
+Authorization: Bearer {{treasury}}
+X-Command-Id: {{$uuid}}
+X-Aggregate-Version: {{v}}
+
+> {% client.global.set("v", response.body.aggregate_version); %}
+
+### 10. read the listing (grab va_id, funding_target, version)
+GET {{host}}/listings/{{listing}}
+Authorization: Bearer {{ops}}
+
+> {%
+    client.global.set("va_id", response.body.va_id);
+    client.global.set("v", response.body.aggregate_version);
+%}
+
+############################################################
+# 11. SUBSCRIBE → fully_funded   (inflow webhook = run scripts/dev-smoke.sh, HMAC needed)
+############################################################
+
+### 11. commit subscription for the full funding_target  [ops] → fully_funded
+POST {{host}}/listings/{{listing}}/subscriptions/commit
+Authorization: Bearer {{ops}}
+X-Command-Id: {{$uuid}}
+Content-Type: application/json
+
+{ "investor_id": "{{investor_id}}", "amount_paise": {{target}} }
+
+> {% client.global.set("subscription", response.body.aggregate_id); %}
+
+### 12. INFLOW WEBHOOK — needs an HMAC signature; the .http client can't HMAC easily.
+###     Run this step with scripts/dev-smoke.sh, or the openssl one-liner in docs/MANUAL_TESTING.md §6,
+###     using va_id = {{va_id}} and amount = {{target}}. After it, the subscription is 'confirmed'.
+
+############################################################
+# 13. ASSIGNMENT → all_signed (C27 gate)
+############################################################
+
+### 13. request assignment set  [ops]
+POST {{host}}/listings/{{listing}}/assignment-set/request
+Authorization: Bearer {{ops}}
+X-Command-Id: {{$uuid}}
+
+### 14. complete signing for the investor's leg  [ops] → all_signed
+POST {{host}}/listings/{{listing}}/assignment-set/complete-signing
+Authorization: Bearer {{ops}}
+X-Command-Id: {{$uuid}}
+Content-Type: application/json
+
+{ "investor_id": "{{investor_id}}" }
+
+############################################################
+# 15. DISBURSE (maker-checker) → disbursed
+############################################################
+
+### 15. draft disbursement  [treasury — maker]
+POST {{host}}/listings/{{listing}}/disbursement/draft
+Authorization: Bearer {{treasury}}
+X-Command-Id: {{$uuid}}
+
+### 16. approve disbursement  [treasury2 — checker ≠ maker] → disbursed
+POST {{host}}/listings/{{listing}}/disbursement/approve
+Authorization: Bearer {{treasury2}}
+X-Command-Id: {{$uuid}}
+
+############################################################
+# 17. MATURITY → matured_payment_received
+############################################################
+
+### 17. record maturity (buyer's full repayment == face_value)  [ops]
+POST {{host}}/listings/{{listing}}/record-maturity
+Authorization: Bearer {{ops}}
+X-Command-Id: {{$uuid}}
+Content-Type: application/json
+
+{ "amount_paise": {{face}}, "utr": "UTR-{{$uuid}}" }
+
+### --- inspect ---
+### final listing state
+GET {{host}}/listings/{{listing}}
+Authorization: Bearer {{ops}}

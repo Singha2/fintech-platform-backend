@@ -40,6 +40,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers("/auth/login/**").permitAll()
                         .requestMatchers("/webhooks/**").permitAll() // vendor-authenticated by HMAC, not a bearer (B4 §5)
+                        .requestMatchers("/dev/**").permitAll() // dev-profile-only helpers; no handler exists in prod (404)
                         .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(handling -> handling
