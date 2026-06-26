@@ -1,5 +1,6 @@
 package com.arthvritt.platform.listing;
 
+import com.arthvritt.platform.shared.BusinessDate;
 import com.arthvritt.platform.web.AbstractEdgeHttpTest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -7,6 +8,10 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
+import java.time.DayOfWeek;
+import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.util.Map;
 import java.util.UUID;
 
@@ -54,7 +59,7 @@ class ListingGoLiveTest extends AbstractEdgeHttpTest {
     @Test
     void happy_path_lists_prices_and_goes_live_creating_the_va() throws Exception {
         UUID listing = createListing();
-        send(post("/listings/{id}/pass-ops-checks", listing), ops, listing, Map.of());
+        passAllOpsChecks(listing, ops);
         assertThat(statusOf(listing)).isEqualTo("awaiting_acknowledgment");
 
         send(post("/listings/{id}/snapshot-and-ready", listing), ops, listing, Map.of("rate_bps", RATE_BPS));
@@ -86,7 +91,7 @@ class ListingGoLiveTest extends AbstractEdgeHttpTest {
     void the_maker_cannot_approve_go_live() throws Exception { // maker ≠ checker (C4)
         String dual = bearerFor(seedAdminWithRoles("ops_executive", "treasury_and_settlement"));
         UUID listing = createListing(dual);
-        send(post("/listings/{id}/pass-ops-checks", listing), dual, listing, Map.of());
+        passAllOpsChecks(listing, dual);
         send(post("/listings/{id}/snapshot-and-ready", listing), dual, listing, Map.of("rate_bps", RATE_BPS));
 
         mvc.perform(withEnvelope(post("/listings/{id}/approve-go-live", listing), dual, listing, Map.of()))
@@ -108,6 +113,33 @@ class ListingGoLiveTest extends AbstractEdgeHttpTest {
     }
 
     @Test
+    void go_live_holds_for_review_when_the_buyer_is_suspended() throws Exception { // L.11
+        UUID listing = readyForReview();
+        jdbc.update("UPDATE buyer_account SET status = 'suspended' WHERE buyer_id = ?", buyerId);
+
+        send(post("/listings/{id}/approve-go-live", listing), treasury, listing, Map.of());
+
+        assertThat(statusOf(listing)).isEqualTo("held_for_review");
+        // No virtual account and no funding window were created on the hold path.
+        assertThat(jdbc.queryForObject("SELECT va_id FROM deal_listing WHERE listing_id = ?", UUID.class, listing))
+                .isNull();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM cash_virtual_account WHERE listing_id = ?",
+                Integer.class, listing)).isZero();
+    }
+
+    @Test
+    void go_live_holds_for_review_when_the_supplier_is_suspended() throws Exception { // L.11
+        UUID listing = readyForReview();
+        jdbc.update("UPDATE sup_account SET status = 'suspended' WHERE supplier_id = ?", supplierId);
+
+        send(post("/listings/{id}/approve-go-live", listing), treasury, listing, Map.of());
+
+        assertThat(statusOf(listing)).isEqualTo("held_for_review");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM cash_virtual_account WHERE listing_id = ?",
+                Integer.class, listing)).isZero();
+    }
+
+    @Test
     void approve_go_live_by_a_non_treasury_actor_is_403() throws Exception { // SoD
         UUID listing = readyForReview();
         mvc.perform(withEnvelope(post("/listings/{id}/approve-go-live", listing), ops, listing, Map.of()))
@@ -118,7 +150,7 @@ class ListingGoLiveTest extends AbstractEdgeHttpTest {
     @Test
     void snapshot_and_ready_by_a_non_ops_actor_is_403() throws Exception { // SoD
         UUID listing = createListing();
-        send(post("/listings/{id}/pass-ops-checks", listing), ops, listing, Map.of());
+        passAllOpsChecks(listing, ops);
         mvc.perform(withEnvelope(post("/listings/{id}/snapshot-and-ready", listing), treasury, listing,
                         Map.of("rate_bps", RATE_BPS)))
                 .andExpect(status().isForbidden())
@@ -128,7 +160,7 @@ class ListingGoLiveTest extends AbstractEdgeHttpTest {
     @Test
     void a_rate_outside_the_band_is_rejected() throws Exception { // L.10
         UUID listing = createListing();
-        send(post("/listings/{id}/pass-ops-checks", listing), ops, listing, Map.of());
+        passAllOpsChecks(listing, ops);
         mvc.perform(withEnvelope(post("/listings/{id}/snapshot-and-ready", listing), ops, listing,
                         Map.of("rate_bps", 5000))) // band is [1000,1500]
                 .andExpect(status().isBadRequest());
@@ -138,7 +170,7 @@ class ListingGoLiveTest extends AbstractEdgeHttpTest {
     @Test
     void an_overflowing_rate_bps_is_rejected_at_the_edge_not_wrapped() throws Exception {
         UUID listing = createListing();
-        send(post("/listings/{id}/pass-ops-checks", listing), ops, listing, Map.of());
+        passAllOpsChecks(listing, ops);
         // 4294968496 wrapped via (int) would have been 1200 (a valid in-band rate); the edge must reject it.
         mvc.perform(withEnvelope(post("/listings/{id}/snapshot-and-ready", listing), ops, listing,
                         Map.of("rate_bps", 4_294_968_496L)))
@@ -150,7 +182,7 @@ class ListingGoLiveTest extends AbstractEdgeHttpTest {
     @Test
     void an_absurd_rate_making_funding_target_non_positive_is_a_clean_400() throws Exception {
         UUID listing = createListing();
-        send(post("/listings/{id}/pass-ops-checks", listing), ops, listing, Map.of());
+        passAllOpsChecks(listing, ops);
         // Widen the band to admit a 1000% rate; on a 60-day tenor the discount exceeds face → target ≤ 0.
         supersedeBand(buyerId, "31_60d", 1000, 100000, 200);
         mvc.perform(withEnvelope(post("/listings/{id}/snapshot-and-ready", listing), ops, listing,
@@ -158,6 +190,28 @@ class ListingGoLiveTest extends AbstractEdgeHttpTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error_code").value("validation_failed"));
         assertThat(statusOf(listing)).isEqualTo("awaiting_acknowledgment");
+    }
+
+    @Test
+    void funding_window_closes_five_business_days_after_go_live() throws Exception { // L.8 / DL-BE-040
+        // Weekend-only kernel (no holidays configured in tests, so this matches the app's calendar exactly).
+        var kernel = new BusinessDate(d -> false);
+        var today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
+        var expected = kernel.plusBusinessDays(today, 5);
+
+        UUID listing = createListing();
+        passAllOpsChecks(listing, ops);
+        send(post("/listings/{id}/snapshot-and-ready", listing), ops, listing, Map.of("rate_bps", RATE_BPS));
+        send(post("/listings/{id}/approve-go-live", listing), treasury, listing, Map.of());
+
+        OffsetDateTime closeAt = jdbc.queryForObject(
+                "SELECT funding_window_close_at FROM deal_listing WHERE listing_id = ?",
+                OffsetDateTime.class, listing);
+        LocalDate closeDate = closeAt.atZoneSameInstant(ZoneId.of("Asia/Kolkata")).toLocalDate();
+
+        assertThat(closeDate).isEqualTo(expected);
+        assertThat(closeDate.getDayOfWeek())
+                .isNotIn(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY);
     }
 
     @Test
@@ -171,9 +225,26 @@ class ListingGoLiveTest extends AbstractEdgeHttpTest {
 
     // --- helpers -----------------------------------------------------------------------------------
 
+    /**
+     * The full M9-C ops-check flow (start → record all 7 → complete) plus the M9-D admin-captured buyer
+     * acknowledgment → listing 'awaiting_acknowledgment' with the ack recorded (snapshot-ready).
+     */
+    private void passAllOpsChecks(UUID listing, String bearer) throws Exception {
+        send(post("/listings/{id}/start-ops-checks", listing), bearer, listing, Map.of());
+        send(post("/listings/{id}/record-ops-check", listing), bearer, listing, Map.of("check_name", "irn_validity"));
+        for (String check : new String[]{"eway_bill_match", "buyer_supplier_relationship", "duplicate_check",
+                "supplier_exposure_cap", "buyer_limit_headroom", "document_completeness"}) {
+            send(post("/listings/{id}/record-ops-check", listing), bearer, listing,
+                    Map.of("check_name", check, "outcome", "passed"));
+        }
+        send(post("/listings/{id}/complete-ops-checks", listing), bearer, listing, Map.of());
+        send(post("/listings/{id}/record-buyer-ack", listing), bearer, listing,
+                Map.of("outcome", "acknowledged", "method", "email"));
+    }
+
     private UUID readyForReview() throws Exception {
         UUID listing = createListing();
-        send(post("/listings/{id}/pass-ops-checks", listing), ops, listing, Map.of());
+        passAllOpsChecks(listing, ops);
         send(post("/listings/{id}/snapshot-and-ready", listing), ops, listing, Map.of("rate_bps", RATE_BPS));
         return listing;
     }

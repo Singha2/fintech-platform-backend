@@ -71,6 +71,15 @@ public class CommandRejectedException extends PlatformException {
                 "a command with this id is currently being processed", HttpStatus.CONFLICT);
     }
 
+    /**
+     * Not all DL-027 operational checks have been recorded yet (INV.5). 422 — the caller must record
+     * the missing checks and then retry {@code complete-ops-checks}. No state change occurs.
+     */
+    public static CommandRejectedException operationalChecksIncomplete(String missing) {
+        return new CommandRejectedException("operational_checks_incomplete",
+                "operational checks incomplete; missing: " + missing, HttpStatus.UNPROCESSABLE_ENTITY);
+    }
+
     @Override
     public HttpStatus getStatus() {
         return status;

@@ -44,9 +44,18 @@ class WalkingSkeletonE2ETest extends AbstractEdgeHttpTest {
         seedPricingBand(buyerId, "31_60d", 1000, 1500, 200);
         UUID investorId = seedActiveInvestor(tsMakerAdmin.adminUserId());
 
-        // WS-4: create → ops-checks → snapshot (maker) → go-live (checker). face 100000000, rate 1200, tenor 60.
+        // WS-4 + M9-C: create → full DL-027 ops-checks → snapshot (maker) → go-live (checker). face 100000000.
         UUID listing = createListing(ops, supplierId, buyerId);
-        send(post("/listings/{id}/pass-ops-checks", listing), ops, listing, Map.of());
+        send(post("/listings/{id}/start-ops-checks", listing), ops, listing, Map.of());
+        send(post("/listings/{id}/record-ops-check", listing), ops, listing, Map.of("check_name", "irn_validity"));
+        for (String check : new String[]{"eway_bill_match", "buyer_supplier_relationship", "duplicate_check",
+                "supplier_exposure_cap", "buyer_limit_headroom", "document_completeness"}) {
+            send(post("/listings/{id}/record-ops-check", listing), ops, listing,
+                    Map.of("check_name", check, "outcome", "passed"));
+        }
+        send(post("/listings/{id}/complete-ops-checks", listing), ops, listing, Map.of());
+        send(post("/listings/{id}/record-buyer-ack", listing), ops, listing,
+                Map.of("outcome", "acknowledged", "method", "email"));
         send(post("/listings/{id}/snapshot-and-ready", listing), ops, listing, Map.of("rate_bps", 1200));
         long fundingTarget = jdbc.queryForObject("SELECT funding_target FROM deal_listing WHERE listing_id = ?",
                 Long.class, listing);

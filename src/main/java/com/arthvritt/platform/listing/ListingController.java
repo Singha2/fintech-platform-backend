@@ -59,22 +59,65 @@ public class ListingController {
         long faceValue = RequestBodies.requiredPositivePaise(body, "face_value_paise");
         LocalDate invoiceDate = date(RequestBodies.requiredString(body, "invoice_date"));
         int tenorDays = RequestBodies.requiredPositiveInt(body, "tenor_days");
+        String irn = optionalString(body, "irn"); // null = manual-fallback (no IRN); INV.1/INV.7
         // Derive the listing id from the full body so a same-command_id replay is stable.
         UUID listingId = RequestBodies.deriveAggregateId("listing", commandId,
                 String.join(":", supplierId.toString(), buyerId.toString(), invoiceNumber,
-                        String.valueOf(faceValue), invoiceDate.toString(), String.valueOf(tenorDays)));
+                        String.valueOf(faceValue), invoiceDate.toString(), String.valueOf(tenorDays),
+                        irn == null ? "" : irn));
         CommandRequest request = command(session, commandId, listingId, ".Listing.Create", 0);
         CommandResult<UUID> result = listings.create(request, supplierId, buyerId, invoiceNumber, faceValue,
-                invoiceDate, tenorDays);
+                invoiceDate, tenorDays, irn);
         return ResponseEntity.status(result.replayed() ? HttpStatus.OK : HttpStatus.CREATED)
                 .body(responses.from(result));
     }
 
-    @PostMapping("/{id}/pass-ops-checks")
-    public CommandResponse passOpsChecks(@AuthenticationPrincipal AuthSession session, @PathVariable UUID id,
-                                         @RequestHeader("X-Command-Id") UUID commandId,
-                                         @RequestHeader("X-Aggregate-Version") int version) {
-        return responses.from(listings.passOpsChecks(command(session, commandId, id, ".Listing.PassOpsChecks", version)));
+    @PostMapping("/{id}/start-ops-checks")
+    public CommandResponse startOpsChecks(@AuthenticationPrincipal AuthSession session, @PathVariable UUID id,
+                                          @RequestHeader("X-Command-Id") UUID commandId,
+                                          @RequestHeader("X-Aggregate-Version") int version) {
+        return responses.from(listings.startOpsChecks(command(session, commandId, id, ".Listing.StartOpsChecks", version)));
+    }
+
+    @PostMapping("/{id}/record-ops-check")
+    public CommandResponse recordOpsCheck(@AuthenticationPrincipal AuthSession session, @PathVariable UUID id,
+                                          @RequestHeader("X-Command-Id") UUID commandId,
+                                          @RequestHeader("X-Aggregate-Version") int version,
+                                          @RequestBody Map<String, Object> body) {
+        String checkName = RequestBodies.requiredString(body, "check_name");
+        String outcome = optionalString(body, "outcome"); // null for vendor checks (irn_validity)
+        CommandRequest request = command(session, commandId, id, ".Listing.RecordOpsCheck", version);
+        return responses.from(listings.recordOpsCheck(request, checkName, outcome));
+    }
+
+    @PostMapping("/{id}/complete-ops-checks")
+    public CommandResponse completeOpsChecks(@AuthenticationPrincipal AuthSession session, @PathVariable UUID id,
+                                             @RequestHeader("X-Command-Id") UUID commandId,
+                                             @RequestHeader("X-Aggregate-Version") int version) {
+        return responses.from(listings.completeOpsChecks(
+                command(session, commandId, id, ".Listing.CompleteOpsChecks", version)));
+    }
+
+    @PostMapping("/{id}/request-buyer-ack")
+    public CommandResponse requestBuyerAck(@AuthenticationPrincipal AuthSession session, @PathVariable UUID id,
+                                           @RequestHeader("X-Command-Id") UUID commandId,
+                                           @RequestHeader("X-Aggregate-Version") int version,
+                                           @RequestBody Map<String, Object> body) {
+        int slaHours = RequestBodies.requiredPositiveInt(body, "sla_hours");
+        CommandRequest request = command(session, commandId, id, ".Listing.RequestBuyerAck", version);
+        return responses.from(listings.requestBuyerAck(request, slaHours));
+    }
+
+    @PostMapping("/{id}/record-buyer-ack")
+    public CommandResponse recordBuyerAck(@AuthenticationPrincipal AuthSession session, @PathVariable UUID id,
+                                          @RequestHeader("X-Command-Id") UUID commandId,
+                                          @RequestHeader("X-Aggregate-Version") int version,
+                                          @RequestBody Map<String, Object> body) {
+        String outcome = RequestBodies.requiredString(body, "outcome");
+        String method = optionalString(body, "method");
+        String evidenceRef = optionalString(body, "evidence_ref");
+        CommandRequest request = command(session, commandId, id, ".Listing.RecordBuyerAck", version);
+        return responses.from(listings.recordBuyerAck(request, outcome, method, evidenceRef));
     }
 
     @PostMapping("/{id}/snapshot-and-ready")
@@ -122,6 +165,21 @@ public class ListingController {
     private CommandRequest command(AuthSession session, UUID commandId, UUID listingId, String name, int version) {
         return new CommandRequest(session, commandId, CONTEXT, CONTEXT + name, AGGREGATE_TYPE, listingId,
                 version, "admin_user", ActionSensitivity.SENSITIVE);
+    }
+
+    /** An optional string field: null when absent/blank; rejects a non-string value with a B4 400. */
+    private static String optionalString(Map<String, Object> body, String field) {
+        if (body == null) {
+            return null;
+        }
+        Object value = body.get(field);
+        if (value == null) {
+            return null;
+        }
+        if (!(value instanceof String s)) {
+            throw new ValidationException("field '" + field + "' must be a string");
+        }
+        return s.isBlank() ? null : s;
     }
 
     private static UUID uuid(String value, String field) {

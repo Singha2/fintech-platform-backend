@@ -1648,3 +1648,188 @@ subscription_id NULL); gross/net positive_money_paise (>0), fee money_paise (>=0
 payout_instruction_id, payoutRef, amount, beneficiary)` → utr, idempotent on the instruction id; the listing
 flip guarded `WHERE status='fully_funded'` with the rowcount asserted (the WS-6 lesson); PI.2 reads the C27
 gate `deal_listing.all_signed`.
+
+---
+
+## DL-BE-038 — M9 Listing & Invoice (BC1) full rigor — **COMPLETE** (Milestone 2, module 1)
+**Date:** 2026-06-24 (kickoff) · 2026-06-26 (complete)
+**Status:** **Done.** All five sub-slices built to DoD ([[DL-BE-039]]..[[DL-BE-043]]); full suite **224**.
+Spec `docs/modules/M9-listing-full.md` (Status: Done). Umbrella for the
+first Milestone-2 module: widen BC1 from the WS-4 skeleton ([[DL-BE-034]]) — happy path
+`draft → awaiting_acknowledgment → ready_for_review → live` + the go-live maker-checker — to the **complete
+BC1 intake→go-live spec**: every state path, invariant, and reject/alternate branch, to DoD. Sub-slices
+claim their own `DL-BE-039+` as built.
+
+**Scope (the BC1 intake → go-live span + its alternate branches).** Adds over WS-4: the operational-check
+sub-machine (`operational_checks_in_progress`, the 7 DL-027 checks in `check_outcomes`, IRN/e-way via the
+BC17 ACL — INV.5/INV.7, → `rejected_operational` on fail), the buyer-acknowledgment branch
+(`awaiting_acknowledgment` → received | `acknowledgment_failed`), pricing/snapshot **via new BC query
+ports**, the L.8 **business-day** funding window, and the L.11 **synchronous** counterparty-active re-check
+at go-live → `held_for_review`. Downstream listing states (`fully_funded`…`closed`) stay owned by
+M11/M12/M13/M14.
+
+**The four scope forks (DoR, user-decided 2026-06-24):**
+1. **BC query ports + ArchUnit — IN.** `credit.PricingQueryPort` / `buyer.BuyerQueryPort` /
+   `supplier.SupplierQueryPort` (read-only) replace the DL-BE-034 documented direct reads; ArchUnit forbids
+   cross-BC internals access (ARCH.1). Sets the M2 architectural pattern. (Was "deferred until ArchUnit
+   wired" in [[DL-BE-034]] — M9 is the consumer, so it wires it.)
+2. **Buyer ack = admin-captured only (DL-019).** Full SLA + state branch, but Ops records on the buyer's
+   behalf; ack-user OTP login deferred to the buyer-portal slice. Ack evidence in `check_outcomes`.
+3. **Funding window = business days (L.8); scheduler deferred to M11.** New shared-kernel `BusinessDate`;
+   the window-expiry scheduler + `DeclareFundingShortfall` (L.9 active side) is M11's.
+4. **C6 four-eyes ≥ ₹1 Cr — DEFERRED** to the M4d four-eyes engine; go-live stays the single maker-checker.
+
+**No new migration** (V1–V6 already carry every enum value + `check_outcomes` + the maker-checker columns).
+**DB-enum-true wins** over the prose `acknowledged/priced` states — pricing+snapshot stay collapsed in
+`snapshot-and-ready`, ack is a recorded precondition not a listing state.
+
+**Sub-slices (build order):** A query-ports+ArchUnit ([[DL-BE-039]]) · B BusinessDate + business-day window
+([[DL-BE-040]]) · C operational-check sub-machine ([[DL-BE-041]]) · D buyer ack admin-captured
+([[DL-BE-042]]) · E go-live L.11 hold + E2E ([[DL-BE-043]]). Each: red invariant tests → implementer green →
+`/code-review` → DoD → its DL.
+
+**Remaining gaps after M9-full (documented):** C6 four-eyes (M4d); funding-window scheduler (M11); real
+ack-user OTP (buyer portal); async HoldForReview on in-flight suspension + `CancelPreDisbursement`
+(event-bus + M11/M13); event bus replacing synchronous port reads (Phase-2, G17/G27).
+
+## DL-BE-039 — M9-A query ports + ArchUnit harness (ARCH.1)
+**Date:** 2026-06-24
+**Status:** Built. First sub-slice of [[DL-BE-038]]. Pure refactor — no behaviour change; `ListingGoLiveTest`
+10/10 unchanged, full suite **200** (198 + 2 ArchUnit rules).
+
+**What shipped.** The WS-4 "documented direct cross-context reads" (DL-BE-034) are gone: `ListingService`
+now reads buyer/supplier/credit state only through read-only **query ports** in dedicated `.port`
+sub-packages:
+- `credit.port.PricingQueryPort` + `PricingBand` (impl `credit.PricingQueryService`) — active band lookup.
+- `buyer.port.BuyerQueryPort` (impl `buyer.BuyerQueryService`) — `creditLimitPaise` + `isActive`.
+- `supplier.port.SupplierQueryPort` (impl `supplier.SupplierQueryService`) — `exposureCapPaise` + `isActive`.
+`isActive` on buyer/supplier is added now but first *used* at M9-E (L.11 go-live re-check).
+
+**ArchUnit harness (`architecture.BoundedContextRulesTest`, ARCH.1).** Standing rule set, wired with the
+first Milestone-2 module: (1) no `..listing..` class may depend on anything under
+`..buyer..`/`..supplier..`/`..credit..` **except** their `..*.port..` sub-packages (the conjunction is a
+single predicate on the *target* class — `resideInAnyPackage(BCs).and(resideOutsideOfPackages(ports))`);
+(2) every `*QueryPort` under a `.port` package is an interface.
+
+**Watch for.** ArchUnit sees only the *Java* boundary, not raw-SQL table reads — the "no cross-BC table
+join" half of ARCH.1 is held by routing every foreign-table read through a `*QueryService` in the owning
+BC's package (convention + code-review). The rule was vacuously green before the refactor (listing had no
+Java dep on those BCs, only SQL strings); it has teeth now that the ports are imported. `PricingBand.covers`
+folds the L.10 band check into the DTO.
+
+## DL-BE-040 — M9-B BusinessDate kernel + business-day funding window (L.8)
+**Date:** 2026-06-25
+**Status:** Built. Second sub-slice of [[DL-BE-038]]. `BusinessDateTest` 6/6 + a listing integration
+assertion; full suite **207**.
+
+**What shipped.** A shared-kernel `BusinessDate` (`shared.BusinessDate`, `@Component`): pure date
+arithmetic — `plusBusinessDays(start, n)` advances strictly past `start`, skipping weekends and
+`HolidayCalendar` holidays. Backed by `ConfiguredHolidayCalendar` (property `platform.calendar.holidays`,
+empty → weekend-only) and a `CalendarConfig` `Clock platformClock()` bean in **Asia/Kolkata** (Indian
+banking time; injected so date-handlers are test-deterministic). `ListingService.approveGoLive` now sets
+`funding_window_close_at = end-of-business (23:59:59.999999 IST) on the 5th business day` after
+`LocalDate.now(clock)` — replacing the WS-4 `now() + interval '5 days'` calendar shortcut (L.8 now exact).
+The kernel will also serve Settlement (C11 T+1) and Collections.
+
+**Watch for — pgjdbc nanosecond rounding (real bug, caught in build).** `LocalTime.MAX` is
+`23:59:59.999999999`; binding that as a `TIMESTAMPTZ` via `OffsetDateTime` makes pgjdbc 42.7.x round the
+nanoseconds **up to the next microsecond → +1 second → midnight on the next calendar day**, silently
+shifting the window one day. Fix: `.truncatedTo(ChronoUnit.MICROS)` before binding. Any
+`LocalTime.MAX`/nanosecond timestamp written to Postgres must be truncated to micros.
+
+**Deferred (noted).** Real RBI/exchange holiday feed (replaces `ConfiguredHolidayCalendar`, varies by
+year/centre — currently a documented gap); the funding-window-**expiry scheduler** + `DeclareFundingShortfall`
+(L.9 active side) → M11.
+
+## DL-BE-041 — M9-C operational-check sub-machine (DL-027, INV.4/5/7)
+**Date:** 2026-06-25
+**Status:** Built. Third sub-slice of [[DL-BE-038]]. `ListingOpsChecksTest` 7/7; full suite **214**.
+
+**What shipped.** The real DL-027 operational-check flow replaces the WS-4 collapsed `pass-ops-checks`.
+Invoice `submitted → ops_checks_in_progress → {ops_checks_passed → listed | ops_checks_failed}`; listing
+`draft → operational_checks_in_progress → {awaiting_acknowledgment | rejected_operational}`. Three commands
+(all `gateway.execute(OPS)`): `start-ops-checks` (version-guarded listing + status-guarded invoice),
+`record-ops-check`, `complete-ops-checks`. A new `OperationalCheck` enum is the single source of the 7
+checks. `POST /listings` now accepts an optional 64-char `irn` (manual-fallback when null; INV.1).
+
+**Check taxonomy (DL-027).** `irn_validity` is **VENDOR**-backed: when an IRN is present the platform calls
+the BC17 `VerificationPort.verifyIrn` and the ACL result wins — the caller's `outcome` is **ignored**
+(INV.7, no self-attestation); no IRN → `not_applicable`. The other 6 (`eway_bill_match`,
+`buyer_supplier_relationship`, `duplicate_check`, `supplier_exposure_cap`, `buyer_limit_headroom`,
+`document_completeness`) are **OPS-attested** (`passed`/`failed` in the body). `complete-ops-checks` passes
+iff every check ∈ {passed, not_applicable}; a missing check → new
+`CommandRejectedException.operationalChecksIncomplete` (**422**, no state change — first 422 reject in the
+codebase, matching B4 §4.2's invariant class); any failed check → `rejected_operational`.
+
+**Design decisions.** (1) `record-ops-check` is a **non-transition** command (BuyerService precedent): it
+writes `deal_invoice.check_outcomes` via an **atomic JSONB merge** (`check_outcomes || ?::jsonb`, no
+read-modify-write → no lost update under concurrent recordings) and does **not** bump the listing version.
+(2) Pass path does invoice `→ ops_checks_passed → listed` as **two** guarded UPDATEs (honours INV.4's
+no-skip). (3) Ack is NOT one of these 7 — it is the separate `awaiting_acknowledgment` branch (M9-D).
+
+**Deferred (DL-BE-041, noted in `OperationalCheck`):** wire the OPS-attested numeric/vendor checks to real
+sources — e-way → BC17 `VERIFY_EWAY_BILL`; cap/headroom → BC8/BC9/BC3 query ports; duplicate → in-DB query.
+
+**Process note.** The mechanical implementer dropped its connection twice mid-task; the enum + exception +
+service commands landed, but the `ListingController` (new endpoints, removal of `pass-ops-checks`, threading
+`irn`) and the `WalkingSkeletonE2ETest`/`ListingGoLiveTest` migration to the new flow were finished by hand.
+
+## DL-BE-042 — M9-D buyer acknowledgment (admin-captured, DL-019)
+**Date:** 2026-06-25
+**Status:** Built. Fourth sub-slice of [[DL-BE-038]]. `ListingAcknowledgmentTest` 7/7; full suite **221**.
+
+**What shipped.** The buyer-acknowledgment branch off `awaiting_acknowledgment`. Two ops commands:
+`request-buyer-ack` (looks up the buyer's active ack user, sends a BC15 notification to its identity, stamps
+`check_outcomes.buyer_ack = {status:requested, sla_hours, requested_at}`) and `record-buyer-ack`
+(admin-captured per DL-019): `acknowledged` stamps `buyer_ack` and stays `awaiting_acknowledgment`
+(non-transition); `failed` transitions the listing to terminal-M9 `acknowledgment_failed`.
+**`snapshot-and-ready` now requires `check_outcomes.buyer_ack.status == 'acknowledged'`** (new precondition
+before the pricing snapshot) — the existing happy-path test helpers fold an admin ack in before snapshot.
+
+**Decisions.** (1) **Admin-captured only** (DoR fork 2): Ops records on the buyer's behalf; the real ack-user
+OTP login stays deferred to the buyer-portal slice. (2) **Ack evidence in `check_outcomes`** (no migration —
+no ack columns on `deal_listing`); same atomic-`||`-merge as the ops checks, guarded on invoice status
+`'listed'`. (3) `request-buyer-ack` **requires an active ack user** (BA.3) — a faithful guard, and the seam
+where the real notification lands. (4) The **SLA is recorded, not enforced**: the auto-fail-on-breach
+scheduler is deferred alongside the funding-window scheduler (M11-era), consistent with the no-scheduler
+stance. (5) `record-buyer-ack(acknowledged)` is non-transition (no listing version bump); `failed` is a
+version-guarded transition.
+
+**Self-implemented** (not delegated) after the M9-C implementer instability — mirrors `recordOpsCheck`.
+
+## DL-BE-043 — M9-E go-live L.11 hold + M9 /code-review — **M9 FULL RIGOR COMPLETE**
+**Date:** 2026-06-26
+**Status:** Built. Fifth/final sub-slice of [[DL-BE-038]]. Full suite **224**; the WS E2E
+(`WalkingSkeletonE2ETest`) now flows end-to-end through the complete M9-C/D sub-machine.
+
+**What shipped (L.11 hold).** `approveGoLive` re-checks both counterparties are still `active` at the gate
+via `BuyerQueryPort.isActive`/`SupplierQueryPort.isActive` (the methods reserved in M9-A). If either is
+inactive → the listing transitions `ready_for_review → held_for_review` instead of going live: **no VA, no
+funding window, no `golive_checker_id` stamp** (the attempt is recorded in the audit envelope; the DB CHECK
+`golive_checker ⟹ maker+mfa` stays satisfied since checker is left null). Both active → `live` as before.
+This is the **synchronous** L.11 guard; the asynchronous mid-flight-suspension subscriber (and un-hold /
+`CancelPreDisbursement`) remain event-bus-era deferrals.
+
+**`/code-review` (high effort, 8 finder angles → verify).** 4 findings fixed, 1 refuted:
+1. *(ARCH.1 — the headline)* `ListingService.activeAckUserIdentity` read the **foreign `buyer_ack_user`
+   table via raw SQL** — the exact cross-BC read M9-A eliminated for the other three tables, and one the
+   ArchUnit harness **cannot** catch (SQL strings are invisible to it). Fixed: new
+   `BuyerQueryPort.activeAckUserIdentity` (impl in `BuyerQueryService`); the listing BC now routes through
+   the port. Re-affirms why ARCH.1 needs both the harness *and* the "all foreign reads via a `*QueryService`"
+   convention.
+2. *(correctness)* `requestBuyerAck` shallow-`||`-merged `buyer_ack`, so a **re-request after an
+   acknowledgment silently downgraded `status` 'acknowledged' → 'requested'** and blocked the snapshot.
+   Fixed: reject a re-request once a recorded outcome (acknowledged/failed) exists; a benign 'requested'
+   resend is still allowed. Regression test added.
+3. *(defensive)* IRN check dereferenced `result.extractedFields()` (nullable per the record) → potential
+   NPE/500. Fixed: null-guarded, **fail-closed** (an unverifiable IRN → 'failed', never a crash).
+4. *(fail-closed)* `completeOpsChecks` pass-eval filtered out malformed check entries → a partial/non-object
+   outcome was silently treated as a pass. Fixed: iterate the 7 wire names and require each to be a
+   well-formed object with outcome ∈ {passed, not_applicable}; anything else **blocks** go-live.
+   - *Refuted:* "non-transition commands ignore `X-Aggregate-Version`" — by design, matches the
+     `BuyerService` non-transition precedent (guard on status, not listing version; merges are atomic `||`).
+
+**M9 full rigor — done.** Intake → go-live with every reject/alternate branch: operational checks
+(pass/`rejected_operational`), buyer ack (`acknowledgment_failed`), L.11 `held_for_review`, business-day
+funding window, BC query ports + ArchUnit. Remaining gaps unchanged (see [[DL-BE-038]]): C6 four-eyes,
+funding-window scheduler, ack-user OTP login, async hold/cancel, event bus.
