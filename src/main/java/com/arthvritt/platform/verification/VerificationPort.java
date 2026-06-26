@@ -31,6 +31,10 @@ public interface VerificationPort {
                 Map.of("bank_account_last4", bankAccountLast4)));
     }
 
+    default VerificationResult fetchMca21(UUID subjectId, String cin) {
+        return verify(new VerificationRequest(VerificationApi.FETCH_MCA21, subjectId, Map.of("cin", cin)));
+    }
+
     default VerificationResult screenAmlPep(UUID subjectId, String name) {
         return verify(new VerificationRequest(VerificationApi.SCREEN_AML_PEP, subjectId, Map.of("name", name)));
     }

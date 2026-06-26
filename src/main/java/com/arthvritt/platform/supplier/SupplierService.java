@@ -12,6 +12,9 @@ import com.arthvritt.platform.compliance.ComplianceService;
 import com.arthvritt.platform.shared.Ids;
 import com.arthvritt.platform.shared.error.NotFoundException;
 import com.arthvritt.platform.shared.error.ValidationException;
+import com.arthvritt.platform.verification.VerificationPort;
+import com.arthvritt.platform.verification.VerificationResult;
+import com.arthvritt.platform.verification.VerificationStatus;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -46,14 +49,16 @@ public class SupplierService {
     private final ComplianceService compliance;
     private final RoleResolver roles;
     private final ObjectMapper mapper;
+    private final VerificationPort verification;
 
     public SupplierService(JdbcTemplate jdbc, CommandGateway gateway, ComplianceService compliance,
-                           RoleResolver roles, ObjectMapper mapper) {
+                           RoleResolver roles, ObjectMapper mapper, VerificationPort verification) {
         this.jdbc = jdbc;
         this.gateway = gateway;
         this.compliance = compliance;
         this.roles = roles;
         this.mapper = mapper;
+        this.verification = verification;
     }
 
     public CommandResult<UUID> create(CommandRequest request, String legalName, String constitutionType,
@@ -97,10 +102,19 @@ public class SupplierService {
     }
 
     public CommandResult<Void> recordIdentityVerified(CommandRequest request) {
-        // Decision A: identity (pan/gstin/cin) is captured at create; this records the M5a verification
-        // *outcome* by confirming the transition created → identity_verified.
-        return gateway.execute(request, OPS, () -> transitionOutcome(request, "created", "identity_verified",
-                CONTEXT + ".Supplier.IdentityVerified", ""));
+        return gateway.execute(request, OPS, () -> {
+            UUID supplierId = request.aggregateId();
+            // SA8.3/C24: the identity captured at create is verified through the BC17 ACL, not self-attested
+            // (mirrors M10-A). PAN + GSTIN always; CIN via MCA21 only when present (proprietorship/MSME have none).
+            Identity id = loadIdentity(supplierId);
+            requireVerified(verification.verifyPan(supplierId, id.pan()), "pan_status", "VALID", "PAN");
+            requireVerified(verification.verifyGstin(supplierId, id.gstin()), "gstin_status", "ACTIVE", "GSTIN");
+            if (id.cin() != null) {
+                requireVerified(verification.fetchMca21(supplierId, id.cin()), "cin_valid", "true", "CIN (MCA21)");
+            }
+            return transitionOutcome(request, "created", "identity_verified",
+                    CONTEXT + ".Supplier.IdentityVerified", "");
+        });
     }
 
     public CommandResult<Void> submitKyc(CommandRequest request) {
@@ -120,6 +134,33 @@ public class SupplierService {
                     request.session().mfaAssertionId().toString());
             return transition(request, "kyc_submitted", "kyc_approved", CONTEXT + ".Supplier.KycApproved",
                     "kyc_approved_by = ?, kyc_approved_at = now()", approverAdminUserId);
+        });
+    }
+
+    /**
+     * Compliance rejects the supplier's submitted KYC file (maker ≠ checker + MFA, reusing the generic
+     * {@link ComplianceService#rejectKyc}). The account holds at {@code kyc_submitted} — it cannot reach
+     * {@code kyc_approved} until a fresh resubmit → approve cycle. Non-transition (mirrors M10-C).
+     */
+    public CommandResult<Void> recordKycRejected(CommandRequest request, String reason) {
+        return gateway.execute(request, COMPLIANCE, () -> {
+            UUID supplierId = request.aggregateId();
+            SupRow row = requireStage(supplierId, "kyc_submitted");
+            compliance.rejectKyc(supplierId, "supplier", roles.adminUserId(request.actorId()),
+                    request.session().mfaAssertionId().toString(), reason);
+            return new CommandOutcome<>(null, nonTransition(supplierId, CONTEXT + ".Supplier.KycRejected",
+                    row.version(), Map.of()));
+        });
+    }
+
+    /** Re-opens a rejected KYC file for re-review (the submitter becomes the new maker); non-transition. */
+    public CommandResult<Void> resubmitKyc(CommandRequest request) {
+        return gateway.execute(request, OPS, () -> {
+            UUID supplierId = request.aggregateId();
+            SupRow row = requireStage(supplierId, "kyc_submitted");
+            compliance.resubmitKyc(supplierId, "supplier", roles.adminUserId(request.actorId()));
+            return new CommandOutcome<>(null, nonTransition(supplierId, CONTEXT + ".Supplier.KycResubmitted",
+                    row.version(), Map.of()));
         });
     }
 
@@ -159,6 +200,31 @@ public class SupplierService {
     public CommandResult<Void> activate(CommandRequest request) {
         return gateway.execute(request, OPS, () -> transitionOutcome(request, "maa_signed", "active",
                 CONTEXT + ".Supplier.Activated", "activated_at = now()"));
+    }
+
+    // --- BC17 verification (M7-A) ------------------------------------------------------------------
+
+    /**
+     * Rejects (422 {@code verification_failed}) unless the ACL result is COMPLETED and its {@code field}
+     * (string- or boolean-valued) equals {@code expected}. Fail-closed: a null/missing field never passes.
+     */
+    private void requireVerified(VerificationResult result, String field, String expected, String label) {
+        Object raw = result.extractedFields() == null ? null : result.extractedFields().get(field);
+        String value = raw == null ? null : String.valueOf(raw);
+        if (result.status() != VerificationStatus.COMPLETED || !expected.equals(value)) {
+            throw CommandRejectedException.verificationFailed(label);
+        }
+    }
+
+    private Identity loadIdentity(UUID supplierId) {
+        Identity id = jdbc.query(
+                "SELECT pan::text AS pan, gstin::text AS gstin, cin FROM sup_account WHERE supplier_id = ?",
+                rs -> rs.next() ? new Identity(rs.getString("pan"), rs.getString("gstin"), rs.getString("cin")) : null,
+                supplierId);
+        if (id == null) {
+            throw new NotFoundException("supplier not found: " + supplierId);
+        }
+        return id;
     }
 
     // --- shared command-handler helpers ------------------------------------------------------------
@@ -218,6 +284,18 @@ public class SupplierService {
         return n != null && n > 0;
     }
 
+    /** Loads the supplier and asserts it is at {@code expected}; returns the row for the non-transition event. */
+    private SupRow requireStage(UUID supplierId, String expected) {
+        SupRow row = load(supplierId);
+        if (row == null) {
+            throw new NotFoundException("supplier not found: " + supplierId);
+        }
+        if (!expected.equals(row.status())) {
+            throw new ValidationException("supplier is not " + expected + ": " + supplierId + " (is " + row.status() + ")");
+        }
+        return row;
+    }
+
     private SupRow loadActiveable(UUID supplierId) {
         SupRow row = load(supplierId);
         if (row == null) {
@@ -249,5 +327,8 @@ public class SupplierService {
     }
 
     private record SupRow(String status, int version) {
+    }
+
+    private record Identity(String pan, String gstin, String cin) {
     }
 }

@@ -99,6 +99,23 @@ public class SupplierController {
                 suppliers.recordKycApproved(create(session, commandId, id, ".Supplier.RecordKycApproved", version)));
     }
 
+    @PostMapping("/{id}/record-kyc-rejected")
+    public CommandResponse recordKycRejected(@AuthenticationPrincipal AuthSession session, @PathVariable UUID id,
+                                             @RequestHeader("X-Command-Id") UUID commandId,
+                                             @RequestHeader("X-Aggregate-Version") int version,
+                                             @RequestBody Map<String, Object> body) {
+        String reason = RequestBodies.requiredString(body, "reason");
+        return responses.from(suppliers.recordKycRejected(
+                create(session, commandId, id, ".Supplier.RecordKycRejected", version), reason));
+    }
+
+    @PostMapping("/{id}/resubmit-kyc")
+    public CommandResponse resubmitKyc(@AuthenticationPrincipal AuthSession session, @PathVariable UUID id,
+                                       @RequestHeader("X-Command-Id") UUID commandId,
+                                       @RequestHeader("X-Aggregate-Version") int version) {
+        return responses.from(suppliers.resubmitKyc(create(session, commandId, id, ".Supplier.ResubmitKyc", version)));
+    }
+
     @PostMapping("/{id}/submit-financial-profile")
     public CommandResponse submitFinancialProfile(@AuthenticationPrincipal AuthSession session, @PathVariable UUID id,
                                                   @RequestHeader("X-Command-Id") UUID commandId,

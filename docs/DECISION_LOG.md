@@ -2147,3 +2147,64 @@ investor distribution (S.9/PI.3, blocked on BC12/M16); deal close (coupled to di
 reconciliation/remediation engine (RL/RC, V.2 discrepancy, PI.6 partial legs, PI.7 webhook+EoD, PI.8 T+1);
 maturity shortfall → Collections (BC6/M14); the subscription assignment_executed/distribution_received
 lifecycle; the VA maturity-inflow ledger + VA close.
+
+---
+
+## DL-BE-055 — M7 Supplier Onboarding (BC8) full rigor — **COMPLETE** (Milestone 2, module 6)
+**Date:** 2026-06-26
+**Status:** **Done.** Both sub-slices built to DoD ([[DL-BE-056]]–[[DL-BE-057]]); full suite **265**.
+Spec `docs/modules/M7-supplier-full.md` (Status: Done). Direct analog of M10 Investor
+([[DL-BE-044]]); applies the same precedents. Widens BC8 from the WS-1 skeleton ([[DL-BE-031]]) — linear
+`created → active`, admin-on-behalf, identity admin-recorded — to the TDS-free full-rigor parts: **BC17-verified
+identity** (SA8.3) and the **KYC-rejected** branch. Sub-slices claim `DL-BE-056+`.
+
+**Precedents applied (from M10; no fork re-litigation):** admin-on-behalf retained (supplier has no login in
+Phase 1, DL-012); **PAN + GSTIN verified via the BC17 ACL** (`verify_pan`/`verify_gstin`, + `fetch_mca21` for
+CIN when present), not self-attested (SA8.3/C24); **KYC-rejected branch reuses the subject-generic
+`ComplianceService.rejectKyc`/`resubmitKyc`** from M10-C ([[DL-BE-047]]).
+
+**Deferred (the flagged call + the rest):** **Suspend/Blacklist** (SA8.1, Credit+Compliance maker-checker —
+mirrors M10's investor-suspend deferral; *pull forward on request*); voluntary exit (SA8.4, needs a BC1
+read); **agency-consent enforcement** (AC.1/AC.3 — grant is built, enforcement awaits *agency* actors, i.e.
+the deferred portal); KYC-refresh scheduler (SA8.5); UDYAM. **No new migration; no new ArchUnit boundary.**
+
+**Sub-slices (build order):** A BC17-verified identity ([[DL-BE-056]]) · B KYC-rejected branch
+([[DL-BE-057]]). Each: red tests → green → `/code-review` → DoD → its DL.
+
+## DL-BE-056 — M7-A BC17-verified supplier identity (PAN/GSTIN/CIN, SA8.3)
+**Date:** 2026-06-26
+**Status:** Built. First sub-slice of [[DL-BE-055]]. `SupplierIdentityVerificationTest` 2/2; WS-1
+`SupplierOnboardingTest` 9/9 unchanged; full suite **262**.
+
+**What shipped.** `record-identity-verified` now verifies the supplier's stored identity through the BC17 ACL
+(SA8.3/C24 — not self-attested), mirroring M10-A: `verifyPan` (pan_status=VALID) + `verifyGstin`
+(gstin_status=ACTIVE) always; `fetchMca21` (cin_valid=true) **when a CIN is present** (companies have one;
+proprietorship/MSME do not). On pass → `created → identity_verified`; otherwise
+`CommandRejectedException.verificationFailed` → **422**, no transition (the gateway rolls back the
+`gate_verification` insert, so a retry re-issues). New `VerificationPort.fetchMca21` convenience.
+
+**Watch for.** `requireVerified` here is **boolean-aware** (`String.valueOf(value)` compared to `expected`) —
+MCA21's `cin_valid` is a JSON boolean, unlike the string `pan_status`/`gstin_status`. Fail-closed on
+null/missing. The default stub returns VALID/ACTIVE/true, so the WS-1 happy path now passes *through* the ACL
+unchanged; the FAIL_PAN sentinel (`ZZZZZ9999Z`, valid format) drives the reject test.
+
+## DL-BE-057 — M7-B supplier KYC-rejected branch + M7 /code-review — **M7 FULL RIGOR COMPLETE**
+**Date:** 2026-06-26
+**Status:** Built. Final sub-slice of [[DL-BE-055]]. `SupplierKycRejectionTest` 3/3; full suite **265**.
+
+**What shipped.** The supplier KYC-rejected branch, **reusing the subject-generic
+`ComplianceService.rejectKyc`/`resubmitKyc`** from M10-C unchanged. `record-kyc-rejected` (Compliance,
+maker ≠ checker + MFA) → `comp_kyc_file` rejected; the supplier **holds at `kyc_submitted`** (one stage
+earlier than the investor's `financial_profile_completed` — supplier KYC approval is
+`kyc_submitted → kyc_approved`). `record-kyc-approved` is then blocked (no submitted file) until
+`resubmit-kyc` (Ops) re-opens the file → approve advances. Both non-transition on `sup_account`.
+
+**`/code-review` (high recall) — clean (no findings).** A faithful mirror of the reviewed M10 patterns: the
+boolean-aware `requireVerified` is fail-closed; `pan`/`gstin` are edge-required so the verify calls never see
+null; `reason` flows only to `comp_kyc_file.rejection_reason`, never an audit payload (no PII leak); the KYC
+maker-checker + rowcount guards come from the already-fixed `ComplianceService`.
+
+**M7 full rigor — done.** BC17-verified identity (SA8.3) + the KYC-rejected → resubmit branch, admin-on-behalf.
+Remaining gaps unchanged (see [[DL-BE-055]]): supplier/agency portal + login; Suspend/Blacklist (SA8.1,
+*flagged — pull forward on request*); voluntary exit (SA8.4); agency-consent enforcement (AC.1/AC.3);
+KYC-refresh scheduler; UDYAM.
