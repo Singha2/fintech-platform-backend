@@ -82,7 +82,8 @@ class WalkingSkeletonE2ETest extends AbstractEdgeHttpTest {
         mvc.perform(post("/listings/{id}/assignment-set/complete-signing", listing)
                         .header("Authorization", "Bearer " + ops)
                         .header("X-Command-Id", UUID.randomUUID().toString())
-                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(Map.of("investor_id", investorId.toString()))))
                 .andExpect(status().is2xxSuccessful());
         assertThat(jdbc.queryForObject("SELECT all_signed FROM deal_listing WHERE listing_id = ?",
                 Boolean.class, listing)).isTrue();

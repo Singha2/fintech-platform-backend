@@ -5,97 +5,96 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MvcResult;
-import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * WS-6 assignment → all-signed (see docs/modules/WS-6-assignment-all-signed.md §7): on a fully_funded
- * listing, the single investor's MIA is signed via the M5c signing ACL (inline) and the assignment set
- * reaches all_signed, flipping {@code deal_listing.all_signed} TRUE — the C27 disbursement gate.
+ * M12-A (DL-BE-052) — multi-investor assignment. On a fully_funded listing with N confirmed subscriptions,
+ * `request` opens one set with total_count = N (a leg + MIA + signature request per investor); the C27
+ * gate (`deal_listing.all_signed`) opens only when EVERY leg is signed (AS.3/AS.5).
  */
-class AssignmentAllSignedTest extends AbstractEdgeHttpTest {
+class AssignmentMultiLegTest extends AbstractEdgeHttpTest {
 
-    private static final long FUNDING_TARGET = 50_000_000L;
+    private static final long LEG = 25_000_000L;
+    private static final long FUNDING_TARGET = 50_000_000L; // two legs of 25M
 
     private String ops;
     private UUID adminUserId;
     private UUID listingId;
-    private UUID investorId;
+    private UUID investorA;
+    private UUID investorB;
 
     @BeforeEach
     void seed() {
         notifier.clear();
-        AbstractEdgeHttpTest.Seeded opsAdmin = seedAdminWithRoles("ops_executive");
+        Seeded opsAdmin = seedAdminWithRoles("ops_executive");
         ops = bearerFor(opsAdmin);
         adminUserId = opsAdmin.adminUserId();
-        investorId = seedActiveInvestor();
-        seedFullyFundedListingWithConfirmedSubscription(investorId);
+        investorA = seedActiveInvestor();
+        investorB = seedActiveInvestor();
+        seedFullyFundedListing();
+        seedConfirmedSubscription(investorA, LEG);
+        seedConfirmedSubscription(investorB, LEG);
     }
 
     @Test
-    void request_then_complete_signing_reaches_all_signed_and_opens_the_gate() throws Exception {
-        UUID set = requestSet();
+    void the_gate_opens_only_when_every_leg_is_signed() throws Exception {
+        requestSet();
+        assertThat(totalCount()).isEqualTo(2);
         assertThat(setStatus()).isEqualTo("in_progress");
-        assertThat(totalCount()).isEqualTo(1);
-        assertThat(listingAllSigned()).isFalse(); // C27 gate closed until signing completes
 
-        completeSigning(investorId);
-
-        assertThat(setStatus()).isEqualTo("all_signed");
+        completeSigning(investorA);
         assertThat(signedCount()).isEqualTo(1);
-        assertThat(listingAllSigned()).isTrue(); // C27 gate open
-        // MIA signed with a cert; the signature request completed with a cert.
-        assertThat(jdbc.queryForObject("SELECT status::text FROM legal_master_agreement WHERE party_id = ?",
-                String.class, investorId)).isEqualTo("signed");
-        assertThat(jdbc.queryForObject(
-                "SELECT signature_cert_serial FROM legal_master_agreement WHERE party_id = ?",
-                String.class, investorId)).isNotBlank();
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM legal_signature_request "
-                + "WHERE status = 'completed' AND cert_serial IS NOT NULL AND signer_id = ?",
-                Integer.class, investorId)).isEqualTo(1);
-        // The AllSigned audit envelope is chained to the REAL assignment set, not a synthetic command id.
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM sys_audit_event "
-                + "WHERE event_type = 'assignment.AssignmentSet.AllSigned' AND aggregate_id = ?",
-                Integer.class, set)).isEqualTo(1);
+        assertThat(setStatus()).isEqualTo("in_progress"); // one leg left
+        assertThat(listingAllSigned()).isFalse();         // C27 gate still closed
+
+        completeSigning(investorB);
+        assertThat(signedCount()).isEqualTo(2);
+        assertThat(setStatus()).isEqualTo("all_signed");
+        assertThat(listingAllSigned()).isTrue();           // gate open
+
+        // Both investors' MIAs signed with a cert (scoped to this listing's two investors).
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM legal_master_agreement "
+                + "WHERE status = 'signed' AND signature_cert_serial IS NOT NULL AND party_id IN (?, ?)",
+                Integer.class, investorA, investorB)).isEqualTo(2);
     }
 
     @Test
-    void request_by_a_non_ops_actor_is_403() throws Exception { // SoD
+    void completing_an_unknown_investor_leg_is_rejected() throws Exception {
+        requestSet();
+        mvc.perform(completeRequest(UUID.randomUUID()))
+                .andExpect(status().is4xxClientError());
+        assertThat(signedCount()).isZero();
+    }
+
+    @Test
+    void completing_a_leg_twice_is_rejected_and_not_double_counted() throws Exception {
+        requestSet();
+        completeSigning(investorA);
+        mvc.perform(completeRequest(investorA)) // distinct command id, already signed
+                .andExpect(status().is4xxClientError());
+        assertThat(signedCount()).isEqualTo(1);
+        assertThat(setStatus()).isEqualTo("in_progress");
+    }
+
+    @Test
+    void complete_signing_by_a_non_ops_actor_is_403() throws Exception { // SoD
+        requestSet();
         String compliance = bearerFor(seedAdminWithRoles("compliance_reviewer"));
-        mvc.perform(post("/listings/{id}/assignment-set/request", listingId)
+        mvc.perform(post("/listings/{id}/assignment-set/complete-signing", listingId)
                         .header("Authorization", "Bearer " + compliance)
-                        .header("X-Command-Id", UUID.randomUUID().toString()))
+                        .header("X-Command-Id", UUID.randomUUID().toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(Map.of("investor_id", investorA.toString()))))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.error_code").value("role_not_held"));
-    }
-
-    @Test
-    void requesting_a_second_set_for_the_same_listing_is_rejected() throws Exception { // AS.1
-        requestSet();
-        mvc.perform(post("/listings/{id}/assignment-set/request", listingId)
-                        .header("Authorization", "Bearer " + ops)
-                        .header("X-Command-Id", UUID.randomUUID().toString())) // different command_id
-                .andExpect(status().is4xxClientError());
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM legal_assignment_set WHERE listing_id = ?",
-                Integer.class, listingId)).isEqualTo(1);
-    }
-
-    @Test
-    void get_assignment_set_returns_the_set_and_the_gate_flag() throws Exception {
-        requestSet();
-        mvc.perform(get("/listings/{id}/assignment-set", listingId).header("Authorization", "Bearer " + ops))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("in_progress"))
-                .andExpect(jsonPath("$.total_count").value(1))
-                .andExpect(jsonPath("$.all_signed").value(false));
     }
 
     // --- helpers -----------------------------------------------------------------------------------
@@ -109,12 +108,16 @@ class AssignmentAllSignedTest extends AbstractEdgeHttpTest {
     }
 
     private void completeSigning(UUID investor) throws Exception {
-        mvc.perform(post("/listings/{id}/assignment-set/complete-signing", listingId)
-                        .header("Authorization", "Bearer " + ops)
-                        .header("X-Command-Id", UUID.randomUUID().toString())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(json.writeValueAsString(java.util.Map.of("investor_id", investor.toString()))))
-                .andExpect(status().is2xxSuccessful());
+        mvc.perform(completeRequest(investor)).andExpect(status().is2xxSuccessful());
+    }
+
+    private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder completeRequest(UUID investor)
+            throws Exception {
+        return post("/listings/{id}/assignment-set/complete-signing", listingId)
+                .header("Authorization", "Bearer " + ops)
+                .header("X-Command-Id", UUID.randomUUID().toString())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(Map.of("investor_id", investor.toString())));
     }
 
     private String setStatus() {
@@ -137,7 +140,7 @@ class AssignmentAllSignedTest extends AbstractEdgeHttpTest {
                 Boolean.class, listingId);
     }
 
-    private void seedFullyFundedListingWithConfirmedSubscription(UUID investor) {
+    private void seedFullyFundedListing() {
         listingId = UUID.randomUUID();
         UUID invoiceId = UUID.randomUUID();
         UUID supplierId = UUID.randomUUID();
@@ -150,9 +153,12 @@ class AssignmentAllSignedTest extends AbstractEdgeHttpTest {
                         + "funding_target, committed_total, all_signed) "
                         + "VALUES (?, ?, ?, ?, 'fully_funded', ?, ?, FALSE)",
                 listingId, invoiceId, supplierId, buyerId, FUNDING_TARGET, FUNDING_TARGET);
+    }
+
+    private void seedConfirmedSubscription(UUID investor, long amount) {
         jdbc.update("INSERT INTO sub_subscription (subscription_id, listing_id, investor_id, amount, status, "
                         + "expected_inflow_amount) VALUES (?, ?, ?, ?, 'confirmed', ?)",
-                UUID.randomUUID(), listingId, investor, FUNDING_TARGET, FUNDING_TARGET);
+                UUID.randomUUID(), listingId, investor, amount, amount);
     }
 
     private UUID seedActiveInvestor() {

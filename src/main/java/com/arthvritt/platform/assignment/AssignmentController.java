@@ -8,6 +8,7 @@ import com.arthvritt.platform.infrastructure.web.CommandResponse;
 import com.arthvritt.platform.infrastructure.web.CommandResponseAssembler;
 import com.arthvritt.platform.infrastructure.web.RequestBodies;
 import com.arthvritt.platform.shared.error.NotFoundException;
+import com.arthvritt.platform.shared.error.ValidationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -15,6 +16,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -59,17 +61,39 @@ public class AssignmentController {
     @PostMapping("/listings/{listingId}/assignment-set/complete-signing")
     public CommandResponse completeSigning(@AuthenticationPrincipal AuthSession session,
                                            @PathVariable UUID listingId,
-                                           @RequestHeader("X-Command-Id") UUID commandId) {
-        // Target the REAL assignment set (so the audit envelope's aggregate_id matches the aggregate, not a
-        // synthetic id). The set already exists from `request`.
-        UUID assignmentSetId = jdbc.query(
-                "SELECT assignment_set_id FROM legal_assignment_set WHERE listing_id = ?",
-                rs -> rs.next() ? rs.getObject(1, UUID.class) : null, listingId);
-        if (assignmentSetId == null) {
-            throw new NotFoundException("no assignment set for listing: " + listingId);
-        }
-        CommandRequest request = command(session, commandId, assignmentSetId, ".AssignmentSet.CompleteSigning");
-        return responses.from(assignments.completeSigning(request, listingId));
+                                           @RequestHeader("X-Command-Id") UUID commandId,
+                                           @RequestBody Map<String, Object> body) {
+        UUID investorId = uuid(RequestBodies.requiredString(body, "investor_id"));
+        // Target the REAL assignment set (so the audit envelope's aggregate_id matches the aggregate).
+        CommandRequest request = command(session, commandId, resolveSetId(listingId), ".AssignmentSet.CompleteSigning");
+        return responses.from(assignments.completeSigning(request, listingId, investorId));
+    }
+
+    @PostMapping("/listings/{listingId}/assignment-set/declare-incomplete")
+    public CommandResponse declareIncomplete(@AuthenticationPrincipal AuthSession session,
+                                             @PathVariable UUID listingId,
+                                             @RequestHeader("X-Command-Id") UUID commandId) {
+        CommandRequest request = command(session, commandId, resolveSetId(listingId), ".AssignmentSet.DeclareIncomplete");
+        return responses.from(assignments.declareIncomplete(request, listingId));
+    }
+
+    @PostMapping("/listings/{listingId}/assignment-set/record-leg-failed")
+    public CommandResponse recordLegFailed(@AuthenticationPrincipal AuthSession session, @PathVariable UUID listingId,
+                                           @RequestHeader("X-Command-Id") UUID commandId,
+                                           @RequestBody Map<String, Object> body) {
+        UUID investorId = uuid(RequestBodies.requiredString(body, "investor_id"));
+        String reason = RequestBodies.requiredString(body, "reason");
+        CommandRequest request = command(session, commandId, resolveSetId(listingId), ".AssignmentSignature.RecordFailed");
+        return responses.from(assignments.recordLegFailed(request, listingId, investorId, reason));
+    }
+
+    @PostMapping("/listings/{listingId}/assignment-set/reinitiate-leg")
+    public CommandResponse reinitiateLeg(@AuthenticationPrincipal AuthSession session, @PathVariable UUID listingId,
+                                         @RequestHeader("X-Command-Id") UUID commandId,
+                                         @RequestBody Map<String, Object> body) {
+        UUID investorId = uuid(RequestBodies.requiredString(body, "investor_id"));
+        CommandRequest request = command(session, commandId, resolveSetId(listingId), ".AssignmentSignature.Reinitiate");
+        return responses.from(assignments.reinitiateLeg(request, listingId, investorId));
     }
 
     @GetMapping("/listings/{listingId}/assignment-set")
@@ -100,5 +124,22 @@ public class AssignmentController {
     private CommandRequest command(AuthSession session, UUID commandId, UUID aggregateId, String name) {
         return new CommandRequest(session, commandId, CONTEXT, CONTEXT + name, AGGREGATE_TYPE, aggregateId,
                 0, "admin_user", ActionSensitivity.SENSITIVE);
+    }
+
+    private UUID resolveSetId(UUID listingId) {
+        UUID setId = jdbc.query("SELECT assignment_set_id FROM legal_assignment_set WHERE listing_id = ?",
+                rs -> rs.next() ? rs.getObject(1, UUID.class) : null, listingId);
+        if (setId == null) {
+            throw new NotFoundException("no assignment set for listing: " + listingId);
+        }
+        return setId;
+    }
+
+    private static UUID uuid(String value) {
+        try {
+            return UUID.fromString(value);
+        } catch (IllegalArgumentException e) {
+            throw new ValidationException("investor_id is not a valid id");
+        }
     }
 }

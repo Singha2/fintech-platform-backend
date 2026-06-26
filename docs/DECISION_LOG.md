@@ -2032,3 +2032,85 @@ fully_funded listing) and the funding-shortfall → refund path (L.8/L.9, inline
 unchanged (see [[DL-BE-048]]): investor self-service commit/login; concentration warnings (S.8); the
 automatic window-expiry cron; refund webhook + EoD overlay; post-disbursement lifecycle (M12/M13/M14);
 re-subscription after cancel (needs a partial UNIQUE — future migration).
+
+---
+
+## DL-BE-051 — M12 Assignment & Signing (BC5) full rigor — **COMPLETE** (Milestone 2, module 4)
+**Date:** 2026-06-26
+**Status:** **Done.** Both sub-slices built to DoD ([[DL-BE-052]]–[[DL-BE-053]]); full suite **255**.
+Spec `docs/modules/M12-assignment-full.md` (Status: Done). Umbrella for the fourth Milestone-2
+module: widen BC5 from the WS-6 skeleton ([[DL-BE-036]]) — single leg (`total_count=1`), inline complete →
+`all_signed` (the C27 gate) — to the complete spec: **multi-investor assignment legs**, the **G13 24h
+time-box / incomplete** path, and the **leg-failure + retry** path. Sub-slices claim `DL-BE-052+`.
+
+**The two scope forks (DoR, user-decided 2026-06-26):**
+1. **Signing completion = ops `complete-signing` per leg; BC19 signing webhook DEFERRED** (extend WS-6's
+   inline M5c completion to multi-leg; consistent with the admin pilot + M11's inline-defer-webhook choice).
+2. **G13 incomplete = ops `DeclareIncomplete` command; auto-cron DEFERRED** (guarded on `sign_deadline ≤ now()
+   ∧ signed_count < total_count`; twin of M11's `DeclareFundingShortfall`).
+
+**Derived:** admin-on-behalf retained; **per-invoice stamping (AS.7) DEFERRED**; **no new migration**
+(`legal_assignment_set_status` has `incomplete`; `sign_deadline`/counts-CHECK/legs-JSONB already exist;
+multi-leg lives in the same JSONB array).
+
+**Sub-slices (build order):** A multi-leg assignment ([[DL-BE-052]]) · B G13 incomplete + leg failure
+([[DL-BE-053]]). Each: red tests → green → `/code-review` → DoD → its DL.
+
+**Remaining gaps after M12-full (documented):** BC19 signing webhook; auto 24h scheduler; per-invoice +
+master stamping (AS.7/MA.4); the refund of held subscriptions after an incomplete set (listing
+`held_for_review → cancel → refund`, cross-module BC1/BC2); the per-subscription MarkRefundEligible fan-out
+(event-bus era).
+
+## DL-BE-052 — M12-A multi-leg assignment (AS.1/AS.3/AS.5)
+**Date:** 2026-06-26
+**Status:** Built. First sub-slice of [[DL-BE-051]]. `AssignmentMultiLegTest` 4/4; WS-6
+`AssignmentAllSignedTest` 4/4 + the WS E2E unchanged; full suite **251**.
+
+**What shipped.** `AssignmentService.request` now enumerates **all** confirmed subscriptions on the listing
+(`ORDER BY subscription_id`) and builds `total_count = N` legs — one leg + `legal_master_agreement` (MIA) +
+`legal_signature_request` + M5c `initiateSignature` per investor, in one `legal_assignment_set` (legs JSONB
+array). `completeSigning(listingId, investorId)` completes ONE investor's leg (finds it in the JSONB by
+`investor_id`, completes its vsr, marks the MIA signed + cert, flips that leg to `signed`); `all_signed` and
+the **C27 `deal_listing.all_signed` flip** fire only when `signed_count == total_count` (AS.3/AS.5). The
+WS-6 single-leg `size()==1` guard is gone. The `complete-signing` endpoint now takes an `investor_id` body.
+
+**Watch for / decisions.** (1) Each leg has its **own** MIA — MA.1 (one MasterAgreement per `(party_id,
+kind)`) holds because investors differ. (2) Re-completing a leg is rejected (`leg already signed`); same
+`command_id` replays via the gateway. (3) Completing an unknown investor → clean reject. (4) The C27 flip
+stays **rowcount-asserted** (WS-6 lesson). (5) Existing `AssignmentAllSignedTest` (single confirmed sub) is
+the `N=1` case and passes unchanged behaviourally (now via the `investor_id` body). **Watch:** global-count
+test assertions must be scoped (the suite doesn't roll back per method — a sibling test's MIA rows leak into
+an unscoped `count(*)`).
+
+## DL-BE-053 — M12-B G13 time-box + leg failure/retry + M12 /code-review — **M12 FULL RIGOR COMPLETE**
+**Date:** 2026-06-26
+**Status:** Built. Final sub-slice of [[DL-BE-051]]. `AssignmentTimeBoxTest` 4/4; full suite **255**.
+
+**What shipped.** `declare-incomplete` (ops, G13/AS.4): guarded on `in_progress ∧ sign_deadline ≤ now() ∧
+signed_count < total_count` → set `incomplete` + listing `fully_funded → held_for_review` (both
+rowcount-asserted) + a `listing.Listing.HeldForReview` envelope (the C27 gate never opens, so WS-7
+disbursement stays blocked). `complete-signing` now **rejects past `sign_deadline`** (AS.4 — added to
+`loadSet`'s `past_deadline`). `record-leg-failed` (leg `initiated → failed`; MIA→failed+reason;
+signature_request→failed; `signed_count` unchanged). `reinitiate-leg` (SR.2 retry ≤ 3): a **fresh** MIA +
+signature_request carrying `retry_count = prior+1` (the failed pair retained for audit, MA.1), new vsr,
+leg→`initiated`; rejected once retries are exhausted or past the deadline.
+
+**`/code-review` (high recall) — 1 fix covering 2 findings (both high).** `loadSet` was a **non-locking
+SELECT**, and every set-mutating command blind-writes `signed_count` + the whole `legs` JSONB from that
+stale snapshot. Two real races:
+1. **Concurrent `complete-signing` of two different legs lost a signature** — both read `signed_count=0`,
+   each wrote `1`; the set never reached `all_signed`, `deal_listing.all_signed` stuck FALSE on a
+   fully-signed deal, AS.5 (`signed_count == #signed MIAs`) violated — the **C27 disbursement gate wedged
+   shut**. (This is the M12 headline risk — multi-leg is the whole point.)
+2. **Stale-vsr-after-reinitiate** — `complete-signing` captured `vsr_id`/`agreement_id` from the stale
+   snapshot, so an interleaving `reinitiate` could complete the *superseded* signing attempt and clobber the
+   new ids.
+**Fix (one line, both bugs):** `loadSet` now does `SELECT … FOR UPDATE` — all set-mutating commands serialize
+on the assignment-set row, so each reads the prior's committed state (no lost update, no stale vsr). Clean on
+the existing single-/multi-leg tests; a thread-level concurrency test is impractical in MockMvc, so the
+row-lock is the remedy (the standard fix, same class as the WS-4 concurrent-go-live reorder).
+
+**M12 full rigor — done.** Multi-investor legs (the C27 gate opens only when *every* leg signs), the G13 24h
+time-box → incomplete + HoldForReview, and leg failure → retry (SR.2). Remaining gaps unchanged (see
+[[DL-BE-051]]): BC19 signing webhook; auto time-box cron; per-invoice + master stamping; the refund of held
+subscriptions after an incomplete set (cross-module BC1/BC2).
