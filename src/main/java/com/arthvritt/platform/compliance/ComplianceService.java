@@ -62,4 +62,48 @@ public class ComplianceService {
                         + "WHERE subject_id = ? AND subject_type = ?::comp_kyc_subject_type AND status = 'submitted'",
                 approverAdminUserId, approverMfaAssertionId, subjectId, subjectType);
     }
+
+    /**
+     * Rejects the subject's submitted KYC file with a reason. Same maker ≠ checker control as approval
+     * (KF.2/C4): the rejecter must differ from the submitter, and carries a fresh MFA assertion. The DB
+     * CHECKs (decision shape + {@code rejection_reason} required when rejected) are the backstop.
+     */
+    public void rejectKyc(UUID subjectId, String subjectType, UUID rejecterAdminUserId,
+                          String rejecterMfaAssertionId, String reason) {
+        UUID submittedBy = jdbc.query("SELECT submitted_by FROM comp_kyc_file "
+                        + "WHERE subject_id = ? AND subject_type = ?::comp_kyc_subject_type AND status = 'submitted'",
+                rs -> rs.next() ? rs.getObject(1, UUID.class) : null, subjectId, subjectType);
+        if (submittedBy == null) {
+            throw new ValidationException("no submitted KYC file to reject for subject: " + subjectId);
+        }
+        if (rejecterAdminUserId.equals(submittedBy)) {
+            throw CommandRejectedException.checkerEqualsMaker();
+        }
+        int updated = jdbc.update("UPDATE comp_kyc_file SET status = 'rejected', approver_id = ?, "
+                        + "approver_mfa_assertion_id = ?, decided_at = now(), rejection_reason = ?, "
+                        + "aggregate_version = aggregate_version + 1 "
+                        + "WHERE subject_id = ? AND subject_type = ?::comp_kyc_subject_type AND status = 'submitted'",
+                rejecterAdminUserId, rejecterMfaAssertionId, reason, subjectId, subjectType);
+        if (updated != 1) {
+            // TOCTOU: the file left 'submitted' between the SELECT and here (a racing decision) — reject
+            // cleanly rather than return a phantom success with an orphaned audit envelope.
+            throw new ValidationException("no submitted KYC file to reject for subject: " + subjectId);
+        }
+    }
+
+    /**
+     * Re-opens a rejected KYC file back to {@code submitted} under a fresh submitter, clearing the prior
+     * decision (the {@code submitted ⟹ approver_id/decided_at NULL} CHECK requires the decision fields be
+     * cleared). The single {@code (subject, type)} file is recycled (UNIQUE), not duplicated.
+     */
+    public void resubmitKyc(UUID subjectId, String subjectType, UUID resubmittedByAdminUserId) {
+        int updated = jdbc.update("UPDATE comp_kyc_file SET status = 'submitted', submitted_by = ?, "
+                        + "approver_id = NULL, approver_mfa_assertion_id = NULL, decided_at = NULL, "
+                        + "rejection_reason = NULL, submitted_at = now(), aggregate_version = aggregate_version + 1 "
+                        + "WHERE subject_id = ? AND subject_type = ?::comp_kyc_subject_type AND status = 'rejected'",
+                resubmittedByAdminUserId, subjectId, subjectType);
+        if (updated != 1) {
+            throw new ValidationException("no rejected KYC file to resubmit for subject: " + subjectId);
+        }
+    }
 }

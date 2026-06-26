@@ -59,6 +59,19 @@ public class CommandRejectedException extends PlatformException {
                 "actor does not hold a role authorised for this command", HttpStatus.FORBIDDEN);
     }
 
+    /** An external verification (BC17 ACL) returned a non-passing result (C24). 422, no envelope. */
+    public static CommandRejectedException verificationFailed(String detail) {
+        return new CommandRejectedException("verification_failed",
+                "external verification did not pass: " + detail, HttpStatus.UNPROCESSABLE_ENTITY);
+    }
+
+    /** Activation blocked: a suitability mismatch needs an acknowledged override first (IA.4/C21). 422. */
+    public static CommandRejectedException suitabilityOverrideRequired() {
+        return new CommandRejectedException("suitability_override_required",
+                "suitability mismatch requires an acknowledged override before activation",
+                HttpStatus.UNPROCESSABLE_ENTITY);
+    }
+
     /** The assignment forms a strict SoD pair the policy system-blocks (C5). 403, no envelope (G22). */
     public static CommandRejectedException sodRoleBlock(String role, String conflictsWith) {
         return new CommandRejectedException("sod_role_block",

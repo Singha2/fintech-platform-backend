@@ -94,9 +94,24 @@ public class InvestorController {
     @PostMapping("/investors/{id}/assess-suitability")
     public CommandResponse assessSuitability(@AuthenticationPrincipal AuthSession session, @PathVariable UUID id,
                                              @RequestHeader("X-Command-Id") UUID commandId,
-                                             @RequestHeader("X-Aggregate-Version") int version) {
-        return responses.from(investors.assessSuitability(
-                command(session, commandId, "InvestorAccount", id, ".InvestorAccount.AssessSuitability", version)));
+                                             @RequestHeader("X-Aggregate-Version") int version,
+                                             @RequestBody(required = false) Map<String, Object> body) {
+        boolean mismatch = body != null && Boolean.TRUE.equals(body.get("mismatch"));
+        CommandRequest request = command(session, commandId, "InvestorAccount", id,
+                ".InvestorAccount.AssessSuitability", version);
+        return responses.from(investors.assessSuitability(request, mismatch));
+    }
+
+    @PostMapping("/investors/{id}/acknowledge-suitability-override")
+    public CommandResponse acknowledgeSuitabilityOverride(@AuthenticationPrincipal AuthSession session,
+                                                          @PathVariable UUID id,
+                                                          @RequestHeader("X-Command-Id") UUID commandId,
+                                                          @RequestHeader("X-Aggregate-Version") int version,
+                                                          @RequestBody Map<String, Object> body) {
+        String overrideText = RequestBodies.requiredString(body, "override_text");
+        CommandRequest request = command(session, commandId, "InvestorAccount", id,
+                ".InvestorAccount.AcknowledgeSuitabilityOverride", version);
+        return responses.from(investors.acknowledgeSuitabilityOverride(request, overrideText));
     }
 
     @PostMapping("/investors/{id}/complete-financial-profile")
@@ -116,6 +131,25 @@ public class InvestorController {
                                              @RequestHeader("X-Aggregate-Version") int version) {
         return responses.from(investors.recordKycApproved(
                 command(session, commandId, "InvestorAccount", id, ".InvestorAccount.RecordKycApproved", version)));
+    }
+
+    @PostMapping("/investors/{id}/record-kyc-rejected")
+    public CommandResponse recordKycRejected(@AuthenticationPrincipal AuthSession session, @PathVariable UUID id,
+                                             @RequestHeader("X-Command-Id") UUID commandId,
+                                             @RequestHeader("X-Aggregate-Version") int version,
+                                             @RequestBody Map<String, Object> body) {
+        String reason = RequestBodies.requiredString(body, "reason");
+        CommandRequest request = command(session, commandId, "InvestorAccount", id,
+                ".InvestorAccount.RecordKycRejected", version);
+        return responses.from(investors.recordKycRejected(request, reason));
+    }
+
+    @PostMapping("/investors/{id}/resubmit-kyc")
+    public CommandResponse resubmitKyc(@AuthenticationPrincipal AuthSession session, @PathVariable UUID id,
+                                       @RequestHeader("X-Command-Id") UUID commandId,
+                                       @RequestHeader("X-Aggregate-Version") int version) {
+        return responses.from(investors.resubmitKyc(
+                command(session, commandId, "InvestorAccount", id, ".InvestorAccount.ResubmitKyc", version)));
     }
 
     @PostMapping("/investors/{id}/record-mia-signed")

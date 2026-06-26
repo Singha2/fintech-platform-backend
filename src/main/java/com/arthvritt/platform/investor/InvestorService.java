@@ -12,6 +12,9 @@ import com.arthvritt.platform.compliance.ComplianceService;
 import com.arthvritt.platform.shared.Ids;
 import com.arthvritt.platform.shared.error.NotFoundException;
 import com.arthvritt.platform.shared.error.ValidationException;
+import com.arthvritt.platform.verification.VerificationPort;
+import com.arthvritt.platform.verification.VerificationResult;
+import com.arthvritt.platform.verification.VerificationStatus;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -44,13 +47,15 @@ public class InvestorService {
     private final CommandGateway gateway;
     private final RoleResolver roles;
     private final ComplianceService compliance;
+    private final VerificationPort verification;
 
     public InvestorService(JdbcTemplate jdbc, CommandGateway gateway, RoleResolver roles,
-                           ComplianceService compliance) {
+                           ComplianceService compliance, VerificationPort verification) {
         this.jdbc = jdbc;
         this.gateway = gateway;
         this.roles = roles;
         this.compliance = compliance;
+        this.verification = verification;
     }
 
     /** Compliance issues an invite (C20). Stores SHA-256 of email/phone only — never the raw values. */
@@ -115,9 +120,15 @@ public class InvestorService {
     }
 
     public CommandResult<Void> recordIdentityVerified(CommandRequest request, String pan, String aadhaarLast4) {
-        return gateway.execute(request, OPS, () -> transition(request, "signed_up", "identity_verified",
-                CONTEXT + ".InvestorAccount.IdentityVerified",
-                "pan = ?::pan_type, aadhaar_last4 = ?::aadhaar_last4_type", pan, aadhaarLast4));
+        return gateway.execute(request, OPS, () -> {
+            // C24/IA.8: the PAN is verified through the BC17 ACL, not self-attested. The admin uploads the
+            // offline-collected PAN; the aggregator decides. (Full-Aadhaar eKYC is deferred — only the
+            // last4 is recorded, IA.7/C15.)
+            requireVerified(verification.verifyPan(request.aggregateId(), pan), "pan_status", "VALID", "PAN");
+            return transition(request, "signed_up", "identity_verified",
+                    CONTEXT + ".InvestorAccount.IdentityVerified",
+                    "pan = ?::pan_type, aadhaar_last4 = ?::aadhaar_last4_type", pan, aadhaarLast4);
+        });
     }
 
     public CommandResult<Void> submitKyc(CommandRequest request) {
@@ -128,21 +139,56 @@ public class InvestorService {
         });
     }
 
-    public CommandResult<Void> assessSuitability(CommandRequest request) {
+    public CommandResult<Void> assessSuitability(CommandRequest request, boolean mismatch) {
         return gateway.execute(request, COMPLIANCE, () -> {
-            // mismatch=false → no override-ack needed (the IA.4/C21 override path is deferred).
+            // SA.1: each assessment is a fresh assessment_id. When mismatch=true the investor cannot be
+            // activated until the risk-override is acknowledged (IA.4/C21/G26) — enforced at activate().
             jdbc.update("INSERT INTO inv_suitability (assessment_id, investor_id, questionnaire_doc_hash, mismatch) "
-                            + "VALUES (?, ?, ?, false)",
-                    Ids.newId(), request.aggregateId(), sha256("suitability:" + request.aggregateId()));
+                            + "VALUES (?, ?, ?, ?)",
+                    Ids.newId(), request.aggregateId(), sha256("suitability:" + request.aggregateId()), mismatch);
             return transitionOutcome(request, "kyc_submitted", "suitability_assessed",
                     CONTEXT + ".InvestorAccount.SuitabilityAssessed", "");
         });
     }
 
+    /**
+     * Acknowledges the suitability mismatch override (IA.4/C21/G26): stamps {@code override_text_hash} on the
+     * mismatched assessment so the investor can later be activated. Rejects if the current assessment is not a
+     * mismatch (nothing to override) or the investor is already active. Non-transition (no status change).
+     */
+    public CommandResult<Void> acknowledgeSuitabilityOverride(CommandRequest request, String overrideText) {
+        return gateway.execute(request, COMPLIANCE, () -> {
+            UUID investorId = request.aggregateId();
+            InvRow row = load(investorId);
+            if (row == null) {
+                throw new NotFoundException("investor not found: " + investorId);
+            }
+            if ("active".equals(row.status())) {
+                throw new ValidationException("investor is already active: " + investorId);
+            }
+            Suitability sa = loadSuitability(investorId);
+            if (sa == null) {
+                throw new ValidationException("no suitability assessment for investor: " + investorId);
+            }
+            if (!sa.mismatch()) {
+                throw new ValidationException("suitability assessment is not a mismatch — no override required");
+            }
+            jdbc.update("UPDATE inv_suitability SET override_text_hash = ? WHERE assessment_id = ?",
+                    sha256(overrideText), sa.assessmentId());
+            CommandEvent event = new CommandEvent(CONTEXT + ".InvestorAccount.SuitabilityOverrideAcknowledged",
+                    row.version(), Map.of("investor_id", investorId.toString()), null, null, false);
+            return new CommandOutcome<>(null, event);
+        });
+    }
+
     public CommandResult<Void> completeFinancialProfile(CommandRequest request, String bankAccountLast4) {
-        return gateway.execute(request, OPS, () -> transition(request, "suitability_assessed",
-                "financial_profile_completed", CONTEXT + ".InvestorAccount.FinancialProfileCompleted",
-                "bank_account_last4 = ?", bankAccountLast4));
+        return gateway.execute(request, OPS, () -> {
+            // C24/IA.8: the bank account is confirmed by a BC17 penny-drop, not self-attested.
+            requireVerified(verification.verifyPennyDrop(request.aggregateId(), bankAccountLast4),
+                    "account_status", "VALID", "bank account (penny-drop)");
+            return transition(request, "suitability_assessed", "financial_profile_completed",
+                    CONTEXT + ".InvestorAccount.FinancialProfileCompleted", "bank_account_last4 = ?", bankAccountLast4);
+        });
     }
 
     public CommandResult<Void> recordKycApproved(CommandRequest request) {
@@ -156,6 +202,38 @@ public class InvestorService {
         });
     }
 
+    /**
+     * Compliance rejects the investor's submitted KYC file (maker ≠ checker + MFA). The account holds at
+     * {@code financial_profile_completed} — it cannot reach {@code kyc_approved} until a fresh
+     * submit→approve cycle. Non-transition on {@code inv_account}.
+     */
+    public CommandResult<Void> recordKycRejected(CommandRequest request, String reason) {
+        return gateway.execute(request, COMPLIANCE, () -> {
+            UUID investorId = request.aggregateId();
+            InvRow row = requireStage(investorId, "financial_profile_completed");
+            compliance.rejectKyc(investorId, "investor", roles.adminUserId(request.actorId()),
+                    request.session().mfaAssertionId().toString(), reason);
+            CommandEvent event = new CommandEvent(CONTEXT + ".InvestorAccount.KycRejected", row.version(),
+                    Map.of("investor_id", investorId.toString()), null, null, false);
+            return new CommandOutcome<>(null, event);
+        });
+    }
+
+    /**
+     * Re-opens a rejected KYC file for re-review (the submitter becomes the new maker). Non-transition; the
+     * account stays at {@code financial_profile_completed} until a subsequent {@code record-kyc-approved}.
+     */
+    public CommandResult<Void> resubmitKyc(CommandRequest request) {
+        return gateway.execute(request, OPS, () -> {
+            UUID investorId = request.aggregateId();
+            InvRow row = requireStage(investorId, "financial_profile_completed");
+            compliance.resubmitKyc(investorId, "investor", roles.adminUserId(request.actorId()));
+            CommandEvent event = new CommandEvent(CONTEXT + ".InvestorAccount.KycResubmitted", row.version(),
+                    Map.of("investor_id", investorId.toString()), null, null, false);
+            return new CommandOutcome<>(null, event);
+        });
+    }
+
     public CommandResult<Void> recordMiaSigned(CommandRequest request) {
         return gateway.execute(request, OPS, () -> {
             UUID miaAgreementId = Ids.newId(); // M5c outcome recorded (decision A)
@@ -165,10 +243,31 @@ public class InvestorService {
     }
 
     public CommandResult<Void> activate(CommandRequest request) {
-        // kyc_refresh_due_at = activated_at + 12 months (C17) — both via now() in one statement (stable).
-        return gateway.execute(request, OPS, () -> transitionOutcome(request, "mia_signed", "active",
-                CONTEXT + ".InvestorAccount.Activated",
-                "activated_at = now(), kyc_refresh_due_at = now() + interval '12 months'"));
+        return gateway.execute(request, OPS, () -> {
+            // IA.3/IA.4: a mismatched suitability assessment blocks activation until its override is
+            // acknowledged (override_text_hash set). The other IA.3 prerequisites (kyc_approved, bank set,
+            // MIA signed) are guaranteed by the linear forward machine reaching 'mia_signed'.
+            Suitability sa = loadSuitability(request.aggregateId());
+            if (sa != null && sa.mismatch() && sa.overrideTextHash() == null) {
+                throw CommandRejectedException.suitabilityOverrideRequired();
+            }
+            // kyc_refresh_due_at = activated_at + 12 months (C17) — both via now() in one statement (stable).
+            return transitionOutcome(request, "mia_signed", "active", CONTEXT + ".InvestorAccount.Activated",
+                    "activated_at = now(), kyc_refresh_due_at = now() + interval '12 months'");
+        });
+    }
+
+    // --- BC17 verification (M10-A) -----------------------------------------------------------------
+
+    /**
+     * Rejects (422 {@code verification_failed}) unless the ACL result is COMPLETED and its
+     * {@code field} equals {@code expected}. Fail-closed: a null/missing field never passes.
+     */
+    private void requireVerified(VerificationResult result, String field, String expected, String label) {
+        Object value = result.extractedFields() == null ? null : result.extractedFields().get(field);
+        if (result.status() != VerificationStatus.COMPLETED || !expected.equals(value)) {
+            throw CommandRejectedException.verificationFailed(label);
+        }
     }
 
     // --- shared command-handler helpers ------------------------------------------------------------
@@ -218,6 +317,29 @@ public class InvestorService {
                 investorId);
     }
 
+    /** Loads the investor and asserts it is at {@code expected}; returns the row for the non-transition event. */
+    private InvRow requireStage(UUID investorId, String expected) {
+        InvRow row = load(investorId);
+        if (row == null) {
+            throw new NotFoundException("investor not found: " + investorId);
+        }
+        if (!expected.equals(row.status())) {
+            throw new ValidationException("investor is not " + expected + ": " + investorId + " (is " + row.status() + ")");
+        }
+        return row;
+    }
+
+    /** The investor's suitability assessment (latest by assessment_id), or null if none recorded yet. */
+    private Suitability loadSuitability(UUID investorId) {
+        return jdbc.query("SELECT assessment_id, mismatch, override_text_hash FROM inv_suitability "
+                        + "WHERE investor_id = ? ORDER BY assessment_id DESC LIMIT 1",
+                rs -> rs.next()
+                        ? new Suitability(rs.getObject("assessment_id", UUID.class), rs.getBoolean("mismatch"),
+                                rs.getBytes("override_text_hash"))
+                        : null,
+                investorId);
+    }
+
     private InviteRow loadInvite(UUID inviteId) {
         return jdbc.query("SELECT status::text AS status, email_hash, phone_hash, (expiry_at <= now()) AS expired "
                         + "FROM inv_invite WHERE invite_id = ?",
@@ -240,5 +362,8 @@ public class InvestorService {
     }
 
     private record InviteRow(String status, byte[] emailHash, byte[] phoneHash, boolean expired) {
+    }
+
+    private record Suitability(UUID assessmentId, boolean mismatch, byte[] overrideTextHash) {
     }
 }

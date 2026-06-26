@@ -1833,3 +1833,202 @@ This is the **synchronous** L.11 guard; the asynchronous mid-flight-suspension s
 (pass/`rejected_operational`), buyer ack (`acknowledgment_failed`), L.11 `held_for_review`, business-day
 funding window, BC query ports + ArchUnit. Remaining gaps unchanged (see [[DL-BE-038]]): C6 four-eyes,
 funding-window scheduler, ack-user OTP login, async hold/cancel, event bus.
+
+---
+
+## DL-BE-044 — M10 Investor Onboarding (BC7) full rigor — **COMPLETE** (Milestone 2, module 2)
+**Date:** 2026-06-26
+**Status:** **Done.** All three sub-slices built to DoD ([[DL-BE-045]]..[[DL-BE-047]]); full suite **236**.
+Spec `docs/modules/M10-investor-full.md` (Status: Done). Umbrella for the second Milestone-2
+module: widen BC7 from the WS-3 skeleton ([[DL-BE-033]]) — linear `signed_up → active`, admin-on-behalf,
+`mismatch=false` — to the complete onboarding spec: suitability mismatch + override-ack (IA.4/C21/G26), the
+KYC-rejected branch, BC17-verified PAN + penny-drop, and the full IA.3 activation gate. Sub-slices claim
+`DL-BE-045+`.
+
+**The four scope forks (DoR, user-decided 2026-06-26):**
+1. **Admin-on-behalf retained; investor self-service portal/login DEFERRED.** Pilot is admin-driven (investor
+   shares details offline, admin uploads docs + drives commands), as WS-3.
+2. **PAN + bank verified via the BC17 ACL, admin-triggered** (`verify_pan` / `verify_penny_drop`) — C24/IA.8,
+   no self-attestation, mirrors M9-C IRN. **Full-Aadhaar eKYC stays out** (only `aadhaar_last4` stored,
+   IA.7/C15; admin-recorded). _Interpretation of the user's "admin uploads documents" answer — keeps the C24
+   non-negotiable while admin-driven; flagged in the spec for veto._
+3. **Invite Revoke DEFERRED** (no migration; enum lacks `'revoked'` — auto-expiry only).
+4. **Post-active Suspend/Exit DEFERRED** (documented; Exit needs a BC2 read for IA.9; `Blacklisted` has no
+   enum value).
+
+**No new migration** (schema V1–V6 already carries every enum value + `inv_suitability.override_text_hash` +
+`suspended_at`/`exited_at`; the only schema-changing items — Revoke/Suspend/Exit — are deferred).
+**No new ArchUnit boundary** (M10 reaches other contexts only via the BC17 `VerificationPort` + BC11
+`ComplianceService` — existing seams).
+
+**Sub-slices (build order):** A BC17-verified PAN + bank ([[DL-BE-045]]) · B suitability mismatch +
+override-ack + IA.3 gate ([[DL-BE-046]]) · C KYC-rejected branch ([[DL-BE-047]]). Each: red tests → green →
+`/code-review` → DoD → its DL.
+
+**Remaining gaps after M10-full (documented):** investor self-service login/portal; invite Revoke (V7);
+Suspend/Exit/Blacklisted (+ BC2 `SubscriptionQueryPort`); full-Aadhaar eKYC; KYC-refresh scheduler (IA.6).
+
+## DL-BE-045 — M10-A BC17-verified PAN + bank (penny-drop)
+**Date:** 2026-06-26
+**Status:** Built. First sub-slice of [[DL-BE-044]]. `InvestorVerificationTest` 5/5; WS-3
+`InvestorOnboardingTest` 8/8 unchanged; full suite **229**.
+
+**What shipped.** `record-identity-verified` now calls BC17 `VerificationPort.verifyPan` and
+`complete-financial-profile` calls `verifyPennyDrop` (new port convenience) — the ACL result decides, the
+admin-supplied value is never self-attested (C24/IA.8), mirroring the M9-C IRN pattern. Pass requires
+`status=COMPLETED` AND the field (`pan_status`/`account_status`) == `VALID`; otherwise a new
+`CommandRejectedException.verificationFailed` → **422** `verification_failed`, no transition (the gateway
+rolls back the whole tx, including the `gate_verification` insert — so a failed check leaves no stale cached
+row and a retry re-issues). **Full-Aadhaar eKYC stays out**: only `aadhaar_last4` is admin-recorded
+(IA.7/C15); eKYC needs a secure transient-input path, deferred with self-service.
+
+**Test seam.** `StubVerificationVendorClient` now honours two sentinels (like the notifier's FAIL_TEMPLATE):
+PAN `ZZZZZ9999Z` → `pan_status=INVALID`; bank-last4 `0000` → `account_status=INVALID`. `deterministicFields`
+takes the request inputs to apply them. Default (any other value) still auto-passes, so existing tests are
+unaffected.
+
+**Watch for.** `requireVerified` is **fail-closed** (null/missing field → fail, never NPE). The edge
+PAN/bank format-check (`requiredPan`/`requiredFourDigits`, DL-BE-033) still fires *before* the ACL call, so a
+malformed value is a 400 at the edge, a well-formed-but-unverifiable value is a 422 from the ACL.
+
+## DL-BE-046 — M10-B suitability mismatch + override-ack + IA.3 activation gate
+**Date:** 2026-06-26
+**Status:** Built. Second sub-slice of [[DL-BE-044]]. `InvestorSuitabilityTest` 4/4; full suite **233**.
+
+**What shipped.** `assess-suitability` now carries a `mismatch:bool` (optional, default false — keeps WS-3
+callers green); it is stored on the fresh `inv_suitability` row (SA.1). A new
+`acknowledge-suitability-override` (Compliance) stamps `override_text_hash = sha256(override_text)` on the
+mismatched assessment — rejecting if the assessment is not a mismatch (nothing to override) or the investor
+is already active; non-transition (no status change). `activate` now enforces **IA.3/IA.4**: a `mismatch`
+assessment with no `override_text_hash` → new `CommandRejectedException.suitabilityOverrideRequired` (**422**),
+the listing stays `mia_signed`; once acknowledged, activation proceeds. The other IA.3 prerequisites
+(kyc_approved, bank set, MIA signed) are guaranteed by the linear forward machine reaching `mia_signed`, so
+the override-ack is the only new gate.
+
+**Decisions.** (1) The override command **hashes the `override_text`** the platform displays (G26), like the
+questionnaire hash — the client sends text, not a pre-computed hash. (2) Override role = **Compliance**
+(admin-on-behalf; B3's `investor` actor maps to Compliance for the pilot). (3) `loadSuitability` takes the
+latest assessment by `assessment_id DESC` (one per investor in the forward-only Phase-1 machine; future
+re-assessment creates a new id per SA.1). (4) PII unchanged — only hashes touch `inv_suitability`.
+
+## DL-BE-047 — M10-C KYC-rejected branch + M10 /code-review — **M10 FULL RIGOR COMPLETE**
+**Date:** 2026-06-26
+**Status:** Built. Final sub-slice of [[DL-BE-044]]. `InvestorKycRejectionTest` 3/3; full suite **236**.
+
+**What shipped.** The KYC-rejected branch. `ComplianceService` gains `rejectKyc` (maker ≠ checker + MFA,
+file `submitted → rejected` with a reason — same controls as approve) and `resubmitKyc` (file
+`rejected → submitted` under a fresh submitter, clearing the prior decision so the
+`submitted ⟹ approver_id/decided_at NULL` CHECK holds). `InvestorService.recordKycRejected` (Compliance) +
+`resubmitKyc` (Ops), both **non-transition**, require the account at `financial_profile_completed` (the
+decision stage, symmetric with approve). The `inv_account_status` enum has **no `kyc_rejected` state**, so
+the rejection lives on the `comp_kyc_file`, not the account: a rejected file holds the investor at
+`financial_profile_completed` (approve blocked — no submitted file) until resubmit → approve recovers.
+
+**`/code-review` (high recall) — 1 fix, 2 documented.**
+1. *(fixed)* `rejectKyc` did a SELECT-then-UPDATE without a rowcount check (TOCTOU): a racing decision
+   between the two could update 0 rows yet return success + emit an orphaned `KycRejected` envelope (the
+   WS-6 orphaned-envelope class of bug). Added `updated == 1` guard — now symmetric with `resubmitKyc`.
+   (Pre-existing `approveKyc` has the same unchecked shape; left untouched — WS-1 code, separate concern,
+   noted here for a future symmetry pass.)
+2. *(documented, not fixed)* The BC17 `VerificationService` cache keys on `(subject_id, api_name)` and
+   **ignores the inputs** — a TTL'd VALID result is reused even if the same subject is later verified with a
+   *different* PAN/bank value. **Pre-existing ACL defect, not M10 code, not reachable in M10's linear flow**
+   (each subject verifies PAN/penny-drop exactly once; a failed verify rolls back with the command tx, so no
+   stale FAIL persists). Flagged for a BC17 fix (cache key should include an input hash for one-/few-shot
+   identity checks).
+3. *(by design)* The three new non-transition commands don't version-guard `inv_account` — matches the
+   established Supplier/Buyer non-transition convention (status-guarded + command_id-idempotent + DB CHECKs);
+   same call the M9 review made.
+
+**M10 full rigor — done.** Onboarding intake → active with every reject/alternate branch: BC17-verified PAN +
+penny-drop (C24/IA.8), suitability mismatch + override-ack (IA.4/C21/G26), the IA.3 activation gate, and the
+KYC-rejected → resubmit recovery. Remaining gaps unchanged (see [[DL-BE-044]]): investor self-service
+login/portal, invite Revoke (V7), Suspend/Exit/Blacklisted, full-Aadhaar eKYC, KYC-refresh scheduler.
+
+---
+
+## DL-BE-048 — M11 Subscription (BC2) full rigor — **COMPLETE** (Milestone 2, module 3)
+**Date:** 2026-06-26
+**Status:** **Done.** Both sub-slices built to DoD ([[DL-BE-049]]–[[DL-BE-050]]); full suite **247**.
+Spec `docs/modules/M11-subscription-full.md` (Status: Done). Umbrella for the third Milestone-2
+module: widen BC2 from the WS-5 skeleton ([[DL-BE-035]]) — commit → `fully_funded` → inflow → `confirmed`
+(the G10 chain) — to the complete pre-disbursement lifecycle: **pre-confirmation cancellation + release**
+and the **funding-shortfall → refund → closed** path. Sub-slices claim `DL-BE-049+`.
+
+**The three scope forks (DoR, user-decided 2026-06-26):**
+1. **Admin-on-behalf retained; investor self-service commit + login DEFERRED** (Ops commits/cancels for the
+   investor, as WS-5; consistent with M9/M10).
+2. **`DeclareFundingShortfall` = an Ops-triggered command; automatic cron DEFERRED.** Guarded on
+   `now() ≥ funding_window_close_at AND committed_total < funding_target`; the shortfall→refund path is fully
+   built + testable, only the `@Scheduled` time-trigger (L.8/L.9 active side) is deferred.
+3. **Concentration warnings (S.8) DEFERRED** (gap recorded) — soft/non-blocking, so deferring changes no
+   money outcome; `concentration_warnings_at_commit` stays `[]`.
+
+**Derived:** refund money-movement runs **inline via `EscrowPort.instructRefund`** (`cash_payout_kind='refund'`,
+PI.4), mirroring WS-7 (refund webhook deferred). **No new migration** (status enums + the refund payout kind
+already exist; there is **no `refund_eligible` status** — `RefundEligible` is an audit event). **No new
+ArchUnit boundary** (BC1↔BC2 coordinated commit/release is the documented in-process G17 coupling; BC18 via
+`EscrowPort`).
+
+**Sub-slices (build order):** A pre-confirmation cancel + release ([[DL-BE-049]]) · B funding shortfall →
+refund → closed ([[DL-BE-050]]). Each: red tests → green → `/code-review` → DoD → its DL.
+
+**Remaining gaps after M11-full (documented):** investor self-service commit/login; concentration warnings
+(S.8); automatic funding-window-expiry cron; refund webhook + EoD overlay; post-disbursement subscription
+lifecycle (assignment_executed/distribution_received/loss_realised → M12/M13/M14).
+
+## DL-BE-049 — M11-A pre-confirmation cancellation + release (S.2 / L.2 inverse)
+**Date:** 2026-06-26
+**Status:** Built. First sub-slice of [[DL-BE-048]]. `SubscriptionCancellationTest` 4/4; WS-5
+`SubscribeFullyFundedTest` 8/8 unchanged; full suite **240**.
+
+**What shipped.** `POST /subscriptions/{id}/cancel` (ops-on-behalf): a `committed` subscription flips to
+`cancelled_by_investor` and **releases** the host listing in one atomic statement — the inverse of the WS-5
+coordinated commit: `committed_total -= amount` with `status = CASE WHEN 'fully_funded' THEN 'live' …` +
+`RETURNING` so the reopen decision is driven off the true row, never a stale before-image. The subscription
+flip is **version-guarded and runs first** (a concurrent double-cancel loses cleanly before any listing
+release). A reopened listing (`fully_funded → live`) emits its own `listing.Listing.FundingReleased` envelope
+— the symmetric counterpart of the WS-5 `FullyFunded` one. S.2 enforced: only a `committed` subscription can
+be cancelled (a `confirmed`/funded one → reject; committed_total untouched).
+
+**Watch for / decisions.** (1) **S.2 boundary**: cancellation is allowed only pre-funds (`committed`); the
+`funds_pending` micro-state is collapsed (WS-5), so in practice cancel is `committed`-only. (2)
+**Re-subscription is blocked** after cancel: the `sub_subscription_listing_investor_uq (listing_id,
+investor_id)` UNIQUE is unconditional, so a cancelled row keeps the slot (DuplicateKey → 400). A *partial*
+UNIQUE (excluding cancelled/refunded) to allow re-subscription is a documented future **migration**, out of
+M11-full (no new migration). (3) Release guarded `WHERE status IN ('live','fully_funded')` — a committed sub
+can't exist on a disbursed listing, but the guard is the backstop.
+
+## DL-BE-050 — M11-B funding shortfall → refund + M11 /code-review — **M11 FULL RIGOR COMPLETE**
+**Date:** 2026-06-26
+**Status:** Built. Final sub-slice of [[DL-BE-048]]. `SubscriptionRefundTest` 7/7; full suite **247**.
+
+**What shipped.** `POST /listings/{id}/declare-funding-shortfall` (ops, BC1): guarded on `status='live' AND
+funding_window_close_at ≤ now() AND committed_total < funding_target` → version-guarded flip `live →
+funding_failed_refunded` (the version guard closes the SELECT→UPDATE TOCTOU — a concurrently-filled listing
+fails cleanly, never declared on a just-fully_funded row). `POST /subscriptions/{id}/record-refund`
+(treasury, BC2): on a `funding_failed_refunded` listing, a `confirmed` (funded) position returns money inline
+via `EscrowPort.instructRefund` + a `kind=refund` `cash_payout_instruction` → `refunded`; a `committed`
+(unfunded) position flips with no money movement. `refunded` is the money-returned terminal (explicit `Close`
+folded). The automatic window-expiry cron is deferred (ops-triggered command per the DoR).
+
+**`/code-review` (high recall) — 1 fix (covering 2 findings), 1 documented.**
+1. *(fixed — high)* the refund's escrow idempotency key (`payout_instruction_id`) was minted fresh per call
+   (`Ids.newId()`), so a retried/concurrent refund would generate a *different* key and
+   `escrow.instructRefund` could fire **two real vendor refunds** (a non-transactional adapter would not roll
+   the second back — only the test stub masked it). Fixed: the id is now **derived deterministically** from
+   the subscription (`UUID.nameUUIDFromBytes("refund:"+subscriptionId)`), so a retry reuses the key (escrow
+   dedups) and a concurrent second insert **collides on the payout PK** → caught → reject. This also supplies
+   the **DB last-line-of-defence** the reviewer's 2nd finding wanted (one refund row per subscription,
+   enforced by the PK — no migration needed). Regression test added (a second refund → 4xx, exactly one
+   payout row).
+2. *(documented, not fixed — low)* a `committed` (unfunded) refund leaves the failed listing's
+   `committed_total` un-decremented. The listing is **terminal** (`funding_failed_refunded`) and no invariant
+   reads `committed_total` after — it is a *historical* record of what was committed when the window closed,
+   not stale-wrong. Left as-is to keep `record-refund` from coupling back to the listing aggregate.
+
+**M11 full rigor — done.** Pre-confirmation cancellation + release (S.2/L.2 inverse, atomic, reopens a
+fully_funded listing) and the funding-shortfall → refund path (L.8/L.9, inline escrow refund). Remaining gaps
+unchanged (see [[DL-BE-048]]): investor self-service commit/login; concentration warnings (S.8); the
+automatic window-expiry cron; refund webhook + EoD overlay; post-disbursement lifecycle (M12/M13/M14);
+re-subscription after cancel (needs a partial UNIQUE — future migration).

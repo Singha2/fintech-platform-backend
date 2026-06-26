@@ -26,6 +26,11 @@ public interface VerificationPort {
         return verify(new VerificationRequest(VerificationApi.VERIFY_IRN, subjectId, Map.of("irn", irn)));
     }
 
+    default VerificationResult verifyPennyDrop(UUID subjectId, String bankAccountLast4) {
+        return verify(new VerificationRequest(VerificationApi.VERIFY_PENNY_DROP, subjectId,
+                Map.of("bank_account_last4", bankAccountLast4)));
+    }
+
     default VerificationResult screenAmlPep(UUID subjectId, String name) {
         return verify(new VerificationRequest(VerificationApi.SCREEN_AML_PEP, subjectId, Map.of("name", name)));
     }

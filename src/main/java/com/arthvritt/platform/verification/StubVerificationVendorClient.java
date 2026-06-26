@@ -17,6 +17,11 @@ import java.util.UUID;
 @Component
 public class StubVerificationVendorClient implements VerificationVendorClient {
 
+    /** Test seam: a PAN of this value makes {@code verify_pan} return {@code pan_status=INVALID}. */
+    public static final String FAIL_PAN = "ZZZZZ9999Z";
+    /** Test seam: a bank-last4 of this value makes {@code verify_penny_drop} return {@code account_status=INVALID}. */
+    public static final String FAIL_BANK_LAST4 = "0000";
+
     private final ObjectMapper mapper;
 
     public StubVerificationVendorClient(ObjectMapper mapper) {
@@ -25,7 +30,7 @@ public class StubVerificationVendorClient implements VerificationVendorClient {
 
     @Override
     public VendorResponse call(VerificationApi api, UUID subjectId, Map<String, Object> inputs) {
-        Map<String, Object> fields = deterministicFields(api);
+        Map<String, Object> fields = deterministicFields(api, inputs);
         // Verbatim "vendor payload" — deterministic given (api, subject, inputs) so the hash is
         // reproducible AND varies with the request (matters for one-shot APIs, which aren't cached).
         Map<String, Object> raw = new LinkedHashMap<>();
@@ -37,16 +42,20 @@ public class StubVerificationVendorClient implements VerificationVendorClient {
         return new VendorResponse(fields, toBytes(raw));
     }
 
-    private static Map<String, Object> deterministicFields(VerificationApi api) {
+    private static Map<String, Object> deterministicFields(VerificationApi api, Map<String, Object> inputs) {
         return switch (api) {
-            case VERIFY_PAN -> Map.of("name", "STUB HOLDER", "pan_status", "VALID", "aadhaar_seeded", true);
+            case VERIFY_PAN -> Map.of("name", "STUB HOLDER",
+                    "pan_status", FAIL_PAN.equals(inputs.get("pan")) ? "INVALID" : "VALID",
+                    "aadhaar_seeded", true);
             case VERIFY_AADHAAR_EKYC -> Map.of("name", "STUB HOLDER", "ekyc_status", "VERIFIED");
             case VERIFY_GSTIN -> Map.of("legal_name", "STUB ENTERPRISES PVT LTD", "gstin_status", "ACTIVE");
             case FETCH_MCA21 -> Map.of("company_status", "ACTIVE", "cin_valid", true);
             case FETCH_GST_RETURNS -> Map.of("last_filed_period", "STUB", "filing_status", "REGULAR");
             case FETCH_BUREAU -> Map.of("score", 750, "bureau", "STUB");
             case FETCH_AA_BANK_STMT -> Map.of("account_status", "ACTIVE", "months", 12);
-            case VERIFY_PENNY_DROP -> Map.of("account_status", "VALID", "name_match", "EXACT");
+            case VERIFY_PENNY_DROP -> Map.of(
+                    "account_status", FAIL_BANK_LAST4.equals(inputs.get("bank_account_last4")) ? "INVALID" : "VALID",
+                    "name_match", "EXACT");
             case VERIFY_IRN -> Map.of("irn_status", "VALID");
             case VERIFY_EWAY_BILL -> Map.of("eway_status", "ACTIVE");
             case SCREEN_AML_PEP -> Map.of("match", false, "risk_band", "LOW");
