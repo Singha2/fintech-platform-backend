@@ -62,6 +62,26 @@ public class SubscriptionController {
                 .body(responses.from(result));
     }
 
+    @PostMapping("/subscriptions/{id}/cancel")
+    public CommandResponse cancel(@AuthenticationPrincipal AuthSession session, @PathVariable UUID id,
+                                  @RequestHeader("X-Command-Id") UUID commandId,
+                                  @RequestHeader("X-Aggregate-Version") int version) {
+        CommandRequest request = new CommandRequest(session, commandId, CONTEXT,
+                CONTEXT + ".Subscription.Cancel", "Subscription", id, version, "admin_user",
+                ActionSensitivity.SENSITIVE);
+        return responses.from(subscriptions.cancel(request));
+    }
+
+    @PostMapping("/subscriptions/{id}/record-refund")
+    public CommandResponse recordRefund(@AuthenticationPrincipal AuthSession session, @PathVariable UUID id,
+                                        @RequestHeader("X-Command-Id") UUID commandId,
+                                        @RequestHeader("X-Aggregate-Version") int version) {
+        CommandRequest request = new CommandRequest(session, commandId, CONTEXT,
+                CONTEXT + ".Subscription.RecordRefund", "Subscription", id, version, "admin_user",
+                ActionSensitivity.SENSITIVE);
+        return responses.from(subscriptions.recordRefund(request));
+    }
+
     @GetMapping("/listings/{listingId}/subscriptions/{subscriptionId}")
     public Map<String, Object> get(@AuthenticationPrincipal AuthSession session, @PathVariable UUID listingId,
                                    @PathVariable UUID subscriptionId) {

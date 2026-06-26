@@ -137,6 +137,14 @@ public class ListingController {
         return responses.from(listings.approveGoLive(command(session, commandId, id, ".Listing.ApproveGoLive", version)));
     }
 
+    @PostMapping("/{id}/declare-funding-shortfall")
+    public CommandResponse declareFundingShortfall(@AuthenticationPrincipal AuthSession session, @PathVariable UUID id,
+                                                   @RequestHeader("X-Command-Id") UUID commandId,
+                                                   @RequestHeader("X-Aggregate-Version") int version) {
+        return responses.from(listings.declareFundingShortfall(
+                command(session, commandId, id, ".Listing.DeclareFundingShortfall", version)));
+    }
+
     @GetMapping("/{id}")
     public Map<String, Object> get(@AuthenticationPrincipal AuthSession session, @PathVariable UUID id) {
         Map<String, Object> row = jdbc.query(

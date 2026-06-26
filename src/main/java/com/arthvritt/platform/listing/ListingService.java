@@ -484,6 +484,48 @@ public class ListingService {
         });
     }
 
+    /**
+     * Declares a funding shortfall (L.8/L.9, M11-B): an under-subscribed listing whose funding window has
+     * closed flips {@code live → funding_failed_refunded}, making its subscriptions refund-eligible. Ops
+     * command (the automatic window-expiry scheduler is deferred). Guarded on the window being past AND
+     * {@code committed_total < funding_target}.
+     */
+    public CommandResult<Void> declareFundingShortfall(CommandRequest request) {
+        return gateway.execute(request, OPS, () -> {
+            UUID listingId = request.aggregateId();
+            Shortfall r = jdbc.query("SELECT status::text AS status, committed_total, funding_target, "
+                            + "(funding_window_close_at IS NOT NULL AND funding_window_close_at <= now()) AS window_closed "
+                            + "FROM deal_listing WHERE listing_id = ?",
+                    rs -> rs.next()
+                            ? new Shortfall(rs.getString("status"), rs.getLong("committed_total"),
+                                    (Long) rs.getObject("funding_target"), rs.getBoolean("window_closed"))
+                            : null,
+                    listingId);
+            if (r == null) {
+                throw new NotFoundException("listing not found: " + listingId);
+            }
+            if (!"live".equals(r.status())) {
+                throw new ValidationException("listing is not live: " + listingId + " (is " + r.status() + ")");
+            }
+            if (!r.windowClosed()) {
+                throw new ValidationException("funding window has not closed yet: " + listingId);
+            }
+            if (r.fundingTarget() == null || r.committedTotal() >= r.fundingTarget()) {
+                throw new ValidationException("listing is fully subscribed; no shortfall: " + listingId);
+            }
+            int updated = jdbc.update("UPDATE deal_listing SET status = 'funding_failed_refunded'::deal_listing_status, "
+                            + "aggregate_version = aggregate_version + 1 "
+                            + "WHERE listing_id = ? AND status = 'live'::deal_listing_status AND aggregate_version = ?",
+                    listingId, request.expectedVersion());
+            requireUpdated(updated, listingId, "live", request.expectedVersion());
+            return new CommandOutcome<>(null, new CommandEvent(CONTEXT + ".Listing.FundingShortfallDeclared",
+                    request.expectedVersion() + 1,
+                    Map.of("listing_id", listingId.toString(), "committed_total", r.committedTotal(),
+                            "funding_target", r.fundingTarget()),
+                    Map.of("status", "live"), Map.of("status", "funding_failed_refunded"), true));
+        });
+    }
+
     // --- helpers -----------------------------------------------------------------------------------
 
     /**
@@ -642,5 +684,8 @@ public class ListingService {
     }
 
     private record InvoiceRow(UUID invoiceId, String status, String irn, String checkOutcomesJson) {
+    }
+
+    private record Shortfall(String status, long committedTotal, Long fundingTarget, boolean windowClosed) {
     }
 }
