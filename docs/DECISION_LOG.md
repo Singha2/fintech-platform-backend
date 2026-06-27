@@ -2225,3 +2225,76 @@ branch have no analog.
 **Deferred:** Suspend (BA.1, Credit+Treasury maker-checker — *flagged, pull forward on request*);
 `RecordLimitReduced` (BA.5 → BC3/M6); ack-user OTP login/portal. **No new migration; no new ArchUnit
 boundary.** New stub sentinel `FAIL_GSTIN` to drive the reject test.
+
+---
+
+## DL-BE-059 — M6 Credit & Underwriting (BC3) write side — **COMPLETE** (Milestone 2, module 8; four-eyes deferred)
+**Date:** 2026-06-26
+**Status:** **Done.** Both sub-slices built to DoD ([[DL-BE-060]]–[[DL-BE-061]]); full suite **279**.
+Spec `docs/modules/M6-credit-full.md` (Status: Done). Builds the **BC3 write side** the read ports
+([[DL-BE-039]]) consume: **SetPricingBand** (the genuine gap — `risk_pricing_policy` was only test-seeded; M9
+listing reads the active band) + the **buyer/supplier credit profiles** (`risk_*_profile` + snapshot to
+`buyer_account`/`sup_account`). New `credit.CreditService` + `CreditController`, Credit Reviewer role.
+Sub-slices `DL-BE-060+`.
+
+**Four-eyes (BCP.2/SCP.2) DEFERRED — user request, recorded.** The ₹10 Cr threshold is **DB-enforced**
+(`risk_{buyer,supplier}_profile_four_eyes_required_chk`). M6 supports limits/caps **≤ ₹10 Cr**; **> ₹10 Cr is
+rejected** (422 — second-approver workflow not built), DB CHECK as backstop. **This is a real compliance
+gap** until the FourEyesApproval workflow (C6/DL-023, ties into M4d) is built — large limits cannot be set.
+
+**Also deferred:** **pricing-band re-pricing/supersession (PB.3)** — the partial UNIQUE
+`(buyer_id,tenor_bucket) WHERE superseded_by IS NULL` + self-FK can't be superseded without a **V7
+deferrable-unique migration** (chicken-and-egg); M6 *creates* bands, rejects a re-price. **DefaultCase
+(DC.1-4)** → BC6/M14. **Periodic-review schedulers (BCP.4/SCP.3)** → scheduler-era. **No new migration.**
+
+**Sub-slices:** A SetPricingBand ([[DL-BE-060]]) · B buyer+supplier credit profile ([[DL-BE-061]]).
+
+## DL-BE-060 — M6-A SetPricingBand (risk_pricing_policy write)
+**Date:** 2026-06-26
+**Status:** Built. First sub-slice of [[DL-BE-059]]. `CreditPricingBandTest` 4/4; full suite **271**.
+
+**What shipped.** New `credit.CreditService` + `CreditController` (Credit Reviewer). `POST /credit/pricing-bands`
+inserts a `risk_pricing_policy` band — the genuine BC3 gap: M9 listing reads the active band via
+`PricingQueryPort`, but nothing *created* one (bands were only test-seeded). PB.1 (rate range) is app-guarded
+(`min>0 ∧ min≤max ∧ fee≥0`) with the DB CHECKs + `bps_type` as backstop; PB.2 (one active band per
+`(buyer_id, tenor_bucket)`) is the partial UNIQUE — a `DuplicateKeyException` surfaces as a clean reject.
+`tenor_bucket` is validated against the enum set (no 500 on a bad cast); `effective_from` defaults to today.
+
+**Supersession (PB.3) deferred (no migration).** A re-price for an existing active `(buyer, bucket)` is
+**rejected** ("re-pricing is deferred") — superseding the old band needs it to reference the not-yet-inserted
+new band, a chicken-and-egg the non-deferrable partial index can't satisfy. A **V7 deferrable-unique
+migration** is the future fix. (ArchUnit unaffected — `CreditService`/`Controller` are `credit`-internal, not
+`credit.port`.)
+
+## DL-BE-061 — M6-B buyer + supplier credit profile (four-eyes deferred) + M6 /code-review — **M6 COMPLETE**
+**Date:** 2026-06-26
+**Status:** Built. Final sub-slice of [[DL-BE-059]]. `CreditProfileTest` 6/6, `CreditPricingBandTest` 6/6;
+full suite **279**.
+
+**What shipped.** `set-buyer-credit-profile` / `set-supplier-credit-profile` (Credit Reviewer) upsert the
+authoritative `risk_buyer_profile` / `risk_supplier_profile` (`ON CONFLICT (id) DO UPDATE`, BCP.1/SCP.1) and
+**snapshot** the value to `buyer_account.credit_limit_paise` / `sup_account.credit_exposure_cap_paise` — the
+columns the M9-A query ports read (inline "BC3 sets → BC8/BC9 snapshot", no bus). **Four-eyes deferred**: a
+limit/cap **> ₹10 Cr (10,000,000,000 paise)** → new `CommandRejectedException.fourEyesRequired` (422), the DB
+`four_eyes_required_chk` as backstop (thresholds exactly aligned — `==` allowed by both).
+
+**`/code-review` (high recall, 2 finders) — 4 real findings fixed + 1 documented.**
+1. *(high)* malformed `effective_from` → DB 500. Fixed: `optionalIsoDate` validates `LocalDate.parse` at the
+   edge → clean 400. Test added.
+2. *(high, CLAUDE.md money rule)* `nonNegativeLong`/`nonNegativeInt` used `doubleValue()!=floor()`, which a
+   `BigInteger` overflow (`> Long.MAX`) passes — then `longValue()` keeps only the low 64 bits → a corrupted
+   paise value silently stored. Fixed: the codebase `longValue()!=doubleValue()` integral check. Test:
+   `exposure_cap_paise = 2^64+5` → 4xx (not stored as 5).
+3. *(med)* a bps value in `(100000, 2.1e9]` passed the app guard (only `requiredPositiveInt`) and hit the
+   `bps_type` domain CHECK → 500. Fixed: PB.1 guard now enforces the `≤ 100000` ceiling. Test added.
+4. *(med)* the snapshot `UPDATE` didn't assert row-count — a concurrent counterparty delete would leave the
+   `risk_*_profile` and the M9 read column divergent. Fixed: assert `rows == 1` → `NotFoundException`.
+5. *(low, documented — not fixed)* the profile upsert doesn't bump `aggregate_version` (stuck at 1), so the
+   audit envelope reports version 1 on each re-set. Acceptable for now — these profile endpoints are **not
+   version-guarded** (no `X-Aggregate-Version`); the gateway's `command_id` idempotency is the dup guard.
+   **Gap:** wire optimistic concurrency for profile edits when re-pricing/limit-revision UX lands.
+
+**M6 complete.** BC3 write side: SetPricingBand + buyer/supplier credit profiles. Gaps unchanged (see
+[[DL-BE-059]]): **four-eyes (BCP.2/SCP.2)** — *the user-flagged deferral, a real compliance gap above ₹10 Cr*;
+pricing-band re-pricing/supersession (PB.3, needs a V7 deferrable-index migration); DefaultCase (DC, → M14);
+periodic-review schedulers; profile optimistic-concurrency.

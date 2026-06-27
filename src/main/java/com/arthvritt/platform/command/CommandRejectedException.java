@@ -59,6 +59,12 @@ public class CommandRejectedException extends PlatformException {
                 "actor does not hold a role authorised for this command", HttpStatus.FORBIDDEN);
     }
 
+    /** A &gt;₹10 Cr limit/cap needs four-eyes approval (BCP.2/SCP.2/C6) — not yet built (M6 defers it). 422. */
+    public static CommandRejectedException fourEyesRequired(String detail) {
+        return new CommandRejectedException("four_eyes_required",
+                "four-eyes approval is required (and not yet built): " + detail, HttpStatus.UNPROCESSABLE_ENTITY);
+    }
+
     /** An external verification (BC17 ACL) returned a non-passing result (C24). 422, no envelope. */
     public static CommandRejectedException verificationFailed(String detail) {
         return new CommandRejectedException("verification_failed",
