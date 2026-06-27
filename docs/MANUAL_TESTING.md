@@ -8,6 +8,11 @@ the code** to understand it. Nothing here changes production behaviour — the d
 
 ## 0. TL;DR — zero to a running, testable app
 
+> **Three ways to drive the API once the app is up:** (a) **Postman** — import
+> `postman/fintech-platform.postman_collection.json` (one-click OTP login per role; the **Golden Path** folder
+> runs a whole deal `listed → matured` with auto-chained ids/versions + a scripted HMAC webhook). (b)
+> `manual-test.http` in IntelliJ/VS Code. (c) `scripts/dev-smoke.sh` for a one-shot end-to-end check.
+
 ```bash
 # 1. Postgres (db/user/pw = platform / platform / avc@2026)
 docker run -d --name avc-pg -p 5432:5432 \

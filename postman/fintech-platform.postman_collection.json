@@ -1,0 +1,128 @@
+{
+  "info": {
+    "name": "Fintech Platform — Backend (dev)",
+    "_postman_id": "f1a7c0de-0001-4001-8001-fintechplatform",
+    "description": "Manual-test collection for the invoice-discounting backend, against the **dev profile** (`./mvnw spring-boot:run -Dspring-boot.run.profiles=dev`). One-click OTP login per role; the Golden Path folder drives a whole deal `listed → matured` with auto-chained ids/versions and an HMAC-signed inflow webhook. See docs/MANUAL_TESTING.md. Uses the dev-seeded supplier/buyer/investor (run `Dev helpers → seed-info` first).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "password", "value": "DevPass123!" },
+    { "key": "webhook_secret", "value": "dev-banking-webhook-secret-change-me" },
+    { "key": "bearer_ops", "value": "" },
+    { "key": "bearer_treasury", "value": "" },
+    { "key": "bearer_treasury2", "value": "" },
+    { "key": "bearer_credit", "value": "" },
+    { "key": "bearer_compliance", "value": "" },
+    { "key": "supplier_id", "value": "" },
+    { "key": "buyer_id", "value": "" },
+    { "key": "investor_id", "value": "" },
+    { "key": "listing_id", "value": "" },
+    { "key": "listing_ver", "value": "" },
+    { "key": "va_id", "value": "" },
+    { "key": "funding_target", "value": "" },
+    { "key": "challenge_id", "value": "" },
+    { "key": "otp_code", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "0 · Dev helpers",
+      "item": [
+        {
+          "name": "seed-info (capture supplier/buyer/investor ids)",
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [
+              "const j = pm.response.json();",
+              "pm.collectionVariables.set('supplier_id', j.supplier_id);",
+              "pm.collectionVariables.set('buyer_id', j.buyer_id);",
+              "pm.collectionVariables.set('investor_id', j.investor_id);",
+              "pm.test('seed ids present', () => pm.expect(j.supplier_id).to.be.a('string'));"
+            ] } }
+          ],
+          "request": { "method": "GET", "url": "{{baseUrl}}/dev/seed-info" }
+        },
+        {
+          "name": "last-otp (peek the login OTP)",
+          "request": { "method": "GET", "url": "{{baseUrl}}/dev/last-otp?email=ops@dev.local" }
+        }
+      ]
+    },
+    {
+      "name": "1 · Login (one click per role)",
+      "description": "Each request runs password → fetch OTP (dev) → verify, and saves the bearer. If a bearer comes back empty, just send the request once more.",
+      "item": [
+        { "name": "Login: Ops",        "event": [ { "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('loginEmail','ops@dev.local');", "loginPrep();"] } }, { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('bearer_ops', pm.response.json().bearer);", "pm.test('bearer', () => pm.expect(pm.response.json().bearer).to.be.a('string'));"] } } ], "request": { "method": "POST", "header": [ { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"challenge_id\": \"{{challenge_id}}\",\n  \"code\": \"{{otp_code}}\"\n}" }, "url": "{{baseUrl}}/auth/login/verify-otp" } },
+        { "name": "Login: Treasury",   "event": [ { "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('loginEmail','treasury@dev.local');", "loginPrep();"] } }, { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('bearer_treasury', pm.response.json().bearer);"] } } ], "request": { "method": "POST", "header": [ { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"challenge_id\": \"{{challenge_id}}\",\n  \"code\": \"{{otp_code}}\"\n}" }, "url": "{{baseUrl}}/auth/login/verify-otp" } },
+        { "name": "Login: Treasury2",  "event": [ { "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('loginEmail','treasury2@dev.local');", "loginPrep();"] } }, { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('bearer_treasury2', pm.response.json().bearer);"] } } ], "request": { "method": "POST", "header": [ { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"challenge_id\": \"{{challenge_id}}\",\n  \"code\": \"{{otp_code}}\"\n}" }, "url": "{{baseUrl}}/auth/login/verify-otp" } },
+        { "name": "Login: Credit",     "event": [ { "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('loginEmail','credit@dev.local');", "loginPrep();"] } }, { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('bearer_credit', pm.response.json().bearer);"] } } ], "request": { "method": "POST", "header": [ { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"challenge_id\": \"{{challenge_id}}\",\n  \"code\": \"{{otp_code}}\"\n}" }, "url": "{{baseUrl}}/auth/login/verify-otp" } },
+        { "name": "Login: Compliance", "event": [ { "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('loginEmail','compliance@dev.local');", "loginPrep();"] } }, { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('bearer_compliance', pm.response.json().bearer);"] } } ], "request": { "method": "POST", "header": [ { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"challenge_id\": \"{{challenge_id}}\",\n  \"code\": \"{{otp_code}}\"\n}" }, "url": "{{baseUrl}}/auth/login/verify-otp" } }
+      ]
+    },
+    {
+      "name": "2 · Golden Path (run top-to-bottom)",
+      "description": "A whole deal lifecycle. Prereq: run `Dev helpers → seed-info`, then `Login: Ops`, `Login: Treasury`, `Login: Treasury2`. Each request chains the listing id + aggregate-version automatically.",
+      "item": [
+        { "name": "01 Create listing (Ops)", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["const j = pm.response.json();", "pm.collectionVariables.set('listing_id', j.aggregate_id);", "pm.collectionVariables.set('listing_ver', j.aggregate_version);", "pm.test('created', () => pm.response.to.have.status(201));"] } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"supplier_id\": \"{{supplier_id}}\",\n  \"buyer_id\": \"{{buyer_id}}\",\n  \"invoice_number\": \"INV-{{$guid}}\",\n  \"face_value_paise\": 100000000,\n  \"invoice_date\": \"2026-06-01\",\n  \"tenor_days\": 60\n}" }, "url": "{{baseUrl}}/listings" } },
+        { "name": "02 Start ops-checks (Ops)", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('listing_ver', pm.response.json().aggregate_version);"] } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "X-Aggregate-Version", "value": "{{listing_ver}}" } ], "url": "{{baseUrl}}/listings/{{listing_id}}/start-ops-checks" } },
+        { "name": "03 Ops-check: irn_validity", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('listing_ver', pm.response.json().aggregate_version);"] } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "X-Aggregate-Version", "value": "{{listing_ver}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{ \"check_name\": \"irn_validity\" }" }, "url": "{{baseUrl}}/listings/{{listing_id}}/record-ops-check" } },
+        { "name": "04 Ops-check: eway_bill_match", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('listing_ver', pm.response.json().aggregate_version);"] } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "X-Aggregate-Version", "value": "{{listing_ver}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{ \"check_name\": \"eway_bill_match\", \"outcome\": \"passed\" }" }, "url": "{{baseUrl}}/listings/{{listing_id}}/record-ops-check" } },
+        { "name": "05 Ops-check: buyer_supplier_relationship", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('listing_ver', pm.response.json().aggregate_version);"] } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "X-Aggregate-Version", "value": "{{listing_ver}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{ \"check_name\": \"buyer_supplier_relationship\", \"outcome\": \"passed\" }" }, "url": "{{baseUrl}}/listings/{{listing_id}}/record-ops-check" } },
+        { "name": "06 Ops-check: duplicate_check", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('listing_ver', pm.response.json().aggregate_version);"] } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "X-Aggregate-Version", "value": "{{listing_ver}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{ \"check_name\": \"duplicate_check\", \"outcome\": \"passed\" }" }, "url": "{{baseUrl}}/listings/{{listing_id}}/record-ops-check" } },
+        { "name": "07 Ops-check: supplier_exposure_cap", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('listing_ver', pm.response.json().aggregate_version);"] } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "X-Aggregate-Version", "value": "{{listing_ver}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{ \"check_name\": \"supplier_exposure_cap\", \"outcome\": \"passed\" }" }, "url": "{{baseUrl}}/listings/{{listing_id}}/record-ops-check" } },
+        { "name": "08 Ops-check: buyer_limit_headroom", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('listing_ver', pm.response.json().aggregate_version);"] } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "X-Aggregate-Version", "value": "{{listing_ver}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{ \"check_name\": \"buyer_limit_headroom\", \"outcome\": \"passed\" }" }, "url": "{{baseUrl}}/listings/{{listing_id}}/record-ops-check" } },
+        { "name": "09 Ops-check: document_completeness", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('listing_ver', pm.response.json().aggregate_version);"] } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "X-Aggregate-Version", "value": "{{listing_ver}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{ \"check_name\": \"document_completeness\", \"outcome\": \"passed\" }" }, "url": "{{baseUrl}}/listings/{{listing_id}}/record-ops-check" } },
+        { "name": "10 Complete ops-checks (Ops)", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('listing_ver', pm.response.json().aggregate_version);"] } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "X-Aggregate-Version", "value": "{{listing_ver}}" } ], "url": "{{baseUrl}}/listings/{{listing_id}}/complete-ops-checks" } },
+        { "name": "11 Record buyer-ack (Ops)", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('listing_ver', pm.response.json().aggregate_version);"] } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "X-Aggregate-Version", "value": "{{listing_ver}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{ \"outcome\": \"acknowledged\", \"method\": \"email\" }" }, "url": "{{baseUrl}}/listings/{{listing_id}}/record-buyer-ack" } },
+        { "name": "12 Snapshot & ready @1200bps (Ops)", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('listing_ver', pm.response.json().aggregate_version);"] } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "X-Aggregate-Version", "value": "{{listing_ver}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{ \"rate_bps\": 1200 }" }, "url": "{{baseUrl}}/listings/{{listing_id}}/snapshot-and-ready" } },
+        { "name": "13 Approve go-live (Treasury — maker≠checker)", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('listing_ver', pm.response.json().aggregate_version);", "pm.test('live', () => pm.response.to.have.status(200));"] } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_treasury}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "X-Aggregate-Version", "value": "{{listing_ver}}" } ], "url": "{{baseUrl}}/listings/{{listing_id}}/approve-go-live" } },
+        { "name": "14 Get listing (capture va_id + funding_target)", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["const j = pm.response.json();", "pm.collectionVariables.set('va_id', j.va_id);", "pm.collectionVariables.set('funding_target', j.funding_target);", "pm.test('is live', () => pm.expect(j.status).to.eql('live'));"] } } ], "request": { "method": "GET", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" } ], "url": "{{baseUrl}}/listings/{{listing_id}}" } },
+        { "name": "15 Subscribe full funding_target (Ops)", "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"investor_id\": \"{{investor_id}}\",\n  \"amount_paise\": {{funding_target}}\n}" }, "url": "{{baseUrl}}/listings/{{listing_id}}/subscriptions/commit" } },
+        { "name": "16 Inflow webhook (HMAC-signed)", "event": [ { "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["const ts = Date.now();", "const body = JSON.stringify({", "  va_id: pm.collectionVariables.get('va_id'),", "  amount_paise: Number(pm.collectionVariables.get('funding_target')),", "  utr: 'UTR-' + pm.variables.replaceIn('{{$guid}}'),", "  event_id: 'evt-' + pm.variables.replaceIn('{{$guid}}')", "});", "const sig = CryptoJS.HmacSHA256(ts + '.' + body, pm.collectionVariables.get('webhook_secret')).toString();", "pm.collectionVariables.set('wh_ts', String(ts));", "pm.collectionVariables.set('wh_sig', sig);", "pm.collectionVariables.set('wh_body', body);"] } } ], "request": { "method": "POST", "header": [ { "key": "X-Timestamp", "value": "{{wh_ts}}" }, { "key": "X-Signature", "value": "{{wh_sig}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{{wh_body}}" }, "url": "{{baseUrl}}/webhooks/banking/stub-escrow/inflow.received" } },
+        { "name": "17 Assignment: request (Ops)", "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" } ], "url": "{{baseUrl}}/listings/{{listing_id}}/assignment-set/request" } },
+        { "name": "18 Assignment: complete-signing (Ops)", "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{ \"investor_id\": \"{{investor_id}}\" }" }, "url": "{{baseUrl}}/listings/{{listing_id}}/assignment-set/complete-signing" } },
+        { "name": "19 Disbursement: draft (Treasury)", "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_treasury}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" } ], "url": "{{baseUrl}}/listings/{{listing_id}}/disbursement/draft" } },
+        { "name": "20 Disbursement: approve (Treasury2 — maker≠checker)", "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_treasury2}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" } ], "url": "{{baseUrl}}/listings/{{listing_id}}/disbursement/approve" } },
+        { "name": "21 Record maturity / full repayment (Ops)", "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"amount_paise\": 100000000,\n  \"utr\": \"UTR-{{$guid}}\"\n}" }, "url": "{{baseUrl}}/listings/{{listing_id}}/record-maturity" } },
+        { "name": "22 Final state (expect matured_payment_received)", "request": { "method": "GET", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" } ], "url": "{{baseUrl}}/listings/{{listing_id}}" } }
+      ]
+    },
+    {
+      "name": "3 · Credit (M6)",
+      "item": [
+        { "name": "Set pricing band (Credit)", "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_credit}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"buyer_id\": \"{{buyer_id}}\",\n  \"tenor_bucket\": \"31_60d\",\n  \"rate_range_min_bps\": 1000,\n  \"rate_range_max_bps\": 1500,\n  \"fee_bps\": 200\n}" }, "url": "{{baseUrl}}/credit/pricing-bands" } },
+        { "name": "Set buyer credit profile (Credit)", "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_credit}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"sector\": \"manufacturing\",\n  \"rating_source\": \"internal\",\n  \"rating\": \"BBB\",\n  \"credit_limit_paise\": 5000000000,\n  \"tenor_cap_days\": 90\n}" }, "url": "{{baseUrl}}/credit/buyers/{{buyer_id}}/profile" } },
+        { "name": "Set buyer profile > ₹10 Cr → 422 four_eyes_required", "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_credit}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"sector\": \"manufacturing\",\n  \"rating_source\": \"internal\",\n  \"rating\": \"AAA\",\n  \"credit_limit_paise\": 10000000001,\n  \"tenor_cap_days\": 90\n}" }, "url": "{{baseUrl}}/credit/buyers/{{buyer_id}}/profile" } },
+        { "name": "Set supplier credit profile (Credit)", "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_credit}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"risk_rating\": \"BBB\",\n  \"exposure_cap_paise\": 3000000000\n}" }, "url": "{{baseUrl}}/credit/suppliers/{{supplier_id}}/profile" } }
+      ]
+    },
+    {
+      "name": "4 · Reads & inspection",
+      "item": [
+        { "name": "Get listing", "request": { "method": "GET", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" } ], "url": "{{baseUrl}}/listings/{{listing_id}}" } },
+        { "name": "Get assignment-set", "request": { "method": "GET", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" } ], "url": "{{baseUrl}}/listings/{{listing_id}}/assignment-set" } },
+        { "name": "Health", "request": { "method": "GET", "url": "{{baseUrl}}/actuator/health" } }
+      ]
+    }
+  ],
+  "event": [
+    { "listen": "prerequest", "script": { "type": "text/javascript", "exec": [
+      "// Shared helper for the Login folder: password → fetch dev OTP → stash challenge_id + otp_code.",
+      "globalThis.loginPrep = function () {",
+      "  const base = pm.collectionVariables.get('baseUrl');",
+      "  const email = pm.collectionVariables.get('loginEmail');",
+      "  pm.sendRequest({",
+      "    url: base + '/auth/login/password', method: 'POST',",
+      "    header: { 'Content-Type': 'application/json' },",
+      "    body: { mode: 'raw', raw: JSON.stringify({ email: email, password: pm.collectionVariables.get('password') }) }",
+      "  }, function (err, res) {",
+      "    if (err || res.code !== 200) { console.log('login password failed', err, res && res.code, res && res.text()); return; }",
+      "    pm.collectionVariables.set('challenge_id', res.json().challenge_id);",
+      "    pm.sendRequest(base + '/dev/last-otp?email=' + encodeURIComponent(email), function (e2, r2) {",
+      "      if (e2 || r2.code !== 200) { console.log('otp fetch failed', e2, r2 && r2.code); return; }",
+      "      pm.collectionVariables.set('otp_code', r2.json().code);",
+      "    });",
+      "  });",
+      "};"
+    ] } }
+  ]
+}
