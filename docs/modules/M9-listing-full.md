@@ -198,6 +198,9 @@ the DB CHECK fire.
 - [x] Spec updated as-built.
 
 ## 10. Remaining gaps after M9-full (documented, with owner)
+- **Invoice PDF artifact** — M9's `document_completeness` ops-check is a **checkbox**; the real invoice
+  document (upload by Ops Executive, download by KYC'd investors) is **not** stored. → **M19 Invoice
+  Artifacts** (consumes **M18 Documents/BC16**); M19 wires this check to a hash-verified artifact.
 - **C6 four-eyes ≥ ₹1 Cr go-live** → M4d four-eyes engine.
 - **Funding-window-expiry scheduler + `DeclareFundingShortfall`** (L.9 active side) → M11.
 - **Real ack-user OTP login + per-invoice OTP ack** → buyer-portal slice.

@@ -71,7 +71,10 @@ signed_up → identity_verified → kyc_submitted → suitability_assessed
 
 **Does NOT own (deferred, documented):** investor self-service login + portal; invite Revoke (needs V7);
 Suspend/Exit + `Blacklisted` (post-active lifecycle, BC2 read for IA.9); full-Aadhaar eKYC; the KYC-refresh
-scheduler (IA.6); invite Expire as an explicit scheduled command (auto-expiry is enforced at consume).
+scheduler (IA.6); invite Expire as an explicit scheduled command (auto-expiry is enforced at consume);
+**typed KYC documents** (PAN card, address proof, …) — captured as `kyc_document` in **M20 Onboarding
+Documents** (consumes M18), **capture-only** (does not gate approval until M15). Today `submit-kyc` carries
+no document payload.
 
 ## 2. Upstream dependencies
 - **WS-3** investor skeleton + edge patterns. Done.

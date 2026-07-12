@@ -92,6 +92,15 @@ gate**.
 | **M14 Collections** | BC6 | overdue → default classification (incl. the M6-deferred DefaultCase) | the non-happy maturity path |
 | **M15 Compliance (full)** | BC11 | replace the auto-approve KYC stub with the real review engine | production KYC |
 | **M17 Auditor** | BC13 | read-only audit/regulator access | audit/regulator demo |
+| **M18 Documents** | BC16 | generic doc service: two-phase upload API + backend DB↔GCS (`document_id`) | **enables M19 + M20; unblocks any real file upload/download** |
+| **M19 Invoice Artifacts** | BC1 | invoice **PDF** upload (Ops) + **investor download**; wires `document_completeness` | **UI-blocking** — supplier upload + investor due-diligence screens need it (Phase B). Needs M18. |
+| **M20 Onboarding Docs** | BC11+BC9 | typed KYC (investor/supplier) + KYB (buyer) documents; shared checklist; capture-only | **UI-blocking** — onboarding screens' document upload need it (Phase B). Needs M18. |
+
+> **Sequencing note (DL-BE-070/072/073):** M18 → {M19, M20} is arguably **not** pure "remainder" — the
+> document upload/download surface is a Phase-B (UI) enabler for the onboarding, supplier, and investor
+> screens, so it likely wants to land alongside those screens rather than waiting behind M14/M15/M17.
+> M20 is **capture-only** (non-gating) so it does not disturb the current auto-approve onboarding flow;
+> real KYC-completeness enforcement stays with **M15**. Founder call on where M18–M20 slot.
 
 **Deferred controls register** — *flagged during the build; each is a known gap with a trigger* (founder
 should note the compliance ones):

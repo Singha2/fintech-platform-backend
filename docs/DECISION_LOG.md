@@ -2298,3 +2298,447 @@ limit/cap **> ₹10 Cr (10,000,000,000 paise)** → new `CommandRejectedExceptio
 [[DL-BE-059]]): **four-eyes (BCP.2/SCP.2)** — *the user-flagged deferral, a real compliance gap above ₹10 Cr*;
 pricing-band re-pricing/supersession (PB.3, needs a V7 deferrable-index migration); DefaultCase (DC, → M14);
 periodic-review schedulers; profile optimistic-concurrency.
+
+## DL-BE-062 — Break-glass admin bootstrap endpoint (API-key gated)
+
+**What changed.** New `POST /bootstrap/admin-users` — the first way to mint an admin before any super_admin
+(hence any login) exists, solving the IAM chicken-and-egg. `BootstrapAdminController` +
+`BootstrapAdminService` provision a **fully usable super_admin in one shot**: `auth_identity` → **active**
+`admin_user` → a super_admin `admin_role_assignment` (self-assigned; the FK is satisfied by the row inserted
+in the same tx) → a login password. Mirrors one `DevDataSeeder.seedAdmin`, but on demand over HTTP.
+
+**Restricted to super_admin only.** The endpoint takes no `role` — it always mints a super_admin. Bootstrap is
+purely the *seed* of the trust chain; every other admin and role is then created through the normal
+maker-checker `/admin-users` flow by that super_admin. This narrows the break-glass blast radius to a single,
+well-understood grant.
+
+**Why not the alternatives.** (a) *A standalone `DevSeedRunner`* (like `FlywayMigrationRunner`) was built then
+dropped — the user preferred an API so the same mechanism works local **and** prod. (b) *The existing
+`/admin-users/provision`* can't bootstrap: it runs through the `CommandGateway` (needs a super_admin session +
+MFA) and only creates an **`invited`** admin with no role/password — not loginable.
+
+**Auth model.** Deliberately bypasses the five non-negotiables — it **is** the seed of the trust chain, so
+there's no prior admin to authorise it. The only gate is a **static API key** (`platform.bootstrap.api-key`,
+local default in `application.properties`, prod override `PLATFORM_BOOTSTRAP_API_KEY` from a vault), presented
+as `Authorization: Bearer <key>`. `/bootstrap/**` is `permitAll` at the security chain (the
+`SessionBearerAuthFilter` tolerates the non-UUID token); the controller enforces the key with a **constant-time
+compare** (`MessageDigest.isEqual`) and **refuses a blank configured key** (a mis-provisioned prod authenticates
+no one).
+
+**What to watch for.** This endpoint mints a `super_admin` with only the key — treat the key like a root
+credential; rotate via the vault, and consider disabling the route in prod once IAM is seeded. Email
+uniqueness → clean 400 (not 500). Tests: `BootstrapAdminTest` (4) — valid key → active, **loginable**
+super_admin over the real password→OTP edge; wrong/missing key → 401 `unauthorized`; duplicate email → 400.
+`DevDataSeeder`'s startup auto-seed is unchanged (still the fast path for local dev).
+
+**Follow-up — API-key OTP peek (`GET /bootstrap/last-otp`).** The login OTP is stored **hashed** and "sent"
+via the in-process `StubNotifier` (no real SMS/SMTP), so its plaintext lives only in the stub's memory —
+readable via `/dev/last-otp`, but that is `@Profile("dev")`. Since bootstrap works in *any* profile, minting a
+super_admin outside dev left no way to obtain its OTP → login blocked. Added `GET /bootstrap/last-otp?email=…`
+(new `BootstrapOtpController`), gated by the **same** bootstrap key (extracted the constant-time check into
+`BootstrapApiKeyGuard`, now shared with `BootstrapAdminController`). Works in any profile for **any** email
+(mirrors `/dev/last-otp`; the key is already root-level, so no new exposure). **Self-retiring:** injected via
+`ObjectProvider<StubNotifier>` — once a real `NotificationChannel` replaces the stub at Production, the bean is
+absent and the peek returns a clear 404 ("delivered via the real channel"), so it can't leak a code once SMS is
+live. Tests: `BootstrapOtpTest` (4) — full bootstrap→password→peek→verify→bearer with only the key; wrong key →
+401; unknown email / no-OTP-yet → 404. Real SMS/email delivery remains the deferred Production-gate adapter.
+
+## DL-BE-063 — Role assign/revoke HTTP surface (BC10 `RbacService` over the edge)
+
+**What changed.** Added `POST /admin-users/{id}/roles` (assign) and `POST /admin-users/{id}/roles/{role}/revoke`
+to `AdminUserController` — the missing HTTP adapter over the already-built, already-tested `RbacService`
+assign/revoke commands (super_admin-gated, SoD-enforced, audit-logged since M4c). Before this, a bootstrapped
+super_admin could mint admins ([[DL-BE-062]]) but had **no way over HTTP to grant them operational roles**, so a
+provisioned admin was inert — the role logic existed only behind the service layer, reachable from tests alone.
+Assign takes `{role, override_reason?}`; both are thin adapters that build a `CommandRequest` and dispatch — no
+new domain logic. Assign of any `AdminRole`, including **`super_admin`**, is supported (a super_admin can elevate
+another admin). Tests: `RoleAssignmentEdgeTest` (5) — assign over HTTP → active; grant super_admin; non-super_admin
+→ 403 `role_not_held` (nothing written); unknown role → 400; revoke → removed.
+
+**No `X-Aggregate-Version`.** Unlike `disable`, assign/revoke write the `admin_role_assignment` **child** table,
+not the `admin_user` aggregate, so they carry no optimistic-lock version — `expectedVersion` is `0`, matching the
+M4c service tests. `override_reason` is required only for a **soft** SoD pair; blank/absent is normalised to
+`null` (no spurious override).
+
+**Known gap surfaced (RESOLVED in [[DL-BE-064]]).** `RbacService.assignRole` **fails closed** when no active SoD
+policy exists (`"no active SoD policy — role assignment refused"`), and at the time of this entry **nothing seeded
+one** in any real environment — `SodPolicyService.seedDefaultPolicy` was called only from tests, and
+`DevDataSeeder` writes `admin_role_assignment` rows *directly* (bypassing `assignRole`), so even dev never seeded
+a policy. So the assign route would 400 on any freshly-migrated DB. **Fixed in [[DL-BE-064]]:** the Phase-1 fixed
+policy is now seeded by migration V7 (genesis static metadata), so an active policy exists from schema genesis in
+every environment. Still deferred platform-wide: gateway **maker-checker** is not yet enforced, so assign (like
+`provision`) is a single-actor grant today — revisit when four-eyes lands (see [[DL-BE-059]] deferral).
+
+## DL-BE-064 — Genesis SoD policy seeded by migration + reserved SYSTEM principal
+
+**What changed.** New migration **`V7__seed_genesis_sod_policy.sql`** seeds the Phase-1 fixed SoD policy
+(`admin_sod_policy`) as **static genesis metadata**, closing the fail-closed gap from [[DL-BE-063]]. The policy is
+static reference data (which admin-role pairs are strict-blocked vs soft-warned, DL-033/C5 — the table comment
+already hardcodes it), so it belongs in the schema pipeline, not an operator/bootstrap action. Now
+`RbacService.assignRole` never fails closed: an active policy exists from schema genesis in prod, staging, and a
+fresh dev DB alike.
+
+**Why a reserved SYSTEM principal (Option A, chosen over relaxing the FK).** `admin_sod_policy.published_by` is
+`NOT NULL` → FK `admin_user`, and `admin_user.identity_id` is `NOT NULL` → FK `auth_identity`; a migration runs
+before any human admin exists. Rather than drop the `NOT NULL` accountability invariant (the rejected Option B),
+V7 seeds a reserved, **non-interactive** SYSTEM principal to author genesis records — fixed ids
+`…0001` (auth_identity), `…0002` (admin_user), both `status = 'disabled'` and with **no `auth_credential`**, so it
+can never complete password→OTP login and is never a live actor; the genesis policy is `…0003`. This keeps every
+policy row naming a real publisher and gives us a reusable SYSTEM actor for future genesis-authored data. Later
+human supersessions still flow through the super_admin-gated, audited `SodPolicyService.publishSodPolicy` and
+correctly supersede the genesis row.
+
+**Blast-radius fix.** `DevDataSeeder`'s "seed only if `admin_user` is empty" guard would now *always* skip (the
+SYSTEM row makes the table non-empty), silently breaking dev seeding. Fixed to exclude the reserved SYSTEM id from
+the count. All other `admin_user` queries key on a specific id/email, so the SYSTEM row perturbs nothing else.
+
+**Bundle divergence (deliberate).** Seeded as a **migration only** — not mirrored into the `docs/sql` bundle.
+Precedent: V5/V6 are likewise migration-only and absent from the bundle, and the bundle is pure DDL with zero seed
+DML; forcing genesis data into it would break that convention. (This adjusts my earlier intent to mirror it.)
+
+**Tests.** `GenesisSodPolicySeedTest` (3) — SYSTEM principal seeded + non-interactive (no credential); genesis
+policy carries the Phase-1 pairs authored by SYSTEM; exactly one active policy exists (migration ≥1, partial
+UNIQUE ≤1). `RoleAssignmentEdgeTest` no longer seeds a policy — it now proves assign/revoke work off the migrated
+genesis policy end to end. `SodEnforcementTest` keeps calling `seedDefaultPolicy` (a legitimate test seam): the
+shared Testcontainers DB is not rolled back between tests, so a suite needing the *default pairs* active must
+re-establish them. Full suite **295** green.
+
+## DL-BE-065 — Deferred: data-driven permission layer (PBAC) — see `docs/design/ADR-001`
+
+**What changed.** Documentation only — no code/schema change. Recorded the current BC10 model (roles *are* the
+permission unit, C18/DL-032: each command binds a `requiredRoles` set in code, enforced at the single
+`CommandGateway` chokepoint; **no permission entity, no `role_permission` mapping**) as a **deliberate Phase-1
+choice**, and captured the target permission-based model + migration path in `docs/design/ADR-001-permission-layer-pbac.md`
+(the first ADR in a new `docs/design/` tree).
+
+**Why deferred, not built.** Five fixed internal roles, no need to reshape capabilities without a deploy → a
+permission layer now would be speculative. The ADR records the target (a `sys_permission` catalog keyed by
+`commandType` + a `role_permission` composition table, with `ActorAuthorization` resolving roles→permissions), why
+it's cheap to add later (one enforcement chokepoint; every command already has a stable `commandType` permission
+key), the incremental backward-compatible migration (seed the tables from today's in-code mapping → zero behavior
+change, then flip commands one at a time), and the **triggers** for adoption (capability change without deploy;
+operator/tenant-defined roles). SoD stays role-based throughout; resource/row-level (data) authorization is a
+separate axis, explicitly out of scope. Records intent so the current design is revisitable, not tribal knowledge.
+
+## DL-BE-066 — M16 Tax: TDS rate as effective-dated data (stamp + freeze), and the TDS engine
+
+**Context.** Founder sign-off (2026-07-12, `docs/M16-tax-founder-decisions.md`): TDS on the investor's
+**return only** (Q1), **10%** with a verified PAN / **20%** without (§206AA, Q2), from the first rupee with no
+threshold (Q3), **fee 0% but configurable** (Q4). The load-bearing ask: rates must **not be hardcoded** — Indian
+rates move every Budget — yet an issued certificate must forever reconcile to the rate actually deducted.
+
+**What changed.** (1) New migration **V8** `tax_rate_default` — an **effective-dated reference table**
+`(fy_code, pan_verified) → rate_bps`, seeded FY2026-27 = {1000 bps PAN, 2000 bps no-PAN}. It is the *default
+source only*. (2) `TaxEngine` (pure, no DB) computes the per-investor split; `DistributionService.resolveAndStampRate`
+resolves the default **once** and **stamps it onto `tax_year_profile.tds_rate_bps`**, which is thereafter
+immutable for that investor×FY. Changing FY2027-28's default never disturbs an FY2026-27 Form 16A.
+
+**Why a table, not `application.properties`.** The constitution makes the DB the last line of defence and every
+tax number auditable; a Flyway-versioned rate history is auditable and per-FY, a property edited on a server is
+neither. Fail-closed: a missing default row is a clean reject ("seed tax_rate_default"), never a guessed rate.
+
+**Money-math decisions (the crux).** The distribution pot is **fixed** — investors collectively funded
+`funding_target`, the buyer repays `face_value`, and the difference is the total return to split. Because the pot
+is fixed, per-investor interest is **allocated by largest-remainder (Hamilton)** — floor each share, then hand the
+leftover paise one-each to the largest fractional remainders (ties broken by `investor_id`) — NOT rounded
+independently, so `Σ interest = total_return` and hence **`Σ gross = face_value` to the paise** (no paise created
+or lost). **TDS base = the return only** (never returned principal): `tds = round(rate × interest)` HALF_EVEN,
+computed **independently per investor** (each investor's tax is their own liability, so — unlike the interest
+split — no cross-investor remainder applies). `fee = 0` but retained as a first-class field, so enabling a platform
+fee later is a config change, not a schema change. `net = gross − tds − fee`, backstopped by the DB CHECK.
+
+**PAN-verified signal.** Snapshotted onto the profile at stamp time as `inv_account.pan IS NOT NULL`. **Future
+seams kept open, not built:** `rate_bps` is the all-in effective rate (absorbs surcharge/cess without a schema
+change); a §197 lower-deduction certificate is a per-investor override on `tax_year_profile.tds_rate_bps`.
+
+**Tests.** `TaxEngineTest` (7, pure) proves both invariants across single/multi-investor, PAN vs 206AA, forced
+remainder allocation, zero-return, and reject paths — money math verified with no DB.
+
+## DL-BE-067 — M16 Tax: the distribution command (boundary, immutable snapshot, close coupling, cumulatives)
+
+**What changed.** New Treasury maker-checker gate `DistributionService` (+ `DistributionController`) on a
+`kind='distribution'` `cash_payout_instruction` — the final money-lifecycle step. `draft` (maker) computes the
+TDS breakdown via `TaxEngine`, resolves+freezes each rate, and records the drafted instruction carrying an
+**immutable `tds_snapshot`** in its JSONB payload. `approve` (checker ≠ maker, fresh MFA) pays every investor
+their net via one BC18 escrow **multi-leg** instruction, writes the `tax_tds_deduction` ledger + each
+subscription's `distribution_outcome`, bumps FY cumulatives, and **closes the deal**.
+
+**Command boundary (DoR §1).** BC4 owns the payout *table*; **M16 owns this command and the tax engine it calls
+in-tx**. The command's audit context is `tax`; the deal-close emits a separate `listing.Listing.Distributed`
+envelope in the `listing` context (mirroring how disbursement attributes its listing transition).
+
+**Immutable snapshot.** The tax is computed and frozen at `draft` (PI.tds_immutable); `approve` **reads the frozen
+payload, never recomputes** — so the certificate can never drift from what was approved. Idempotent replay on
+`command_id` (gateway) means a retried approve never double-pays; the escrow multi-leg is idempotent on the bank
+key.
+
+**Close = distribution.** A matured deal closes **only** as `terminal_outcome='distributed'` (schema
+`deal_listing_terminal_outcome_shape_chk`: `status='closed'` iff a terminal_outcome is set). So `approve`
+transitions `matured_payment_received → closed` **and** sets `terminal_outcome='distributed'` in one guarded
+UPDATE — close *is* the distribution executing (resolves the deferral noted in DL-BE-054 / `MaturityService`).
+
+**`cumulative_gross_paise` = taxable income, not total payout.** The FY profile must be self-sufficient for Form
+16A, which needs *income* (the interest) and *tax*. So `cumulative_gross_paise` accrues **Σ interest** (the taxable
+income), pairing with `cumulative_tds_paise`. Note the deliberate term overload: `tax_tds_deduction.gross_paise`
+and `distribution_outcome.gross` mean the **full payout** (principal+interest, forced by `net = gross − tds − fee`),
+while the profile's cumulative "gross" means **income** — each correct in its own context; flagged here so an
+auditor isn't surprised. Funded subscriptions are read in deterministic `investor_id` order so a replay agrees.
+
+**Tests.** `DistributionTest` (7, HTTP+Testcontainers): happy multi-investor (A 10%/PAN, B 20%/no-PAN) →
+`Σ gross = face_value`, per-investor TDS, cumulatives, subs `distribution_received`, deal `closed`/`distributed`;
+maker==checker → 409; stale MFA → 401; non-matured → reject; second draft → reject; non-treasury → 403; approve
+idempotent on `command_id` (one ledger row per investor, one close envelope).
+
+## DL-BE-068 — Fix: V7 genesis-seed migration had a syntax error blocking all integration tests
+
+**What changed.** `V7__seed_genesis_sod_policy.sql` line 2 was `So --` — a stray word left in an editing
+artifact — which Postgres parsed as SQL and failed with `syntax error at or near "So"`, aborting Flyway and
+therefore **every** Testcontainers integration test (the context never started). Fixed to `--`. V7 is still
+untracked (never committed), which is why the break had gone unnoticed — it had never actually been run against a
+database. No behaviour change beyond making the genesis seed apply. Found incidentally while first running the M16
+`DistributionTest`.
+
+## DL-BE-069 — M16 Tax: Form 16A generated as a deterministic, re-renderable document (founder M16-Q6)
+
+**Context.** Founder chose **Option B** (deviation from the pilot recommendation): investors can **download a real
+Form 16A now**, not just have the numbers recorded. The platform-wide convention, though, is "record the
+`doc_hash`, defer the blob store" — nobody populates `sys_document_object` yet, and there is no object-storage
+backend wired.
+
+**What changed.** New `Form16aRenderer` (pure, clock-free), `Form16aService` (issuance + download), and the
+`Form16aController` / `TaxQueryController` HTTP surface. Issuing renders the certificate, content-addresses it
+(SHA-256 → `doc_hash`), registers a `sys_document_object` metadata row (**first real population** of the doc
+registry, idempotent on `doc_hash`), stamps `tax_year_profile.form_16a_issued/doc_hash/issued_at`, and writes a
+`tax_investor_statement(kind='form_16a')` row.
+
+**Key decision — deterministic re-render instead of a blob store.** The certificate is a pure function of the
+frozen profile cumulatives + the FY's `tax_tds_deduction` lines + the issuance timestamp, so **download
+re-renders the bytes on demand and verifies the fresh SHA-256 against the stored `doc_hash`** (integrity check on
+every fetch). This delivers a genuine downloadable document — auditable, tamper-evident — **without** needing an
+object-storage backend, and stays consistent with the "hash is the source of truth" convention. Two determinism
+subtleties the renderer handles (else a download hash-mismatches the issue-time hash): the captured `issued_at` is
+**truncated to microseconds** before both storing and rendering (Postgres `TIMESTAMPTZ` precision), and the
+timestamp is canonicalised on its **`Instant` via `ISO_INSTANT`** (not the offset the JDBC driver hands back).
+
+**Control shape.** Issuance is a **single `compliance_reviewer` gateway command — NOT maker-checker** (mirrors
+`MaturityService`): it moves no money and follows the established pattern for operational state changes; it still
+carries MFA-freshness, `command_id` idempotency, role gate, and an audit envelope. Re-issue on an already-issued
+FY (new `command_id`) is **rejected** — a correction needs a distinct flow, never a silent overwrite of a
+certificate an investor may already hold. Query reads (`/tax/deductions`, `/tax/statements`, `/tax/form-16a/{fy}`
+download) are open to any authenticated admin (investor login is deferred), mirroring existing GET endpoints.
+
+**Tests.** `Form16aRendererTest` (3, pure): identical inputs → identical bytes/hash; different inputs → different
+hash; clock-free. `Form16aTest` (6, HTTP+Testcontainers): issue writes profile/statement/document/audit; download
+bytes' hash equals the stored `doc_hash`; idempotent on `command_id`; reissue rejected; non-compliance → 403; query
+endpoints return the rows. **Full suite `./mvnw clean verify` → 318 green, ArchUnit clean.**
+
+## DL-BE-070 — BC16 Documents: generic content-addressed store with a swappable backend (DB↔GCS), design/DoR
+
+**Status.** Design decision recorded at DoR; implementation is **M18** (`docs/modules/M18-documents.md`).
+Not yet built — this entry fixes the architecture so the M18/M19 build and the existing Form-16A path don't
+drift into three incompatible "document" notions.
+
+**Context.** Invoice discounting needs the actual **invoice PDF** uploaded (by an Ops Executive) and
+**downloadable by investors** for due diligence — the first *opaque, non-regenerable* document on the platform.
+BC16 (`sys_document_object`) was specced and stubbed in `V4` but never given a storage backend or service; the
+register nominally folded BC16 into M4, yet only the metadata table landed. Separately, **DL-BE-069** already
+writes to `sys_document_object` for Form 16A via *deterministic re-render, no blob store*. Building invoice upload
+naively would either duplicate a store per module (KYC, invoice, …) or contradict the Form-16A pattern.
+
+**Decision — three layers, split by genuine generality.** (1) **Blob** (raw encrypted bytes) and (2) **content
+registry** (`sys_document_object`) are generic → owned by a new BC16 `DocumentService` behind a `DocumentPort`.
+(3) **Linkage + lifecycle + authorization** (`doc_kind`, active/superseded, `uploaded_by`, freeze rules, who-may-
+download) are context-specific → owned by each *consuming* context (M19 `deal_invoice_document`, later
+`kyc_document`), **not** BC16. Rationale: the layer-3 rules diverge per context (an invoice artifact freezes at
+`ready_for_review` and is investor-readable; a KYC doc freezes at approval and is Compliance-only, UIDAI-key-
+managed per DO.6). A single generic `sys_document_reference` table with a `doc_type` discriminator would drag
+context policy into a shared table and break B1/ArchUnit isolation. Generic where truly generic; context-owned
+where the rules are.
+
+**Decision — storage backend abstracted behind `DocumentStorePort`, profile-selected.** `DbTableDocumentStore`
+(`@Profile("dev")`, bytes in a new `sys_document_blob` table, `V10`) for local; `GcsDocumentStore`
+(`@Profile("prod")`, GCS object + signed-URL download) swapped in only at the Production gate — mirrors the
+existing "real port, fake adapter" ACL convention. Swapping backend changes neither `sys_document_object` nor any
+caller.
+
+**Decision — two document archetypes, one registry (reconciles DL-BE-069).** *Derived/re-renderable* docs
+(Form 16A) register metadata and reproduce bytes on demand — **no blob**, unchanged. *Opaque/uploaded* docs
+(invoice PDF, KYC scans) **must** use `DocumentStorePort`. Both share `sys_document_object` and the content-address
+contract; `originating_context` distinguishes them. A consumer whose bytes are reproducible SHOULD prefer the
+derived pattern.
+
+**Key rule — HASH-1: hash the plaintext, then encrypt.** `doc_hash = SHA256(rawBytes)`; the stored blob is
+`encrypt(rawBytes)`. Hashing ciphertext (random IV) would defeat DO.1 dedup/idempotency. Retrieval decrypts and may
+re-verify `SHA256(plaintext) == doc_hash` — cheap tamper-evidence, and exactly what M19's `document_completeness`
+gate leans on.
+
+**Boundary — M18 performs no authorization on `retrieve`** (STORE-1). It is a custody mechanism; the consuming
+context is the policy point. `store`/`retrieve` emit audit envelopes carrying `doc_hash` only (DO.2) and run inside
+the caller's MFA-fresh, idempotent command.
+
+**What to watch for.** (a) Don't let a future context invent a second blob store — route through `DocumentPort`.
+(b) Don't add a cross-BC FK from a consumer link table to `sys_document_object`; hold the hash as an identity
+reference (B1 isolation). (c) Keep the Form-16A derived path green when M18 lands — it must not be forced to
+materialize a blob. (d) `dev` may store plaintext for convenience, but the encrypt seam (DO.5) must exist so `prod`
+KMS is a config swap, not a code change.
+
+**Follow-on.** **DL-BE-071** (reserved) — M19 Invoice Artifacts: `deal_invoice_document`, the maker≠checker-via-
+ops-check control (uploader ≠ `document_completeness` recorder), freeze-at-snapshot, and KYC'd-investor download
+authZ. Detailed at M19 build.
+
+## DL-BE-072 — Documents: metadata-first two-phase upload API + surrogate `document_id` (revises DL-BE-070), design/DoR
+
+**Status.** Design decision at DoR; implementation is **M18** (`docs/modules/M18-documents.md`, revised). **Supersedes
+the `store(bytes)`-only shape** floated in DL-BE-070: M18 now exposes a generic HTTP document API, and domain
+entities reference a surrogate id, not the content hash.
+
+**Context.** All document consumers (invoice M19, KYC/KYB M20, signed-legal later) are **UI-driven uploads**. The
+DL-BE-070 shape streamed every byte through a domain command via `DocumentPort.store(bytes)` — which (a) forces
+large PDFs through the JVM/app tier, (b) holds a DB transaction open during byte transfer, and (c) offers no path
+to production **direct-to-blob** upload. It also made the content hash the identity, so a document could not be
+referenced until its bytes existed.
+
+**Decision — a document is a resource with its own `document_id`, uploaded in three steps.**
+1. `POST /documents {content_type, purpose, declared_size}` → `{document_id, upload_url, upload_token, expires_at}`;
+   inserts `sys_document` (`status=pending_upload`). 2. Client PUTs bytes to `upload_url` — **local** = an app
+   endpoint streaming into `sys_document_blob`; **hosted** = a **presigned GCS URL (client ↔ blob directly**, app
+   tier bypassed). 3. Finalize computes `SHA256(plaintext)`, sets `byte_size`/`doc_hash`, upserts the content index,
+   flips `status=stored`. Domain **attach** is a separate, domain-owned command that references `document_id`; a
+   handle is attachable before its bytes land, but *completeness/validity* requires `status=stored` (STATUS-1).
+
+**Decision — surrogate identity, content hash retained underneath.** New `sys_document(document_id UUIDv7 PK, …,
+doc_hash)` is the addressable handle domain entities reference. `sys_document_object` (content index, `doc_hash` PK)
+is **unchanged** — it stays the dedup/integrity index and the home of the *derived* archetype (**Form 16A / DL-BE-069
+untouched**). Blob is keyed by `document_id` (so presigning works before the hash is known); dedup becomes a
+content-index lookup at finalize, not the blob key. Net: content-addressing is preserved for integrity/audit while
+the stable surrogate is what the UI and domain hold.
+
+**Decision — keep a one-shot in-process path for server-generated docs.** `DocumentPort.storeGenerated(bytes,…)`
+creates an already-`stored` handle in a single call (no upload round-trip) for backend-produced bytes (Form-16A-style).
+Two entry paths, one registry.
+
+**Boundary unchanged (STORE-1).** M18 is custody + transport; it authorizes neither `retrieve` nor `attach`. The
+consuming context is the policy point (M19 investor-eligibility; M20 compliance-only). Initiate/finalize are
+token-scoped (short-lived, single-use, per-`document_id`); attach rides the consumer's MFA-fresh, idempotent,
+audited command. Audit envelopes carry `document_id`/`doc_hash` only (DO.2).
+
+**What to watch for.** (a) Orphaned `pending_upload` handles (client abandons) need a sweeper → scheduler era,
+flagged not built. (b) Do not add an FK from a consumer link table to `sys_document` — hold `document_id` as an
+identity reference (B1 isolation). (c) Local upload still streams through the app (no presign locally); the
+`upload_url` abstraction hides this so client code is identical both environments. (d) Keep the Form-16A derived
+path green — it must not be forced into the upload flow.
+
+**Impact on siblings.** **M19 realigned** to reference `document_id` (was `doc_hash`) so invoice and onboarding docs
+share one reference model. Migration order: **M18 `V10` → M19 `V11` → M20 `V12`**.
+
+## DL-BE-073 — Onboarding documents: typed KYC (investor/supplier) + KYB (buyer), shared configurable checklist, capture-only, design/DoR
+
+**Status.** Design at DoR; implementation is **M20** (`docs/modules/M20-onboarding-documents.md`), consuming M18.
+Answers "how do we handle KYC/KYB documents for all three personas without breaking the existing onboarding flows."
+
+**Context.** KYC is currently a status field only: `comp_kyc_file` carries a `doc_hashes BYTEA[]` column that **no
+code ever writes**, there is **no document-type dimension**, and buyers have **no KYC by design** (`M8-buyer-full`;
+`comp_kyc_subject_type = investor|supplier`). The requirement is multiple, **typed**, per-persona documents.
+
+**Decision — three forks (settled with the founder/owner).**
+1. **Buyer = KYB, not KYC.** Buyer stays out of `comp_kyc_file`; `comp_kyc_subject_type` is untouched. Buyer gets a
+   separate `buyer_document` table (BC9). Preserves M8's "no buyer KYC" design (OD.7).
+2. **Capture-only (non-gating) in Phase 1.** Documents are attached but **approval is not blocked** on them — the
+   WS auto-approve stub and all existing onboarding tests keep passing. Completeness is *computed* (uploaded vs
+   required) and read-only; **enforcement lands at M15** (OD.3/OD.4). This is the choice that guarantees no breakage.
+3. **Shared configurable checklist (option a).** One `onboarding_doc_requirement(subject_type, doc_kind, mandatory,
+   active)` table spans all three personas, runtime-editable (no deploy to change RBI/KYC document rules).
+
+**Decision — typed link tables referencing `document_id`.** `kyc_document` (BC11, FK→`comp_kyc_file`) and
+`buyer_document` (BC9, FK→`buyer_account`), each row = `(doc_kind ∈ kyc_doc_kind, document_id, status, uploaded_by)`.
+`document_id` is a bare identity reference into BC16 (no cross-BC FK; bytes via `DocumentPort`). A new
+`onboarding_subject_type` enum (investor|supplier|buyer) drives the shared catalog, **decoupled** from
+`comp_kyc_subject_type` so buyer never becomes a KYC subject.
+
+**Decision — restricted download (contrast M19).** KYC/KYB documents are **NOT** investor/counterparty-downloadable
+(they are for invoices, M19). Read access is `compliance_reviewer`/ops-admin only; Aadhaar-bearing docs are further
+UIDAI-restricted (DO.6, C15). Every download audit-logged (OD.5).
+
+**Deviation logged — `comp_kyc_file.doc_hashes[]` deprecated.** The spec modelled KYC docs as a bare
+`doc_hashes:[bytes32]` array (`09_B3_Aggregates.md:670`); it cannot express *which* document is the PAN card vs the
+board resolution, nor per-document lifecycle. The typed `kyc_document` table supersedes it. The array column is
+**left in place with a DEPRECATED comment** (nothing reads it; dropping it is a needless migration risk).
+
+**What to watch for.** (a) Never add `'buyer'` to `comp_kyc_subject_type`. (b) Keep completeness a *read* until M15 —
+gating now would break the auto-approve stub + onboarding tests. (c) Don't let the M19 "investors download" pattern
+leak into onboarding docs (OD.5). (d) `kyc_doc_kind` is a controlled vocabulary (enum); "configurable" applies to
+*which kinds are mandatory per persona* (the requirement rows), not to the universe of kinds.
+
+## DL-BE-074 — Documents: no encryption at rest for now (deferred to the Production gate), design/DoR
+
+**Status.** Scope decision for **M18**. Owner chose to **not encrypt documents at rest** in the current build.
+
+**Decision.** Document bytes are stored **plaintext** — local DB (`sys_document_blob.content_bytes`) and, later,
+GCS objects. The `DocumentStorePort` API stays byte-oriented (`put/get(document_id, bytes)`), and `sys_document`
+keeps a nullable `encryption_key_ref` **seam** (unused) so turning encryption on later is a config/adapter change,
+**not** a schema migration. HASH-1 (SHA-256 for integrity/dedup) is unaffected — it hashes the raw content.
+
+**Why it's safe now.** Current phase is dev/local + stubbed integrations; there is no real counterparty or Aadhaar
+PII in the store yet. Encryption at rest adds key-management complexity with no benefit at this stage.
+
+**What this does NOT waive.** **DO.5 (encryption at rest, C14) and the Aadhaar handling under DO.6/C15 remain
+Production-gate requirements** — they are *deferred, not deleted*. Before real KYC/Aadhaar documents are stored in
+production, encryption at rest (Cloud KMS envelope key) must be switched on. Flagged in M18 §1 (deferred) and DO.5.
+
+**What to watch for.** Do not let "no encryption" quietly carry into production — it is gated on the same
+Production milestone as the real `GcsDocumentStore`/KMS/WORM wiring. The seam (`encryption_key_ref`, neutral column
+name) exists precisely so this is a low-friction switch when that gate arrives.
+
+## DL-BE-075 — Documents: unified `sys_document` registry + M18 DoR integration resolutions, design/DoR
+
+**Status.** M18 DoR gate. Refines DL-BE-072: **one document model for everything**, and records the five
+integration decisions the DoR investigation forced against existing infrastructure.
+
+**Decision — unified model (owner's call: "every uploaded document treated the same way, kind differs").** A
+single table **`sys_document`** (surrogate `document_id` PK, opaque coarse `kind`, nullable `owner_ref`) is THE
+registry for every document. One two-phase `/documents` API creates/stores/retrieves all of them identically; the
+*coarse* `kind` (`invoice`/`kyc`/`buyer_kyb`/`form_16a`) is an opaque label the generic layer never interprets.
+**Domain-specific meaning stays in the consuming context** — the fine vocabulary (`pan_card`, `gst_certificate`),
+lifecycle (freeze-at-snapshot, active/superseded), invariants, and download authZ live in the domain link tables
+(`deal_invoice_document`, `kyc_document`, `buyer_document`) and are untouched. Principle: *how a document is
+handled* is uniform; *what it means* is domain-specific.
+
+**Decision — `sys_document_object` is NOT reused; Form 16A converges later (M18d).** The existing registry is
+content-hash-PK with `originating_aggregate_ref`/`encryption_key_ref` **NOT NULL** and no bytes column — hostile
+to two-phase upload (the doc has no aggregate yet at finalize, and we have no encryption). `sys_document` fixes all
+three (surrogate PK, nullable `owner_ref`, no encryption column). M18 **never writes** `sys_document_object`; it
+stays Form-16A-only. **Migrating Form 16A onto `sys_document` and retiring `sys_document_object` is M18d** — a
+separate, isolated slice run **after** M18 core, with all M16 tests kept green (owner chose follow-up over folding
+it into M18, to keep the tax domain out of the foundation build). Reserves **DL-BE-076**.
+
+**The five DoR integration resolutions (DL-BE-075 I1–I5).**
+- **I1** — `sys_document` is the registry; uploads never touch `sys_document_object` (above).
+- **I2** — upload plumbing (initiate/PUT/finalize) uses the **operational path** (`SettlementService`-style direct
+  `jdbc` + `AuditLog.append`), **not** `CommandGateway`/`CommandResponse` (which need aggregate id/version up front
+  and rebuild the response from one audit row). Bespoke response bodies. **Attach** (M19/M20) is a normal gateway command.
+- **I3** — local upload authenticates with the **normal session bearer**; **no separate upload token now**. The
+  presigned-GCS-URL + short-lived upload token is only needed for direct-to-blob → deferred to **M18c** (prod gate).
+- **I4** — **raw streaming `PUT`** (`application/pdf` body), not multipart (avoids Spring's 1 MB multipart default);
+  explicit **20 MB** cap (config-tunable; Tomcat `maxSwallowSize` + in-handler guard). Servlet filters don't buffer
+  the body — safe.
+- **I5** — reuse `Ids.newId()` (UUIDv7) for `document_id`; reuse `AuditLog.append(AuditEnvelopes.seed(…))` for
+  chained audit; `/documents/**` is auto-authenticated by `anyRequest().authenticated()` (no SecurityConfig change).
+- **Idempotency:** initiate derives `document_id` deterministically from `X-Command-Id` (replay-safe); finalize is
+  idempotent on `document_id` status.
+
+**What to watch for.** (a) New code must never write `sys_document_object` — one legacy exception (Form 16A) until
+M18d. (b) `sys_document.kind` is opaque — do not add domain vocabulary interpretation to the generic layer. (c) The
+operational-path endpoints return bespoke bodies, not `CommandResponse` — a deliberate, documented divergence from
+the house command convention (the shape genuinely doesn't fit). (d) Keep bytes-in-BYTEA memory in mind at the 20 MB
+cap (buffered per upload); revisit if concurrency/size grows.
+
+**M18a as-built (green — 7 tests + full suite 326).** Store core landed: `V10__document_service.sql`
+(`sys_document` + `sys_document_blob`, CHECK `sys_document_stored_has_bytes`), `DocumentPort`/`DocMeta`,
+`DocumentService.storeGenerated/resolve/retrieve`, `DocumentStorePort` + `DbTableDocumentStore`. Two non-obvious
+choices: (i) **`DbTableDocumentStore` is `@Profile("!prod")`** (not `"dev"`) so it is the default backend in
+dev **and** the test/default profile — a `"dev"`-only guard would leave the test context without a bean; the real
+GCS adapter will be `@Profile("prod")` (M18c). (ii) **`storeGenerated` has no caller actor** (server-generated
+path), so `created_by` + the audit actor reuse the reserved **SYSTEM principal** seeded in V7
+(`00000000-0000-0000-0000-000000000002`), mirroring `AbstractAclService`'s `new Actor("system", …)` idiom. Audit
+payload carries `document_id`/`kind`/`doc_hash`(hex)/`byte_size` only — never the bytes (DO.2). `sys_document_object`
++ Form 16A untouched (isolation test green). **M18b** (two-phase HTTP API) is next.

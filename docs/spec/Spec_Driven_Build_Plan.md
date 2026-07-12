@@ -163,6 +163,25 @@ Each module = one Spec Kit feature with its **own DoR**. Grouped where rigor is 
 - **M16 · Tax & Reporting (BC12)** — TDS rate/amount, year profile, investor statements.
 - **M17 · Auditor Access (BC13)** — time-bound read-only auditor accounts, access scopes, auto-disable.
 
+**Wave-2 addendum — Document custody** *(added 2026-07-12, DL-BE-070; register-correction: BC16 was
+nominally grouped under M4 above, but only its `sys_document_object` metadata stub landed there — the
+storage backend + service are built here, not in M4):*
+- **M18 · Documents (BC16)** — **unified** document service: **every** document is one row in
+  **`sys_document`** with a coarse `kind`, created/stored/retrieved by one **metadata-first two-phase API**
+  (`POST /documents` → upload → finalize; **local = DB table, production = GCS direct-to-blob** = M18c).
+  Domain entities reference a surrogate **`document_id`**; domain meaning stays in the consuming context.
+  DoR settled (DL-BE-075). _(DL-BE-070, 072, 074, 075)_
+  - **M18d** (follow-up) — migrate Form 16A onto `sys_document`, retire `sys_document_object` (M16 tests green). _(DL-BE-076)_
+- **M19 · Invoice Artifacts (BC1)** — invoice **PDF** upload (Ops Executive) + **investor download**;
+  `deal_invoice_document` links a `document_id`; wires M9's `document_completeness` ops-check to a real
+  `stored` document (maker≠checker via the ops-check). Consumes M18. _(DL-BE-071)_
+- **M20 · Onboarding Documents (BC11 KYC + BC9 KYB)** — typed, multi-document handling for **investor +
+  supplier KYC** and **buyer KYB** (buyer stays a non-KYC subject); shared runtime-configurable
+  `onboarding_doc_requirement` checklist; **capture-only** in Phase 1 (enforcement at M15); compliance-only
+  download. Consumes M18. _(DL-BE-073)_
+
+**Build order:** M18 → { M19, M20 } (M19 and M20 are independent once M18 exists). Migrations V10 → V11 → V12.
+
 ---
 
 ## D. The Per-Module Loop (repeat for every module M0–M17)
