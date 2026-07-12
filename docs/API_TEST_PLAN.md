@@ -13,23 +13,84 @@ Tick each box as you go. Deep setup/debugging detail lives in `MANUAL_TESTING.md
 
 ---
 
-## 0. One-time setup (≈5 min)
+## 0. First-time setup — from nothing to a running, seeded app (≈10 min)
 
+Do these **in order**, from the repo root (`fintech-platform-backend/`). You run the same 3 commands every
+time; only the first run downloads dependencies.
+
+### Prerequisites (install once)
+| Tool | Why | Check |
+|---|---|---|
+| **JDK 21** | build & run the app | `java -version` → `21.x` |
+| **Docker** | runs Postgres in a container | `docker --version` |
+| **Maven** | not needed — use the bundled `./mvnw` wrapper | — |
+| `curl`, `jq`, `uuidgen`, `openssl` | for the command-line examples below (Postman needs none of these) | `jq --version` |
+
+> No Docker? Any local PostgreSQL 16 works — just create a database/user/password of `platform` / `platform`
+> / `avc@2026` on `localhost:5432` and skip Step 1.
+
+### Step 1 — Start PostgreSQL
+The app needs a Postgres 16 database. This one command starts it in a container (db / user / password all
+`platform` / `platform` / `avc@2026`):
 ```bash
-# 1. Start Postgres (db/user/pw = platform / platform / avc@2026)
 docker run -d --name avc-pg -p 5432:5432 \
   -e POSTGRES_DB=platform -e POSTGRES_USER=platform -e POSTGRES_PASSWORD='avc@2026' postgres:16-alpine
+```
+*(Already created it once? Just start it again: `docker start avc-pg`.)*
 
-# 2. Build the schema (Flyway autostart is OFF — run the migrator once)
+### Step 2 — Create the database schema (run the migration)
+The app does **not** build its own schema on startup (Flyway autostart is deliberately OFF — see
+`CLAUDE.md`). Run the migrator **once** — it applies every Flyway migration (`V1 … V13`: all tables, enums,
+constraints, seed policy):
+```bash
 ./mvnw -q compile exec:java -Dexec.mainClass=com.arthvritt.platform.infrastructure.migration.FlywayMigrationRunner
+```
+Expect log lines like `Successfully applied N migrations`. **This must succeed before Step 3** — the app
+boots with `ddl-auto=validate` and will refuse to start against an empty/mismatched schema.
 
-# 3. Run the app in the DEV profile (seeds test admins + counterparties, enables /dev helpers)
+### Step 3 — Run the app in the **dev** profile (this is what seeds your test data)
+```bash
 ./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
 ```
+The **`dev` profile** does two things that no other profile does:
+1. **Seeds test data** (the `DevDataSeeder` — see the next box), so you have accounts and counterparties to
+   test against immediately.
+2. **Enables the `/dev/*` helpers** — `GET /dev/last-otp` (read the login OTP) and `GET /dev/seed-info` (the
+   seeded ids). These make login scriptable and let you find the seeded records.
 
-**Confirm it's up:** open <http://localhost:8080/actuator/health> → `{"status":"UP"}`, then
-`curl http://localhost:8080/dev/seed-info` → you should see a `supplier_id`, `buyer_id`, `investor_id`.
-Those are **pre-seeded, already-active** counterparties you'll test against — that's your "see data" starting point.
+Leave this running in its own terminal. Watch for `Started PlatformBackendApplication` and a
+`[dev-seed] …` line confirming the seed ran.
+
+### What the dev seed gives you (your starting data)
+On first boot the seeder creates a small, ready-to-use world (idempotent — re-running won't duplicate it):
+
+| Seeded | Details |
+|---|---|
+| **6 admin users** | `super@ / ops@ / treasury@ / treasury2@ / compliance@ / credit@ dev.local` — one per role (2 treasury for maker-checker). Password for **all**: `DevPass123!` |
+| **DEV Supplier** | a supplier already at status `active` (so you can list invoices against it immediately) |
+| **DEV Buyer** | a buyer already `active`, **with** an acknowledgment user and a pricing band wired up |
+| **A seeded investor** | `investor@dev.local`, ready to subscribe |
+
+> These are your **"see data" starting point** — you don't have to onboard anyone from scratch to test the
+> money spine (Suite H). `GET /dev/seed-info` returns their ids.
+
+> **Base path — read this.** Every application route is served under **`/api/v1`** (e.g.
+> `http://localhost:8080/api/v1/suppliers`). The **only** exception is health/ops, which runs on a **separate
+> management port 8081** and is *not* under the prefix: `http://localhost:8081/actuator/health`. Every `$BASE`
+> in this doc already includes `/api/v1`; `manual-test.http`, Postman, and `dev-smoke.sh` are pre-set too.
+
+### Confirm it's up
+```bash
+curl http://localhost:8081/actuator/health          # → {"status":"UP"}
+curl http://localhost:8080/api/v1/dev/seed-info      # → { "supplier_id": "...", "buyer_id": "...", "investor_id": "...", "admins_password": "DevPass123!" }
+```
+If both return data, you're ready to test.
+
+### If something goes wrong
+- **App won't start / "schema validation failed"** → you skipped Step 2, or it failed. Re-run the migrator.
+- **"port 5432 already in use"** → a Postgres is already running; either use it or `docker rm -f avc-pg` and retry.
+- **Migration or app can't connect** → Postgres isn't up yet (`docker ps` should list `avc-pg`), or it's still starting — wait a few seconds.
+- **Want a clean slate?** See §6 (drop the schema, re-run Steps 2–3 — the seeder re-seeds).
 
 ---
 
@@ -38,7 +99,7 @@ Those are **pre-seeded, already-active** counterparties you'll test against — 
 Every non-public call needs `Authorization: Bearer <token>`. Getting a token is 3 calls:
 
 ```bash
-BASE=http://localhost:8080
+BASE=http://localhost:8080/api/v1        # every app route lives under /api/v1
 EMAIL=ops@dev.local
 
 # a) password → returns a challenge_id
