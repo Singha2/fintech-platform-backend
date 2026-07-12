@@ -3,7 +3,7 @@
 ### Then run these requests top-to-bottom (click the ▶ gutter icon). Bearers / ids / versions are captured
 ### into global vars by the response handlers, so later requests just work. See docs/MANUAL_TESTING.md.
 
-@host = http://localhost:8080
+@host = http://localhost:8080/api/v1
 @pw = DevPass123!
 ### funding_target for face=100000000, rate=1200bps, tenor=60d, fee=200bps (HALF_EVEN):
 @target = 96027397

@@ -66,10 +66,11 @@ public class DevDataSeeder implements ApplicationRunner {
         seedPricingBand(buyerId);          // covers tenor bucket 31_60d, rate [1000,1500], fee 200 bps
         UUID investorId = seedActiveInvestor(superAdmin);
 
-        log.info("[dev-seed] done. supplier={} buyer={} investor={} (GET /dev/seed-info to fetch these)",
+        log.info("[dev-seed] done. supplier={} buyer={} investor={} (GET /api/v1/dev/seed-info to fetch these)",
                 supplierId, buyerId, investorId);
-        log.info("[dev-seed] log in: POST /auth/login/password {{\"email\":\"ops@dev.local\",\"password\":\"{}\"}} "
-                + "→ GET /dev/last-otp?email=ops@dev.local → POST /auth/login/verify-otp", PASSWORD);
+        log.info("[dev-seed] all routes are under /api/v1; health is on :8081/actuator/health");
+        log.info("[dev-seed] log in: POST /api/v1/auth/login/password {{\"email\":\"ops@dev.local\",\"password\":\"{}\"}} "
+                + "→ GET /api/v1/dev/last-otp?email=ops@dev.local → POST /api/v1/auth/login/verify-otp", PASSWORD);
     }
 
     private UUID seedAdmin(String email, String displayName, String role) {

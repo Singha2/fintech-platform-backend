@@ -2895,3 +2895,37 @@ revocability, buys statelessness we can't spend).
 JWTs are introduced, they must be gateway-internal (phantom-token) or paired with a denylist, and the admin-disable
 cascade must still kill access immediately. The three hardening items above are tracked here so they aren't forgotten
 when the store moves from dev to real PII.
+
+## DL-BE-078 — HTTP: versioned `/api/v1` base path + actuator on a separate management port
+
+**Status.** Applied. Owner decision (2026-07-12): the app previously served every route at `/` — asked whether a
+fixed context path should exist. Chose an **in-app context path** (over a gateway-level prefix) so the versioned
+base is visible in the service itself.
+
+**Decision.**
+- `server.servlet.context-path=/api/v1` — **every** application route on the API port is now under `/api/v1`
+  (`/auth`, `/suppliers`, `/listings`, `/documents`, `/kyc`, `/webhooks`, `/bootstrap`, `/dev` — all of them).
+  `/v1` gives versioning headroom (a future `/api/v2` can run side-by-side) at effectively zero cost now.
+- `management.server.port=8081` (env-overridable) — actuator/health runs on its **own port**, so ops probes stay
+  **off** the versioned API prefix: `http://host:8081/actuator/health`, not `/api/v1/actuator/...`.
+
+**Why it was low-risk to add.**
+- **Spring Security unchanged** — `requestMatchers` match the *context-relative* path (Boot strips the context path
+  first), so `/auth/login/**`, `/webhooks/**`, etc. keep matching under `/api/v1`. No `SecurityConfig` edit.
+- **Webhook HMAC unaffected** — `HmacVerifier` signs `"<timestamp>.<rawBody>"` (**body only, not the path**), so
+  moving the webhook to `/api/v1/webhooks/...` does not change signature verification. Only the URL registered with
+  the vendor changes (dev-only secret today).
+- **Tests unaffected** — MockMvc does not apply the servlet context path, and no test uses a real/RANDOM port, so
+  the suite stays green with root-relative test paths (359). *Caveat: this means the test suite does **not** assert
+  the prefix — real HTTP callers must include `/api/v1`.*
+
+**What changed (breaking for external callers, one-time).** Updated in the same change: `application.properties`,
+`scripts/dev-smoke.sh` (`HOST`), `manual-test.http` (`@host`), the Postman collection (`baseUrl`), and the docs
+(`API_CATALOGUE.md`, `API_TEST_PLAN.md`, `MANUAL_TESTING.md`) — all now `/api/v1`. **The React frontend (mock repo)
+must prepend `/api/v1` to its API base URL** (not in this repo — flag to the frontend owner).
+
+**What to watch for.** (a) The frontend base-URL change is the one external contract not covered by this repo —
+coordinate it. (b) When real k8s/ingress lands, confirm the management port (8081) health endpoint's exposure/security
+posture (probes reach it; it is not behind the session bearer). (c) If a gateway is later introduced, do **not**
+double-prefix — either the gateway strips `/api/v1` before forwarding, or the app context path is removed in favour
+of the gateway owning it.
