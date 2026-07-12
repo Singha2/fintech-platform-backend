@@ -27,6 +27,10 @@ A live demo can take a single invoice through its **entire life**, automatically
 
 *Result: a deal goes from "invoice listed" to "supplier paid and buyer repaid" — the core economic loop is built.*
 
+> **Detail — who does what:** the full admin-driven use-case catalogue for **Supplier, Buyer and Investor**
+> onboarding (Step 1) — every endpoint, the role that performs it, the lifecycle states, and the current gaps —
+> is in [`USE_CASES_COUNTERPARTY_ONBOARDING.md`](USE_CASES_COUNTERPARTY_ONBOARDING.md).
+
 ## The trust & compliance guarantees (built into every money action)
 
 These are not features bolted on later — **every state-changing action enforces all five**, at the database

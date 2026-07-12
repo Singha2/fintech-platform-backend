@@ -42,9 +42,13 @@ public class DevDataSeeder implements ApplicationRunner {
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
-        Integer admins = jdbc.queryForObject("SELECT count(*) FROM admin_user", Integer.class);
+        // Exclude the reserved SYSTEM principal (seeded by migration V7 to author the genesis SoD policy,
+        // DL-BE-064) — it is always present, so counting it would make this guard permanently skip the seed.
+        Integer admins = jdbc.queryForObject(
+                "SELECT count(*) FROM admin_user WHERE admin_user_id <> '00000000-0000-0000-0000-000000000002'",
+                Integer.class);
         if (admins != null && admins > 0) {
-            log.info("[dev-seed] admin_user already populated ({} rows) — skipping dev seed", admins);
+            log.info("[dev-seed] admin_user already populated ({} real rows) — skipping dev seed", admins);
             return;
         }
         log.info("[dev-seed] seeding dev admins + counterparties (password for every admin: {})", PASSWORD);

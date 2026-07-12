@@ -59,15 +59,23 @@ Re-running is safe: the seeder skips if `admin_user` already has rows. To re-see
 
 ---
 
-## 2. How auth works (and the `/dev/last-otp` shortcut)
+## 2. How auth works (and the OTP shortcuts)
 
 Login is **two steps** (password → SMS-OTP), and every state-changing command then carries a **bearer**:
 
 ```
 POST /auth/login/password   {email, password}            → { challenge_id }
-GET  /dev/last-otp?email=…                                → { code }          ← dev only
+GET  /dev/last-otp?email=…                                → { code }          ← dev profile only
+   or  GET /bootstrap/last-otp?email=…  (Bearer <api-key>) → { code }          ← any profile, API-key gated
 POST /auth/login/verify-otp {challenge_id, code}          → { bearer }        ← this is your session id
 ```
+
+**Why two OTP peeks?** The code is generated at the password step, stored **hashed** in `auth_otp_challenge`,
+and "sent" via the in-process `StubNotifier` (no real SMS/SMTP yet). The plaintext lives only in the stub's
+memory — never in the DB, never in the logs. Two ways to read it without a real provider: `/dev/last-otp`
+(dev profile) or `/bootstrap/last-otp` (any profile, gated by `platform.bootstrap.api-key`; works for any
+email). Both self-retire once a real SMS/email `NotificationChannel` is wired at the Production gate — then
+the code goes to the actual handset/inbox.
 
 Use the bearer on every other call: `Authorization: Bearer <bearer>`. One login → one session you reuse for
 many commands. **MFA freshness:** the session's MFA is "fresh" for a short window; sensitive commands
@@ -83,12 +91,16 @@ Every **state-changing** command (`POST …`) needs:
 |---|---|---|
 | `Authorization: Bearer <id>` | always | your session (from login) |
 | `X-Command-Id: <uuid>` | always | **idempotency key** — a fresh UUID per *new* command; replay the *same* one and the command is a no-op returning the original result (B4 §2.4) |
-| `X-Aggregate-Version: <n>` | **listing** commands + subscription `cancel`/`record-refund` | optimistic lock — must equal the aggregate's current version. **The command response returns the new `aggregate_version`** in its body, so chain it from the previous response (or read `GET /listings/{id}`). |
+| `X-Aggregate-Version: <n>` | every command that **advances an existing aggregate** | optimistic lock — must equal the aggregate's current version. **The command response returns the new `aggregate_version`** in its body, so chain it from the previous response (or read the aggregate's `GET`). |
 
-Which commands need `X-Aggregate-Version`? The **listing** lifecycle (`start-ops-checks`, `record-ops-check`,
-`complete-ops-checks`, `request-buyer-ack`, `record-buyer-ack`, `snapshot-and-ready`, `approve-go-live`,
-`declare-funding-shortfall`) and subscription `cancel` / `record-refund`. Everything else (create, commit,
-assignment, disbursement, maturity) is version-`0` — no header.
+Which commands need `X-Aggregate-Version`? Every **transition on an existing aggregate**: the **listing**
+lifecycle (`start-ops-checks`, `record-ops-check`, `complete-ops-checks`, `request-buyer-ack`,
+`record-buyer-ack`, `snapshot-and-ready`, `approve-go-live`, `declare-funding-shortfall`), subscription
+`cancel` / `record-refund`, and every **onboarding** transition on a supplier / buyer / investor (everything
+after their create/nominate/sign-up step). **Creating** commands are version-`0` and take no header:
+`POST /listings`, `/suppliers/create`, `/buyers/nominate`, `/investor-invites/issue`, `/investors/sign-up`,
+`/admin-users/provision`, subscription `commit`. (Assignment, disbursement, and maturity are version-`0` too —
+they key off the listing, not their own aggregate version.)
 
 **Reading the response / errors:** success is `200/201` with `{ aggregate_id, aggregate_version,
 emitted_events[], correlation_id }`. Errors are a flat `{ error_code, message, … }` (B4 §4.1). Common codes:
@@ -106,6 +118,10 @@ emitted_events[], correlation_id }`. Errors are a flat `{ error_code, message, �
 ## 4. Endpoint map (all controllers)
 
 - **Auth** — `POST /auth/login/password`, `POST /auth/login/verify-otp`
+- **Bootstrap (API-key)** — `POST /bootstrap/admin-users` — mints the first active **super_admin**;
+  `Authorization: Bearer <platform.bootstrap.api-key>` (no session), body `{email, display_name, phone, password}`.
+  `GET /bootstrap/last-otp?email=…` (same key) — the non-dev OTP peek: returns the login OTP the stub "sent"
+  to any email, so bootstrap → login works headlessly in any profile until a real SMS provider is wired.
 - **Admin IAM** — `POST /admin-users/provision`, `POST /admin-users/{id}/disable`, `GET /admin-users/{id}`
 - **Supplier (BC8)** — `POST /suppliers/create` · `/{id}/grant-agency-consent` · `/record-identity-verified` ·
   `/submit-kyc` · `/record-kyc-approved` · `/submit-financial-profile` · `/record-credit-review` ·
