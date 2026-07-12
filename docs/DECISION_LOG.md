@@ -2755,3 +2755,35 @@ before writing bytes** (over-cap → `ValidationException`/4xx, row stays `pendi
 idempotent by an explicit already-`stored` short-circuit (zero writes, zero audit on replay). (v) `DbTableDocumentStore.put`
 became an upsert so a retried `PUT …/content` replaces bytes rather than hitting the blob PK. **M18c** (GCS + presigned +
 upload token) and **M19/M20** (consumers) are next.
+
+## DL-BE-071 — M19 Invoice Artifacts (BC1): first BC16 consumer, green
+
+**Status.** Built (10 tests + full suite 344, ArchUnit clean). First consumer of the M18 document service.
+
+**What changed.** `V11__invoice_documents.sql` (`deal_invoice_document` + `deal_invoice_doc_status`, partial unique
+index `uidx_invoice_active_doc` = one active artifact per invoice, DOC.1). `InvoiceDocumentService` +
+`InvoiceDocumentController` on `/listings/{id}/invoice-documents` (attach / replace / list / download). New
+`DocumentPort.claimOwner(documentId, ownerContext, ownerRef)` so BC1 stamps `sys_document.owner_ref='Invoice:<id>'`
+**without writing `sys_document` directly** (BC-isolation / ArchUnit). `ListingService.recordOpsCheck` gained
+`requireCompleteInvoiceDocument(...)` gating `document_completeness` on DOC.2 (an `active` link resolving via
+`DocumentPort` to `status=stored`) + DOC.3 (recorder `session.identityId()` ≠ the link's `uploaded_by`).
+
+**M9 test updates (mechanical, no assertion weakened).** DOC.2/DOC.3 broke the four tests that recorded
+`document_completeness` as a bare checkbox with one ops admin: `ListingOpsChecksTest`, `ListingGoLiveTest`,
+`ListingAcknowledgmentTest`, **`WalkingSkeletonE2ETest`** (the 4th wasn't pre-flagged but hit the identical wiring).
+Each gained a second `ops_executive` + an `uploadAndAttachInvoicePdf(...)` helper (real M18 flow), and records
+`document_completeness` with the second admin. The fail-path test still records `document_completeness=failed` (via
+the second admin) → `rejected_operational`; reviewed diff = +167/−7, zero removed assertions.
+
+**Deviations / judgment calls.** (i) The DOC.2/DOC.3 gate applies to `document_completeness` **regardless of
+`passed`/`failed`** (the rule isn't outcome-conditioned; no test needs "fail with no document"). (ii) attach/replace
+route through `CommandGateway` (aggregateId = the `document_id`, `expectedVersion=0` — no target aggregate version to
+guard), matching the M19 doc's "these are gateway commands." (iii) download authZ gates on **listing status only**
+(live-set); the KYC'd-investor `InvestorQueryPort` gate stays deferred to the investor-portal slice (Phase-1 has no
+investor login — an admin downloads on their behalf).
+
+**KNOWN GAP — download is not yet audit-logged.** M19 §5 (control #5) / DOC.6 call for *every download* to emit an
+audit envelope (the compliance trail for who accessed the invoice PDF). This iteration logs `Attached`/`Superseded`
+only — no test covers download-audit, so it was scoped out. **Follow-up before pilot:** add a
+`listing.InvoiceArtifact.Downloaded` envelope (ids only) on the content GET, with a test. Tracked here so it is not
+silently dropped.

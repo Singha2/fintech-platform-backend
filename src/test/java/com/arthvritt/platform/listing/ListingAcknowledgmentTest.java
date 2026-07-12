@@ -13,6 +13,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -30,6 +31,9 @@ class ListingAcknowledgmentTest extends AbstractEdgeHttpTest {
     private static final int TENOR_DAYS = 60;
 
     private String ops;
+    // M19 DOC.3 (maker ≠ checker): document_completeness must be recorded by someone other than the
+    // invoice artifact's uploader (`ops`, below).
+    private String ops2;
     private String treasury;
     private UUID supplierId;
     private UUID buyerId;
@@ -41,6 +45,7 @@ class ListingAcknowledgmentTest extends AbstractEdgeHttpTest {
         Seeded opsAdmin = seedAdminWithRoles("ops_executive");
         opsAdminId = opsAdmin.adminUserId();
         ops = bearerFor(opsAdmin);
+        ops2 = bearerFor(seedAdminWithRoles("ops_executive"));
         treasury = bearerFor(seedAdminWithRoles("treasury_and_settlement"));
         supplierId = seedActiveSupplier();
         buyerId = seedActiveBuyer(opsAdminId);
@@ -145,13 +150,44 @@ class ListingAcknowledgmentTest extends AbstractEdgeHttpTest {
 
     private void passAllOpsChecks(UUID listing) throws Exception {
         send(post("/listings/{id}/start-ops-checks", listing), ops, listing, Map.of());
+        uploadAndAttachInvoicePdf(listing, ops); // M19: document_completeness needs a real, stored artifact
         send(post("/listings/{id}/record-ops-check", listing), ops, listing, Map.of("check_name", "irn_validity"));
         for (String check : new String[]{"eway_bill_match", "buyer_supplier_relationship", "duplicate_check",
-                "supplier_exposure_cap", "buyer_limit_headroom", "document_completeness"}) {
+                "supplier_exposure_cap", "buyer_limit_headroom"}) {
             send(post("/listings/{id}/record-ops-check", listing), ops, listing,
                     Map.of("check_name", check, "outcome", "passed"));
         }
+        // DOC.3: recorder (ops2) must differ from the artifact's uploader (ops, above).
+        send(post("/listings/{id}/record-ops-check", listing), ops2, listing,
+                Map.of("check_name", "document_completeness", "outcome", "passed"));
         send(post("/listings/{id}/complete-ops-checks", listing), ops, listing, Map.of());
+    }
+
+    /**
+     * M19: upload a PDF via the M18 {@code /documents} API and attach it to the listing's invoice —
+     * the `document_completeness` ops-check now requires a real, stored artifact (DOC.2).
+     */
+    private UUID uploadAndAttachInvoicePdf(UUID listing, String uploaderBearer) throws Exception {
+        byte[] pdf = ("%PDF-1.4\ninvoice::" + UUID.randomUUID()).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        String initBody = json.writeValueAsString(Map.of(
+                "kind", "invoice", "content_type", "application/pdf", "declared_size", pdf.length));
+        MvcResult init = mvc.perform(post("/documents")
+                        .header("Authorization", "Bearer " + uploaderBearer)
+                        .header("X-Command-Id", UUID.randomUUID().toString())
+                        .contentType(MediaType.APPLICATION_JSON).content(initBody))
+                .andExpect(status().is2xxSuccessful()).andReturn();
+        UUID docId = UUID.fromString(node(init).get("document_id").asText());
+        mvc.perform(put("/documents/{id}/content", docId).header("Authorization", "Bearer " + uploaderBearer)
+                .contentType(MediaType.APPLICATION_PDF).content(pdf)).andExpect(status().is2xxSuccessful());
+        mvc.perform(post("/documents/{id}/finalize", docId).header("Authorization", "Bearer " + uploaderBearer))
+                .andExpect(status().is2xxSuccessful());
+        mvc.perform(post("/listings/{id}/invoice-documents", listing)
+                        .header("Authorization", "Bearer " + uploaderBearer)
+                        .header("X-Command-Id", UUID.randomUUID().toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(Map.of("document_id", docId.toString()))))
+                .andExpect(status().is2xxSuccessful());
+        return docId;
     }
 
     private UUID createListing() throws Exception {

@@ -19,10 +19,10 @@
                         │  DoD green (DocumentPort + /documents API stable)
             ┌───────────┴───────────┐
             ▼                       ▼
-   M19 Invoice Artifacts     M20 Onboarding Docs
-   (BC1)  V11                (BC11 KYC + BC9 KYB)  V12
-   single consumer,          three personas,
-   proves the pattern        capture-only
+   M19 Invoice Artifacts ✅   M20 Onboarding Docs
+   (BC1)  V11 — DONE         (BC11 KYC + BC9 KYB)  V12
+   10 tests green            three personas,
+   suite 344                 capture-only
             └───────────┬───────────┘
                         ▼
    M18d  Form 16A → sys_document, retire sys_document_object   (isolated cleanup)

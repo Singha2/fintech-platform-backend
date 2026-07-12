@@ -64,4 +64,15 @@ public interface DocumentPort {
      * @throws com.arthvritt.platform.shared.error.ValidationException if no bytes have been uploaded yet (STATUS-1)
      */
     DocMeta finalizeUpload(UUID documentId, UUID actorId);
+
+    /**
+     * Stamps the consumer-owned {@code owner_context}/{@code owner_ref} onto a document's {@code
+     * sys_document} row (M19 §9 note) — the mechanism by which a consuming BC (e.g. BC1 listing's
+     * invoice-artifact attach) records "this document belongs to that domain entity" <b>without</b>
+     * writing {@code sys_document} directly (bounded-context isolation, ARCH.1). Idempotent — safe to
+     * call again with the same values (e.g. on a command replay).
+     *
+     * @throws com.arthvritt.platform.shared.error.NotFoundException if the document is unknown
+     */
+    void claimOwner(UUID documentId, String ownerContext, String ownerRef);
 }

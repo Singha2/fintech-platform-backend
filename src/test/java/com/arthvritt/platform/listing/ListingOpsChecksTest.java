@@ -13,6 +13,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -35,6 +36,9 @@ class ListingOpsChecksTest extends AbstractEdgeHttpTest {
             "supplier_exposure_cap", "buyer_limit_headroom", "document_completeness"};
 
     private String ops;
+    // M19 DOC.3 (maker ≠ checker): document_completeness must be recorded by someone other than the
+    // invoice artifact's uploader. `ops` uploads/attaches the PDF; `ops2` records document_completeness.
+    private String ops2;
     private String treasury;
     private UUID supplierId;
     private UUID buyerId;
@@ -44,6 +48,7 @@ class ListingOpsChecksTest extends AbstractEdgeHttpTest {
         notifier.clear();
         Seeded opsAdmin = seedAdminWithRoles("ops_executive");
         ops = bearerFor(opsAdmin);
+        ops2 = bearerFor(seedAdminWithRoles("ops_executive"));
         treasury = bearerFor(seedAdminWithRoles("treasury_and_settlement"));
         supplierId = seedActiveSupplier();
         buyerId = seedActiveBuyer(opsAdmin.adminUserId());
@@ -85,9 +90,14 @@ class ListingOpsChecksTest extends AbstractEdgeHttpTest {
     void any_failed_check_routes_to_rejected_operational() throws Exception {
         UUID listing = createListing(null);
         send(post("/listings/{id}/start-ops-checks", listing), ops, listing, Map.of());
+        uploadAndAttachInvoicePdf(listing, ops); // M19: document_completeness now needs a real, stored artifact
         recordOps(listing, "irn_validity", null);
         for (String check : OPS_ATTESTED) {
-            recordOps(listing, check, check.equals("document_completeness") ? "failed" : "passed");
+            if (check.equals("document_completeness")) {
+                recordOpsAs(ops2, listing, check, "failed"); // DOC.3: recorder (ops2) ≠ uploader (ops)
+            } else {
+                recordOps(listing, check, "passed");
+            }
         }
         send(post("/listings/{id}/complete-ops-checks", listing), ops, listing, Map.of());
 
@@ -109,11 +119,16 @@ class ListingOpsChecksTest extends AbstractEdgeHttpTest {
         UUID listing = createListing("1".repeat(64)); // irn_type domain: exactly 64 chars
         UUID invoiceId = invoiceId(listing);
         send(post("/listings/{id}/start-ops-checks", listing), ops, listing, Map.of());
+        uploadAndAttachInvoicePdf(listing, ops); // M19: document_completeness now needs a real, stored artifact
 
         // Even with a body outcome of 'failed', a valid IRN passes — the ACL result wins, never the client.
         recordOps(listing, "irn_validity", "failed");
         for (String check : OPS_ATTESTED) {
-            recordOps(listing, check, "passed");
+            if (check.equals("document_completeness")) {
+                recordOpsAs(ops2, listing, check, "passed"); // DOC.3: recorder (ops2) ≠ uploader (ops)
+            } else {
+                recordOps(listing, check, "passed");
+            }
         }
         send(post("/listings/{id}/complete-ops-checks", listing), ops, listing, Map.of());
         assertThat(listingStatus(listing)).isEqualTo("awaiting_acknowledgment");
@@ -147,19 +162,56 @@ class ListingOpsChecksTest extends AbstractEdgeHttpTest {
     // --- helpers -----------------------------------------------------------------------------------
 
     private void recordAllPassing(UUID listing) throws Exception {
+        uploadAndAttachInvoicePdf(listing, ops); // M19: document_completeness now needs a real, stored artifact
         recordOps(listing, "irn_validity", null); // no IRN on this invoice → not_applicable (pass)
         for (String check : OPS_ATTESTED) {
-            recordOps(listing, check, "passed");
+            if (check.equals("document_completeness")) {
+                recordOpsAs(ops2, listing, check, "passed"); // DOC.3: recorder (ops2) ≠ uploader (ops)
+            } else {
+                recordOps(listing, check, "passed");
+            }
         }
     }
 
     private void recordOps(UUID listing, String checkName, String outcome) throws Exception {
+        recordOpsAs(ops, listing, checkName, outcome);
+    }
+
+    private void recordOpsAs(String bearer, UUID listing, String checkName, String outcome) throws Exception {
         Map<String, Object> body = new HashMap<>();
         body.put("check_name", checkName);
         if (outcome != null) {
             body.put("outcome", outcome);
         }
-        send(post("/listings/{id}/record-ops-check", listing), ops, listing, body);
+        send(post("/listings/{id}/record-ops-check", listing), bearer, listing, body);
+    }
+
+    /**
+     * M19: upload a PDF via the M18 {@code /documents} API and attach it to the listing's invoice —
+     * the `document_completeness` ops-check now requires a real, stored artifact (DOC.2), and the
+     * check's recorder must differ from this method's {@code uploaderBearer} (DOC.3).
+     */
+    private UUID uploadAndAttachInvoicePdf(UUID listing, String uploaderBearer) throws Exception {
+        byte[] pdf = ("%PDF-1.4\ninvoice::" + UUID.randomUUID()).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        String initBody = json.writeValueAsString(Map.of(
+                "kind", "invoice", "content_type", "application/pdf", "declared_size", pdf.length));
+        MvcResult init = mvc.perform(post("/documents")
+                        .header("Authorization", "Bearer " + uploaderBearer)
+                        .header("X-Command-Id", UUID.randomUUID().toString())
+                        .contentType(MediaType.APPLICATION_JSON).content(initBody))
+                .andExpect(status().is2xxSuccessful()).andReturn();
+        UUID docId = UUID.fromString(node(init).get("document_id").asText());
+        mvc.perform(put("/documents/{id}/content", docId).header("Authorization", "Bearer " + uploaderBearer)
+                .contentType(MediaType.APPLICATION_PDF).content(pdf)).andExpect(status().is2xxSuccessful());
+        mvc.perform(post("/documents/{id}/finalize", docId).header("Authorization", "Bearer " + uploaderBearer))
+                .andExpect(status().is2xxSuccessful());
+        mvc.perform(post("/listings/{id}/invoice-documents", listing)
+                        .header("Authorization", "Bearer " + uploaderBearer)
+                        .header("X-Command-Id", UUID.randomUUID().toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(Map.of("document_id", docId.toString()))))
+                .andExpect(status().is2xxSuccessful());
+        return docId;
     }
 
     private UUID createListing(String irn) throws Exception {

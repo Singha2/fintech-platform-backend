@@ -11,7 +11,7 @@
 |---|---|
 | **Module** | M19 — Invoice Artifacts (BC1 extension of M9) |
 | **Tier** | Heavy (investor-facing PII; funds are committed against what investors review here) |
-| **Status** | Draft (DoR) |
+| **Status** | **Done** (10 tests green; full suite 344) — *download-audit deferred, see §DL-BE-071* |
 | **Owner** | Amit + Claude |
 | **Created** | 2026-07-12 |
 | **Depends on** | **M18 Documents (BC16)** — must land first (option A) |

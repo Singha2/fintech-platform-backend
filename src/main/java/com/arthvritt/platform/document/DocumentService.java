@@ -182,6 +182,16 @@ public class DocumentService implements DocumentPort {
         return new DocMeta(documentId, current.kind(), "stored", current.contentType(), byteSize, hash);
     }
 
+    @Override
+    public void claimOwner(UUID documentId, String ownerContext, String ownerRef) {
+        int updated = jdbc.update(
+                "UPDATE sys_document SET owner_context = ?, owner_ref = ? WHERE document_id = ?",
+                ownerContext, ownerRef, documentId);
+        if (updated != 1) {
+            throw new NotFoundException("document not found: " + documentId);
+        }
+    }
+
     private static byte[] sha256(byte[] input) {
         try {
             return MessageDigest.getInstance("SHA-256").digest(input);
