@@ -8,6 +8,7 @@ import com.arthvritt.platform.infrastructure.web.CommandResponse;
 import com.arthvritt.platform.infrastructure.web.CommandResponseAssembler;
 import com.arthvritt.platform.infrastructure.web.RequestBodies;
 import com.arthvritt.platform.shared.error.NotFoundException;
+import com.arthvritt.platform.shared.error.ValidationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -20,6 +21,8 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.OffsetDateTime;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
@@ -112,6 +115,46 @@ public class BuyerController {
         return responses.from(buyers.activate(command(session, commandId, id, ".Buyer.Activate", version)));
     }
 
+    @PostMapping("/{id}/kyb-verification")
+    public CommandResponse recordKybVerified(@AuthenticationPrincipal AuthSession session, @PathVariable UUID id,
+                                             @RequestHeader("X-Command-Id") UUID commandId,
+                                             @RequestHeader("X-Aggregate-Version") int version,
+                                             @RequestBody Map<String, Object> body) {
+        boolean verified = Boolean.TRUE.equals(body.get("verified"));
+        if (!verified) {
+            throw new ValidationException("verified must be true");
+        }
+        UUID documentId = optionalUuid(body, "document_id");
+        CommandRequest request = command(session, commandId, id, ".Buyer.RecordKybVerified", version);
+        return responses.from(buyers.recordKybVerified(request, documentId));
+    }
+
+    @GetMapping("/{id}/kyb-verification")
+    public Map<String, Object> getKybVerification(@AuthenticationPrincipal AuthSession session, @PathVariable UUID id) {
+        Map<String, Object> row = jdbc.query(
+                "SELECT kyb_verified, kyb_verified_by, kyb_verified_at, kyb_document_id "
+                        + "FROM buyer_account WHERE buyer_id = ?",
+                rs -> {
+                    if (!rs.next()) {
+                        return null;
+                    }
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("kyb_verified", rs.getBoolean("kyb_verified"));
+                    UUID verifiedBy = rs.getObject("kyb_verified_by", UUID.class);
+                    m.put("kyb_verified_by", verifiedBy == null ? null : verifiedBy.toString());
+                    OffsetDateTime verifiedAt = rs.getObject("kyb_verified_at", OffsetDateTime.class);
+                    m.put("kyb_verified_at", verifiedAt == null ? null : verifiedAt.toString());
+                    UUID documentId = rs.getObject("kyb_document_id", UUID.class);
+                    m.put("kyb_document_id", documentId == null ? null : documentId.toString());
+                    return m;
+                },
+                id);
+        if (row == null) {
+            throw new NotFoundException("buyer not found: " + id);
+        }
+        return row;
+    }
+
     @GetMapping("/{id}")
     public Map<String, Object> get(@AuthenticationPrincipal AuthSession session, @PathVariable UUID id) {
         Map<String, Object> row = jdbc.query(
@@ -132,5 +175,18 @@ public class BuyerController {
     private CommandRequest command(AuthSession session, UUID commandId, UUID buyerId, String name, int version) {
         return new CommandRequest(session, commandId, CONTEXT, CONTEXT + name, AGGREGATE_TYPE, buyerId,
                 version, "admin_user", ActionSensitivity.SENSITIVE);
+    }
+
+    /** Parse an optional {@code document_id}; a malformed value is a clean 400, not a raw 500. */
+    private static UUID optionalUuid(Map<String, Object> body, String field) {
+        Object raw = body == null ? null : body.get(field);
+        if (raw == null) {
+            return null;
+        }
+        try {
+            return UUID.fromString(raw.toString());
+        } catch (IllegalArgumentException e) {
+            throw new ValidationException("invalid UUID for field: " + field);
+        }
     }
 }

@@ -50,9 +50,9 @@ These are already decided; listed so nothing is silently re-litigated at a modul
 | S2 | **Metadata-first two-phase upload** (`POST /documents` → upload → finalize); attach is a separate domain command | DL-BE-072 |
 | S3 | Storage abstracted behind `DocumentStorePort`; **local = DB table**, prod = GCS (deferred) | DL-BE-070/072 |
 | S4 | **No encryption at rest now**; seam kept; DO.5/DO.6 deferred to Production gate | DL-BE-074 |
-| S5 | **Buyer = KYB, not KYC**; `comp_kyc_subject_type` unchanged | DL-BE-073 |
-| S6 | **Capture-only** (non-gating) — approval never blocked on documents until M15 | DL-BE-073 |
-| S7 | **Shared configurable checklist** (`onboarding_doc_requirement`, all personas) | DL-BE-073 |
+| S5 | **Buyer = minimal KYB, not KYC** — a manual `kyb_verified` attestation (ops_executive) + ≤1 optional custom doc, on top of the untouched automated `identity_verified`; `comp_kyc_subject_type` unchanged; no typed buyer-document table, no buyer checklist | DL-BE-073 |
+| S6 | **Capture-only** (non-gating) — approval never blocked on documents (or on `kyb_verified`) until M15 | DL-BE-073 |
+| S7 | **Shared configurable checklist** (`onboarding_doc_requirement`) — **investor + supplier only** (buyer excluded) | DL-BE-073 |
 | S8 | KYC/KYB docs **compliance-only** download; invoice docs investor-downloadable | DL-BE-071/073 |
 | S9 | Consumers hold `document_id` as an **identity reference** — no cross-BC FK (ArchUnit) | DL-BE-070 |
 
@@ -121,13 +121,20 @@ These are already decided; listed so nothing is silently re-litigated at a modul
 ## 5. M20 · Onboarding Documents (KYC + KYB)
 
 **DoR — open items to close (one needs a business input):**
-- [ ] **★ The initial required-document checklist per persona** — the seed rows of
-      `onboarding_doc_requirement` (investor / supplier / buyer). **Needs compliance/founder input** — e.g.
-      investor {PAN card, address proof}; supplier {PAN, GST cert, board resolution, MOA/AOA, bank
-      statement}; buyer {GST cert, CIN cert}. This is the only item that isn't a pure engineering call.
-- [ ] **Attach-endpoint roles per persona** — who attaches investor-KYC docs vs supplier-KYC vs buyer-KYB
-      (ops_executive / compliance_reviewer split).
-- [ ] **Completeness read built now?** — recommend **yes**, read-only (`GET …/completeness`), enforced at M15.
+- [ ] **★ The initial required-document checklist per KYC persona** — the seed rows of
+      `onboarding_doc_requirement` (**investor / supplier only** — buyer has no checklist). **Needs
+      compliance/founder input** — e.g. investor {PAN card, address proof}; supplier {PAN, GST cert, board
+      resolution, MOA/AOA, bank statement}. This is the only item that isn't a pure engineering call.
+- [ ] **Attach-endpoint roles per persona** — who attaches investor-KYC docs vs supplier-KYC
+      (ops_executive / compliance_reviewer split); buyer KYB-verify is **ops_executive** (settled).
+- [ ] **Completeness read built now?** — recommend **yes**, read-only (`GET …/completeness`), KYC only, enforced at M15.
+
+**Buyer KYB — ✅ SHIPPED (2026-07-12, ahead of KYC).** Minimal, asymmetric to KYC. `buyer_account` gained
+`kyb_verified` (bool) + `kyb_verified_by`/`_at` + optional single `kyb_document_id` (`V12`); set by **one
+ops_executive** attestation (MFA + audit, **not** maker-checker), layered on top of the untouched automated
+`identity_verified`. No typed buyer-document table, no `doc_kind`, no buyer checklist. 6 tests
+(`BuyerKybVerificationTest`); full suite 350. The **KYC** tables (investor/supplier) remain Draft — they land
+as `V13` once the checklist rows are supplied. _(DL-BE-073 as-built; M20 §0.1/OD.8/§9a)_
 
 **DoD (§F + M20 §8):**
 - [ ] RED-first: **OD.3** (zero-doc submit→approve still succeeds — the no-breakage guarantee), typed
@@ -171,5 +178,6 @@ then M19; then M20. One module in flight at a time (Constitution: finish to DoD 
 | **M18d** | Form 16A → `sys_document` migration | follow-up slice (`DL-BE-076`); M16 tests green |
 | **M19** | `isDownloadEligible` states | `kyc_approved` ∪ `active` |
 | **M19** | M9 ops-check tests break | update tests in place (attach doc + distinct recorder) |
-| **M20** | **★ per-persona required-doc checklist** | **needs compliance/founder input** |
+| **M20** | **★ per-persona required-doc checklist (investor+supplier)** | **needs compliance/founder input** |
 | **M20** | attach-endpoint roles | ops_executive attaches; compliance downloads |
+| **M20** | **buyer KYB shape** | ✅ settled — `kyb_verified` attestation (ops_executive) + ≤1 optional custom doc; no typed table / checklist |

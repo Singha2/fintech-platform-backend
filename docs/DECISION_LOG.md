@@ -2669,6 +2669,43 @@ gating now would break the auto-approve stub + onboarding tests. (c) Don't let t
 leak into onboarding docs (OD.5). (d) `kyc_doc_kind` is a controlled vocabulary (enum); "configurable" applies to
 *which kinds are mandatory per persona* (the requirement rows), not to the universe of kinds.
 
+**Amendment (2026-07-12) — buyer KYB simplified to a manual attestation; buyer dropped from the typed/checklist model.**
+On further review with the owner, the buyer's KYB is **asymmetric** to the KYC personas and much smaller than
+originally drafted. The buyer is not a document-heavy KYC subject; it already has an **automated** identity check
+(GSTIN + CIN → `identity_verified`, M8). What was missing is a **human sign-off**, not a typed document set.
+- **Replace** the typed `buyer_document` table + buyer-in-shared-checklist with: new columns on `buyer_account` —
+  `kyb_verified` (bool, default false) + `kyb_verified_by` + `kyb_verified_at` + **`kyb_document_id`** (nullable,
+  a single optional free-form custom doc, identity ref into BC16). CHECK: `kyb_verified` true ⇒ by/at stamped.
+- **`kyb_verified` is a single manual attestation** set by **one `ops_executive`** via an MFA-fresh, audit-logged,
+  idempotent command (`POST /buyers/{id}/kyb-verification`) — **not maker-checker** (it's an attestation, not a
+  value-moving command). It is **independent of and layered on top of** the automated `identity_verified` (both
+  can be true separately; never gate one on the other). (M20 OD.8.)
+- **Scope down** the shared `onboarding_doc_requirement` checklist and both enums to **investor + supplier only**:
+  `onboarding_subject_type = investor|supplier` (buyer removed). No `doc_kind` vocabulary applies to the buyer.
+- **Unchanged:** buyer stays out of `comp_kyc_subject_type` (OD.7); capture-only guarantee (OD.3) now also covers
+  `kyb_verified` being non-gating; restricted download (OD.5) covers the KYB custom doc too.
+Net effect: less schema, no new buyer table, the existing buyer lifecycle is completely untouched, and KYB is one
+boolean + one optional doc. _(user: "just one custom document and a check box that verified buyer that is all"; M20 §0.1/§9.)_
+
+**As-built (2026-07-12) — buyer KYB shipped ahead of KYC as its own slice.** Because the KYC checklist rows still
+need business input, M20 was sliced and the buyer KYB (no external input needed) landed first:
+- **`V12__buyer_kyb_verification.sql`** — the four `buyer_account` columns + the `buyer_kyb_verified_stamped` CHECK.
+- **`BuyerService.recordKybVerified(request, documentId)`** — `gateway.execute(request, OPS, …)` (a non-ops caller
+  is rejected `role_not_held`/403); a **version-guarded, non-transition** UPDATE (no `from`-status guard — KYB gates
+  nothing) that bumps `aggregate_version` and stamps `kyb_verified_by = request.actorId()` (the **identity id**, per
+  the M19 `deal_invoice_document.uploaded_by` convention — *not* `roles.adminUserId(...)`), `kyb_verified_at = now()`,
+  and the optional `kyb_document_id`. One `buyer.Buyer.KybVerified` audit envelope carrying ids only (no PII).
+- **`POST`/`GET /buyers/{id}/kyb-verification`** on `BuyerController`; `document_id` parsed via an `optionalUuid`
+  guard (malformed → clean 400).
+- **`document_id` is stored as a bare UUID reference** — no FK, no `DocumentPort` resolution — so BC9→BC16 stays
+  decoupled (OD.2) and ArchUnit is trivially clean.
+- Tests: `BuyerKybVerificationTest` (6 — attestation+stamp, optional doc, idempotent, coexists-with-identity_verified,
+  role gate, read-back). Full suite **350** green; `ddl-auto=validate` + ArchUnit clean.
+- **Deferred, not dropped:** OD.5 restricted download (compliance/ops-only, investor→403) — no investor login in
+  Phase 1, so it rides with the shared onboarding-download authZ + the investor portal (mirrors M19 DOC.6 scoping).
+- **KYC (investor/supplier)** — the `kyc_document` / `onboarding_doc_requirement` tables + enums (M20 §9b) become a
+  later **`V13`** migration once the per-persona checklist rows are supplied. Still Draft (DoR).
+
 ## DL-BE-074 — Documents: no encryption at rest for now (deferred to the Production gate), design/DoR
 
 **Status.** Scope decision for **M18**. Owner chose to **not encrypt documents at rest** in the current build.
