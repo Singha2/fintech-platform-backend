@@ -2706,6 +2706,32 @@ need business input, M20 was sliced and the buyer KYB (no external input needed)
 - **KYC (investor/supplier)** — the `kyc_document` / `onboarding_doc_requirement` tables + enums (M20 §9b) become a
   later **`V13`** migration once the per-persona checklist rows are supplied. Still Draft (DoR).
 
+**As-built (2026-07-12) — M20-KYC (investor/supplier) shipped; nothing mandatory, Ops decides completeness.**
+The user removed the last blocker by ruling that **no document is mandatory** — Ops decides when a KYC packet is
+complete (via the existing compliance approve command). So the checklist became a *suggested* list, the
+completeness read became an *advisory coverage* view, and M20 completed without waiting on a "required-docs" input.
+- **`V13__onboarding_documents.sql`** — `onboarding_subject_type` (investor|supplier), `kyc_doc_kind`,
+  `onboarding_doc_status` enums; `onboarding_doc_requirement` (**`mandatory DEFAULT FALSE`**, seeded 7 rows all
+  non-mandatory — the `mandatory` column is retained only as an M15 opt-in seam); `kyc_document` (FK→`comp_kyc_file`,
+  `UNIQUE(kyc_file_id, document_id)` + partial `uidx_kyc_active_kind` = one active doc per kind); `comp_kyc_file.doc_hashes`
+  marked DEPRECATED (dead in code).
+- **`KycDocumentService`** (BC11, package `compliance`) — mirrors M19 `InvoiceDocumentService`: `attach` /
+  `supersede` / `setRequirement` are `gateway.execute(request, OPS, …)` commands (ops_executive; a non-ops caller →
+  403). `attach` `requireStored`s the `document_id` via `DocumentPort` (no PDF check — KYC docs are mixed), inserts the
+  typed link (`uploaded_by = request.actorId()`), catches `DuplicateKeyException` (covers **both** the
+  `(kyc_file_id, document_id)` unique and the one-active-per-kind partial index → 4xx), and `claimOwner`s
+  `KycFile:<id>`. `supersede` frees the active slot before inserting the replacement (partial-index ordering).
+  `document_id` is a **bare BC16 reference** (no FK, resolved only via `DocumentPort`) → ArchUnit clean.
+- **Advisory only (nothing gates):** `coverage(kycFileId)` returns `{doc_kind → covered}` over the subject's
+  *active suggested* kinds — no "complete" verdict. `setRequirement` upserts a suggested kind with **`mandatory`
+  forced FALSE**. **OD.3 preserved** — the load-bearing test drives a real supplier `submit-kyc → approve` with
+  zero KYC docs and it still succeeds (the approve flow was not touched).
+- **Endpoints:** `POST`/`PUT`/`GET`/`GET …/coverage` on `/kyc/{kycFileId}/documents`; `GET`/`POST /onboarding-doc-requirements`.
+  Attach/supersede/requirement-edit = ops_executive; reads = bearer.
+- **Deferred (unchanged):** OD.5 restricted download (compliance-only / investor→403) rides with the investor
+  portal — no investor principal in Phase 1 (same scoping as buyer-KYB / M19 DOC.6).
+- Tests: `KycDocumentTest` (9). Full suite **359** green; `ddl-auto=validate` + ArchUnit clean. **M20 → Done.**
+
 ## DL-BE-074 — Documents: no encryption at rest for now (deferred to the Production gate), design/DoR
 
 **Status.** Scope decision for **M18**. Owner chose to **not encrypt documents at rest** in the current build.

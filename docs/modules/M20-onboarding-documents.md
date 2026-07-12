@@ -11,7 +11,7 @@
 |---|---|
 | **Module** | M20 — Onboarding Documents (BC11 KYC + BC9 KYB) |
 | **Tier** | Heavy (regulated identity documents; PII; UIDAI/Aadhaar handling) |
-| **Status** | **Buyer KYB slice DONE** (`V12`, 6 tests green, full suite 350); KYC (investor/supplier) still Draft (DoR — needs the checklist input) |
+| **Status** | **DONE** — buyer KYB (`V12`, 6 tests) + investor/supplier KYC (`V13`, 9 tests); full suite 359. Nothing mandatory (Ops decides). |
 | **Owner** | Amit + Claude |
 | **Created** | 2026-07-12 |
 | **Depends on** | **M18 Documents (BC16)** — must land first |
@@ -27,13 +27,18 @@
    Two concepts coexist: automated identity proof (unchanged) + a manual human sign-off. Buyer stays
    **out** of `comp_kyc_subject_type` **and** out of `onboarding_doc_requirement` / `kyc_doc_kind`.
    _(user decision 2026-07-12: "just one custom document and a check box that verified buyer"; DL-BE-073)_
-2. **Capture-only (non-gating) in Phase 1.** Upload/attach KYC documents (and set `kyb_verified`), but
-   **no onboarding state transition is blocked** on them — the auto-approve stub + all existing onboarding
-   tests keep passing. KYC completeness is *computed* (uploaded vs required) and surfaced read-only;
-   **enforced at M15**. `kyb_verified` is likewise an independent attribute, not a gate. _(no test breakage; DL-BE-073)_
-3. **Shared configurable checklist (option a) — KYC personas only.** One `onboarding_doc_requirement(
-   subject_type, doc_kind, mandatory, active)` table spans **investor + supplier**, editable at runtime.
-   The buyer is deliberately excluded (no per-kind checklist for KYB). _(DL-BE-073)_
+2. **Capture-only (non-gating) in Phase 1 — and nothing is mandatory.** Upload/attach KYC documents (and
+   set `kyb_verified`), but **no onboarding state transition is blocked** on them — the auto-approve stub +
+   all existing onboarding tests keep passing. **Ops decides when KYC is complete** (via the existing
+   compliance `record-kyc-approved` command); there is **no system-enforced mandatory-document rule**. The
+   checklist is an *advisory coverage* view (uploaded vs suggested), never a gate. `kyb_verified` is likewise
+   an independent attribute, not a gate. _(user 2026-07-12: "do not make any mandatory, Ops decides KYC
+   complete"; no test breakage; DL-BE-073)_
+3. **Shared configurable checklist (option a) — KYC personas only, all non-mandatory.** One
+   `onboarding_doc_requirement(subject_type, doc_kind, mandatory, active)` table spans **investor + supplier**,
+   editable at runtime. It is a **suggested / expected-documents** list — every seeded row is `mandatory=false`
+   (the `mandatory` column defaults **FALSE** and is retained only as a seam for a future compliance opt-in at
+   **M15**, never wired to a gate in Phase 1). The buyer is deliberately excluded (no checklist for KYB). _(DL-BE-073)_
 
 ---
 
@@ -82,13 +87,17 @@ dropping it is a needless migration risk since nothing reads it. _(deviation log
 - **OD.3 — capture-only (non-gating).** Attaching / missing KYC documents, and the value of `kyb_verified`,
   do **not** change any onboarding state transition in Phase 1. `submit-kyc` / approve, and the buyer's
   `identity_verified → credit_assessed → …` machine, behave exactly as today. _(DL-BE-073; no test breakage)_
-- **OD.4 — computed completeness (read-only, KYC only).** `complete(subject) := every active-mandatory
-  onboarding_doc_requirement row for the subject_type (investor|supplier) has ≥1 active kyc_document of
-  that doc_kind`. Surfaced as a read; **enforced only at M15**. Buyer has no completeness read (no checklist). _(DL-BE-073)_
-- **OD.5 — restricted download (opposite of invoices).** KYC documents **and** the buyer's KYB custom doc
-  are **NOT** investor/counterparty-downloadable. Read access is limited to `compliance_reviewer` /
-  relevant ops-admin roles; Aadhaar-bearing docs are further UIDAI-restricted (DO.6). Every download
-  audit-logged. _(DO.6, C15; contrast M19)_
+- **OD.4 — advisory coverage (read-only, KYC only; nothing mandatory).** `coverage(subject)` lists, for the
+  subject_type's **active suggested** `onboarding_doc_requirement` kinds, which are *covered* by ≥1 active
+  `kyc_document`. It returns **no "complete" verdict and gates nothing** — **Ops decides completeness** via the
+  compliance approve command. No document is mandatory in Phase 1; real mandatory-enforcement is an **M15**
+  opt-in. Buyer has no coverage read (no checklist). _(user 2026-07-12; DL-BE-073)_
+- **OD.5 — restricted download (opposite of invoices) — target; enforcement deferred.** KYC documents **and**
+  the buyer's KYB custom doc are **NOT** investor/counterparty-downloadable; read is for `compliance_reviewer` /
+  ops-admin only, Aadhaar-bearing docs further UIDAI-restricted (DO.6), every download audit-logged. **Phase-1
+  status:** there is no investor login to enforce against, so the restriction + download-audit ride with the
+  investor portal / M15 (same scoping as M19 DOC.6 and buyer-KYB). Bytes currently resolve via the generic M18
+  `/documents/{id}/content`. _(DO.6, C15; contrast M19)_
 - **OD.6 — supersede, never hard-delete.** Replacing a KYC document sets the old link `status='superseded'`;
   replacing the buyer's KYB doc overwrites `kyb_document_id` but the prior value is preserved in the audit
   trail. _(DL-BE-073)_
@@ -107,15 +116,15 @@ only **attach** an already-created `document_id`, read, or set the attestation f
 
 | Endpoint | Role | Effect |
 |---|---|---|
-| `POST /kyc/{kycFileId}/documents` `{document_id, doc_kind}` | compliance / ops (per persona onboarding role) | insert `kyc_document` active; `uploaded_by`=actor |
-| `PUT /kyc/{kycFileId}/documents/{docLinkId}` `{new_document_id}` | same | supersede (OD.6) |
-| `GET /kyc/{kycFileId}/documents` | compliance/ops (OD.5) | list link metadata (kind, status, document_id) — no bytes |
-| `GET /kyc/{kycFileId}/documents/completeness` | compliance/ops | computed OD.4 view (required vs present, missing kinds) |
-| `POST /buyers/{buyerId}/kyb-verification` `{verified: true, document_id?}` | **ops_executive** | **OD.8** — set `kyb_verified=true`, stamp `kyb_verified_by`/`_at`; optionally set `kyb_document_id` (single custom doc). MFA + audit; idempotent on `command_id`. |
-| `GET /buyers/{buyerId}/kyb-verification` | ops / compliance (OD.5) | read `kyb_verified` + `kyb_verified_by/_at` + `kyb_document_id` (no bytes) |
-| `GET /onboarding-doc-requirements?subject_type=` | ops/compliance | read the checklist (investor\|supplier) |
-| `POST /onboarding-doc-requirements` (admin) | admin | edit the checklist (runtime-configurable, option a) |
-| *(download)* `GET /documents/{document_id}/content` | **compliance/ops only** (OD.5) | delegated to M18; authorized here (covers KYC docs *and* the KYB custom doc) |
+| `POST /kyc/{kycFileId}/documents` `{document_id, doc_kind}` | **ops_executive** (runs `submit-kyc`; capture) | insert `kyc_document` active; `uploaded_by`=actor. `document_id` must resolve `stored` (M18) |
+| `PUT /kyc/{kycFileId}/documents/{kycDocumentId}` `{new_document_id}` | **ops_executive** | supersede the link (OD.6) |
+| `GET /kyc/{kycFileId}/documents` | 🪪 bearer | list link metadata (kind, status, document_id) — no bytes |
+| `GET /kyc/{kycFileId}/documents/coverage` | 🪪 bearer | **advisory** OD.4 view: active-suggested kinds vs uploaded (covered / not) — **no verdict, no gate** |
+| `POST /buyers/{buyerId}/kyb-verification` `{verified: true, document_id?}` | **ops_executive** | **OD.8** (shipped) |
+| `GET /buyers/{buyerId}/kyb-verification` | 🪪 bearer | read KYB fields (shipped) |
+| `GET /onboarding-doc-requirements?subject_type=` | 🪪 bearer | read the suggested list (investor\|supplier) |
+| `POST /onboarding-doc-requirements` `{subject_type, doc_kind, active}` | **ops_executive** | upsert a suggested kind (runtime-configurable; `mandatory` stays false in Phase 1) |
+| *(download)* `GET /documents/{document_id}/content` | 🪪 bearer *(OD.5 restrict deferred)* | delegated to M18; the compliance-only / investor-403 restriction rides with the investor portal |
 
 - **Types:** `kyc_doc_kind`, `onboarding_subject_type` (investor\|supplier); reuse M18 `DocMeta`/`document_id`.
 - **Commands:** KYC attach / supersede **and** the buyer KYB-verify attestation are gateway commands
@@ -147,16 +156,18 @@ only **attach** an already-created `document_id`, read, or set the attestation f
       document_id}` → `kyb_document_id` set. _(OD.5 restricted download deferred with the investor portal — see §OD.5 note.)_
 - [x] **Buyer KYB idempotent:** replay same `command_id` → no double-stamp / stable `kyb_verified_at`.
 - [x] **Buyer KYB role gate:** a non-`ops_executive` principal → 403 (`role_not_held`).
-- [ ] **OD.4 completeness (KYC):** with a requirement set {pan_card, address_proof}, uploading only pan_card →
-      completeness read reports `address_proof` missing; approval still allowed (non-gating).
-- [ ] **OD.5 authZ:** compliance role downloads → 200 (audited); an investor/counterparty principal → 403.
+- [ ] **OD.4 advisory coverage (KYC):** with a suggested set {pan_card, address_proof}, uploading only pan_card →
+      the coverage read reports pan_card *covered*, address_proof *not covered* (still suggested); **nothing
+      mandatory, no verdict**, and `submit-kyc → approve` still succeeds regardless.
+- [ ] **Configurable suggested list:** `POST /onboarding-doc-requirements` adds a kind → it appears in the read
+      and in the coverage view — no deploy.
+- [ ] **OD.5 authZ:** *deferred* (no investor login in Phase 1 — rides with the investor portal; see §OD.5).
 - [ ] **OD.6 supersede (KYC):** replace a doc → old row `superseded`, both retained.
-- [ ] **Configurable checklist:** editing `onboarding_doc_requirement` changes the completeness read with no deploy.
 - [ ] **Idempotent KYC attach:** same `command_id` replay → no duplicate link row.
 
 ## 8. Definition of Done (heavy tier)
-- [ ] §7 tests green (HTTP + Testcontainers), OD.3 and OD.5 proven RED-first.
-- [ ] `V12__onboarding_documents.sql` applied; `ddl-auto=validate` green; ArchUnit clean (BC11/BC9 reach BC16
+- [ ] §7 tests green (HTTP + Testcontainers), OD.3 (non-gating) proven RED-first.
+- [ ] `V13__onboarding_documents.sql` applied; `ddl-auto=validate` green; ArchUnit clean (BC11 reaches BC16
       via `DocumentPort`; no cross-BC joins).
 - [ ] **All existing onboarding tests still green** (capture-only guarantee, OD.3 — including the buyer
       identity-verified flow, untouched).
@@ -165,9 +176,9 @@ only **attach** an already-created `document_id`, read, or set the attestation f
 
 ## 9. Migrations
 
-**As-built — the buyer KYB shipped on its own, ahead of KYC.** Because the KYC checklist content is still
-pending business input, the module was sliced: the buyer KYB (no external input needed) landed first as its
-own migration; the KYC tables become a **later migration** (`V13`, when the checklist rows are known).
+**As-built — the module was sliced in two.** The buyer KYB landed first (`V12`, shipped); the KYC docs
+(investor + supplier) land as `V13`. Per the 2026-07-12 steer, **nothing is mandatory** — the checklist is a
+*suggested* list (all rows `mandatory=false`) and Ops decides completeness.
 
 ### 9a. Buyer KYB — **`V12__buyer_kyb_verification.sql`** (SHIPPED)
 ```sql
@@ -186,7 +197,7 @@ Wired: `.Buyer.RecordKybVerified` (BuyerService, `OPS`-gated, version-guarded no
 (BuyerController). `document_id` is a bare reference (no DocumentPort call → ArchUnit clean). Tests:
 `BuyerKybVerificationTest` (6). _(DL-BE-073 as-built)_
 
-### 9b. KYC docs (investor + supplier) — **`V13__onboarding_documents.sql`** (PENDING checklist input)
+### 9b. KYC docs (investor + supplier) — **`V13__onboarding_documents.sql`**
 ```sql
 CREATE TYPE onboarding_subject_type AS ENUM ('investor', 'supplier');   -- KYC personas only; buyer excluded (KYB ≠ KYC)
 CREATE TYPE kyc_doc_kind AS ENUM (
@@ -194,14 +205,25 @@ CREATE TYPE kyc_doc_kind AS ENUM (
     'board_resolution', 'moa_aoa', 'bank_statement', 'cancelled_cheque', 'photograph', 'other');
 CREATE TYPE onboarding_doc_status AS ENUM ('active', 'superseded');
 
--- Shared configurable checklist (option a) — investor + supplier, runtime-editable. Buyer has no checklist.
+-- Suggested / expected-documents list (option a) — investor + supplier, runtime-editable. NOTHING mandatory
+-- in Phase 1 (Ops decides KYC complete): mandatory DEFAULTs FALSE and every seed row is FALSE. The column is
+-- retained only as an M15 opt-in seam. Buyer has no checklist.
 CREATE TABLE onboarding_doc_requirement (
     subject_type onboarding_subject_type NOT NULL,
     doc_kind     kyc_doc_kind NOT NULL,
-    mandatory    BOOLEAN NOT NULL DEFAULT TRUE,
+    mandatory    BOOLEAN NOT NULL DEFAULT FALSE,
     active       BOOLEAN NOT NULL DEFAULT TRUE,
     PRIMARY KEY (subject_type, doc_kind)
 );
+-- Seed the suggested (non-mandatory) kinds. Runtime-editable via POST /onboarding-doc-requirements.
+INSERT INTO onboarding_doc_requirement (subject_type, doc_kind, mandatory, active) VALUES
+    ('investor', 'pan_card',        FALSE, TRUE),
+    ('investor', 'address_proof',   FALSE, TRUE),
+    ('supplier', 'pan_card',        FALSE, TRUE),
+    ('supplier', 'gst_certificate', FALSE, TRUE),
+    ('supplier', 'board_resolution',FALSE, TRUE),
+    ('supplier', 'moa_aoa',         FALSE, TRUE),
+    ('supplier', 'bank_statement',  FALSE, TRUE);
 
 -- KYC docs (BC11): investor + supplier, linked to the KYC file.
 CREATE TABLE kyc_document (

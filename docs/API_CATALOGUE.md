@@ -91,6 +91,7 @@ need `X-Aggregate-Version`. Each is idempotent, MFA-fresh, and audit-logged.
 Generic two-phase document service (M18). Upload is content-custody plumbing — **any authenticated admin**
 may call it (no role gate, no MFA); the *consumer's* attach command (invoice, KYB) carries the five
 non-negotiables. Bytes live in DB locally, GCS in prod (deferred). No encryption at rest yet (Production gate).
+
 | Method · Path | Functionality | Auth |
 |---|---|---|
 | `POST /documents` | **Initiate** (`{kind, content_type, declared_size}`) → `pending_upload`; `document_id` derived from `X-Command-Id` (idempotent) | 🪪 bearer |
@@ -98,6 +99,20 @@ non-negotiables. Bytes live in DB locally, GCS in prod (deferred). No encryption
 | `POST /documents/{id}/finalize` | **Finalize** → hash (SHA-256) + `stored`; idempotent on `document_id` | 🪪 bearer |
 | `GET /documents/{id}` | Read metadata (kind, status, content_type, byte_size) — no bytes | 🪪 bearer |
 | `GET /documents/{id}/content` | Download the stored bytes (STORE-1: no authZ here — the consumer is the policy point) | 🪪 bearer |
+
+## Onboarding KYC documents (BC11) — `/kyc`, `/onboarding-doc-requirements`
+Typed KYC documents (investor + supplier) attached to a `comp_kyc_file` (M20). **Capture-only — nothing is
+mandatory; Ops decides KYC completeness** at approval. The coverage read is *advisory*; the requirement list
+is a runtime-editable *suggested* set (buyer KYB is separate — see the Buyer section).
+
+| Method · Path | Functionality | Auth |
+|---|---|---|
+| `POST /kyc/{kycFileId}/documents` | **Attach** a stored `document_id` typed by `doc_kind`; `uploaded_by`=actor; one active per kind | 👤 ops_executive |
+| `PUT /kyc/{kycFileId}/documents/{kycDocumentId}` | **Replace** a document → supersedes the old link | 👤 ops_executive |
+| `GET /kyc/{kycFileId}/documents` | List the KYC doc links (kind, status, document_id) — no bytes | 🪪 bearer |
+| `GET /kyc/{kycFileId}/documents/coverage` | **Advisory** coverage: suggested kinds vs uploaded (`{doc_kind: covered}`) — no verdict, no gate | 🪪 bearer |
+| `GET /onboarding-doc-requirements?subject_type=` | Read the suggested-documents list (investor\|supplier) | 🪪 bearer |
+| `POST /onboarding-doc-requirements` | Upsert a suggested kind (`{subject_type, doc_kind, active}`; `mandatory` stays false) | 👤 ops_executive |
 
 ## Listing lifecycle (BC1) — `/listings`
 | Method · Path | Functionality | Auth |
@@ -116,6 +131,7 @@ non-negotiables. Bytes live in DB locally, GCS in prod (deferred). No encryption
 ## Invoice artifacts (BC1) — `/listings/{id}/invoice-documents`
 The invoice PDF investors review before funding (M19). Ops uploads it via `/documents`, then **attaches** the
 `document_id` here; it gates the `document_completeness` ops-check (recorder ≠ uploader) and freezes at snapshot.
+
 | Method · Path | Functionality | Auth |
 |---|---|---|
 | `POST /listings/{id}/invoice-documents` | **Attach** a stored `document_id` (must be PDF + `stored`); stamps `uploaded_by`; rejected after `ready_for_review` | 👤 ops_executive |
@@ -156,6 +172,7 @@ The invoice PDF investors review before funding (M19). Ops uploads it via `/docu
 
 ## Distribution & Tax (BC12) — `/listings`, `/investors/{id}/tax`
 Closes the money lifecycle: pay investors their principal + return, withhold TDS on the return only (10% with a verified PAN, 20% without — §206AA), record the TDS ledger, and close the deal as `distributed`. Then issue each investor's Form 16A.
+
 | Method · Path | Functionality | Auth |
 |---|---|---|
 | `POST /listings/{id}/distribution/draft` | Draft the distribution (maker): compute + **freeze** the per-investor TDS snapshot on a matured listing | 👤 treasury_and_settlement |
