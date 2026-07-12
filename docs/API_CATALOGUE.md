@@ -1,10 +1,13 @@
 # API Catalogue — working endpoints & what they do
 
-> **Status: all endpoints below are fully working** — implemented, covered by the 350-test suite, and the
+> **Status: all endpoints below are fully working** — implemented, covered by the 359-test suite, and the
 > money-flow spine runs end-to-end as an automated smoke test (now all the way to **`distributed / closed`**,
 > incl. TDS + Form 16A). Generated from the controllers on 2026-07-12; **documents (BC16), invoice artifacts
-> (BC1) + buyer KYB (BC9)** added this pass.
+> (BC1), buyer KYB + investor/supplier KYC docs (BC9/BC11)** added this pass.
 > Postman: `postman/fintech-platform.postman_collection.json`. Endpoint map + golden path: `MANUAL_TESTING.md`.
+>
+> 🧪 **New here? Follow [`API_TEST_PLAN.md`](API_TEST_PLAN.md)** — a step-by-step manual test plan (setup →
+> tokens → run every suite) built to be driven straight off this catalogue.
 
 **Auth legend** — how each route is authorised:
 - 🔓 **open** — no bearer (login / webhook / bootstrap / dev)
