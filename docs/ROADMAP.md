@@ -1,26 +1,34 @@
 # Phase-1 Roadmap — Backend → Pilot
 
-> **Status date:** 2026-06-27 · **For founder review.** Sequencing roadmap from "backend core complete" to
-> "pilot-ready". The authoritative *module* plan stays `docs/spec/Spec_Driven_Build_Plan.md`; this is the
-> forward sequence + the open-risk register. One-line rule: **the API contract is now frozen — UI and
-> integrations build *against* it, backend remainder is *additive*, so nothing downstream conflicts.**
+> **Status date:** 2026-07-12 *(refreshed; supersedes the 2026-06-27 draft)* · **For founder review.**
+> Sequencing roadmap from "backend core complete" to "pilot-ready". The authoritative *module* plan stays
+> `docs/spec/Spec_Driven_Build_Plan.md`; this is the forward sequence + the open-risk register. One-line rule:
+> **UI and integrations build *against* the API contract, backend remainder is *additive* — so nothing
+> downstream conflicts.**
+>
+> **What changed since 2026-06-27:** the money-path + document + onboarding-doc items shipped — **M16 Tax**
+> (spine now reaches `distributed/closed` incl. TDS + Form 16A), **M18 Documents**, **M19 Invoice Artifacts**,
+> and **M20 Onboarding Docs (buyer KYB + investor/supplier KYC), now DONE**. Tests **279 → 359**. Remaining
+> Phase-D: **M15 Compliance**, **M14 Collections**, **M17 Auditor**, and the deferred-control sweep. See §5.
 
 ---
 
 ## 1. Where we are
 
-**The money spine works end-to-end.** A deal goes `listed → priced → live → funded → confirmed → assigned →
-disbursed → matured` over HTTP, proven by an automated smoke run; every state change carries the five controls
-(maker-checker, MFA, segregation-of-duties, idempotency, immutable audit).
+**The full money lifecycle works end-to-end.** A deal goes `listed → priced → live → funded → confirmed →
+assigned → disbursed → matured → distributed → closed` over HTTP (incl. TDS withholding + Form 16A issuance),
+proven by an automated smoke run; every state change carries the five controls (maker-checker, MFA,
+segregation-of-duties, idempotency, immutable audit).
 
 | | |
 |---|---|
-| **Backend core** | **Complete** — all Wave-1 modules (M6–M13) at full rigor |
-| **Tests** | **279 green** (unit + integration on real Postgres) |
-| **Bounded contexts live** | Listing, Subscription, Credit, Settlement, Signing, Investor, Supplier, Buyer, Verification/Escrow/Notifications (stubbed) |
-| **Schema** | Flyway-owned, 6 migrations, DB-enforced invariants |
+| **Backend core** | **Complete** — Wave-1 (M6–M13) at full rigor **+ M16 Tax** (distribution/close) |
+| **Document surface** | **M18** generic doc service, **M19** invoice PDF, **M20** onboarding docs (buyer KYB + investor/supplier KYC) — all shipped |
+| **Tests** | **359 green** (unit + integration on real Postgres) |
+| **Bounded contexts live** | Listing, Subscription, Credit, Settlement, Signing, Investor, Supplier, Buyer, Tax, Documents, Compliance (KYC docs); Verification/Escrow/Notifications (stubbed) |
+| **Schema** | Flyway-owned, **13 migrations** (V1–V13), DB-enforced invariants |
 | **Integrations** | **All stubbed** behind ACL ports (verification, escrow/banking, e-sign, notifications) |
-| **Run locally** | `docs/MANUAL_TESTING.md` + `manual-test.http` + `scripts/dev-smoke.sh` (dev profile) |
+| **Run locally** | `docs/MANUAL_TESTING.md` + `manual-test.http` + `scripts/dev-smoke.sh` (dev profile). API map: `docs/API_CATALOGUE.md` |
 
 ---
 
@@ -57,9 +65,18 @@ Run each controller's flow via `manual-test.http` / `dev-smoke.sh`. Tick when be
 | **Disbursement** | DisbursementController (3) | maker→checker → disbursed |
 | **Maturity** | MaturityController (1) | record full repayment → matured |
 | **Banking webhook** | BankingWebhookController (1) | HMAC-signed inflow → funds confirmed |
+| **Distribution & Tax** | Distribution/Form16a/TaxQuery (7) | draft→approve payout, TDS snapshot, close→`distributed`; issue + download Form 16A; deduction/statement reads |
+| **Documents** | `/documents` (5) | initiate → PUT content → finalize → resolve → download (two-phase upload) |
+| **Invoice artifacts** | `/listings/{id}/invoice-documents` (4) | upload PDF → attach → `document_completeness` (recorder ≠ uploader) → download on live listing |
+| **Buyer KYB** | `/buyers/{id}/kyb-verification` (2) | ops attests `kyb_verified` (+ optional doc); independent of automated identity check |
 
 **Exit criteria for A:** every flow above behaves as intended; any gap is logged (bug vs accepted-deferral)
-and triaged. **This freezes the API contract for Phase B.**
+and triaged. **This freezes the (now-larger) API contract for Phase B.**
+
+> **Fold into this pass — one known control gap to close (not defer):** M19 invoice **download is not yet
+> audit-logged** (DL-BE-071; control #5 requires every download to emit an envelope). Add the
+> `InvoiceArtifact.Downloaded` envelope + test before the contract is signed off. Small, but a pilot-blocker
+> for the compliance trail.
 
 ---
 
@@ -84,25 +101,42 @@ gate**.
 
 ## 5. Phase D — Backend remainder + deferred controls
 
-**Modules not yet built** (additive; build to DoD, one at a time):
+**Shipped since the 2026-06-27 draft** (were "not yet built"; now done to DoD):
 
-| Module | BC | Why it matters | Blocks |
+| Module | BC | What landed |
+|---|---|---|
+| ✅ **M16 Tax** | BC12 | TDS computation + distribution/close + Form 16A — spine now reaches `distributed/closed`. *(closes the "distribution + close (TDS)" deferred control)* |
+| ✅ **M18 Documents** | BC16 | generic two-phase upload API (`/documents`); local DB store. *GCS adapter (M18c) + Form-16A convergence (M18d) still deferred.* |
+| ✅ **M19 Invoice Artifacts** | BC1 | invoice PDF upload/attach/download + `document_completeness` wiring. *One gap: download-audit (see §3 fold-in).* |
+| ✅ **M20 Onboarding Docs** | BC9+BC11 | buyer KYB (`V12`) + investor/supplier KYC docs (`V13`). **Nothing mandatory — Ops decides completeness**; coverage is advisory. Capture-only. |
+
+**Still to build** (additive; build to DoD, one at a time):
+
+| Module | BC | Why it matters | Blocks / notes |
 |---|---|---|---|
-| **M16 Tax** | BC12 | TDS computation | **Unblocks M13 distribution + close** — *investors cannot be paid their returns until this lands* |
+| **M15 Compliance (full)** | BC11 | replace the auto-approve KYC stub with the real review engine | **production KYC gate** — M20 is capture-only + advisory; real completeness/adjudication enforcement (and any *mandatory* docs) lives here |
 | **M14 Collections** | BC6 | overdue → default classification (incl. the M6-deferred DefaultCase) | the non-happy maturity path |
-| **M15 Compliance (full)** | BC11 | replace the auto-approve KYC stub with the real review engine | production KYC |
 | **M17 Auditor** | BC13 | read-only audit/regulator access | audit/regulator demo |
+| **M18c GCS · M18d Form-16A convergence** | BC16 | blob storage in prod; retire `sys_document_object` | M18c → Production gate; M18d an isolated cleanup |
+
+> **Sequencing note (DL-BE-070/072/073):** the document surface (M18/M19/M20) was pulled forward ahead of
+> M14/M15/M17 as a **Phase-B (UI) enabler** — now all shipped. M20 is **capture-only** (non-gating) and
+> **nothing is mandatory** (Ops decides), so it does not disturb the current auto-approve onboarding flow;
+> real KYC-completeness enforcement (and any mandatory-doc rule) stays with **M15**.
 
 **Deferred controls register** — *flagged during the build; each is a known gap with a trigger* (founder
 should note the compliance ones):
 
 | Control | Where deferred | Risk | Trigger to build |
 |---|---|---|---|
+| ✅ ~~**Distribution + close (TDS)**~~ | ~~M13~~ | **DONE** — built as **M16** | — |
 | **Four-eyes / second-approver** (>₹10 Cr) | M6 (DL-BE-059) | **Compliance** — large credit limits/caps can't be set, or would bypass dual-approval | before any >₹10 Cr counterparty |
 | **Suspend / Blacklist** | M7, M8, M10 | can't off-board a bad actor mid-life | before live counterparties at scale |
+| **M19 download audit envelope** | M19 (DL-BE-071) | **Compliance** — invoice-PDF access has no audit trail | **before pilot** (fold into Phase A — see §3) |
 | **Agency-consent enforcement** | M7 (DL-BE-055) | agency actions not yet gated on active consent | when agency/portal actors exist |
-| **Pricing-band re-pricing** (supersession) | M6 (DL-BE-060) | a band can be set once, not changed | when re-pricing UX is needed (needs a V7 migration) |
-| **Distribution + close (TDS)** | M13 (DL-BE-054) | deal can't pay investor returns / close | = build M16 |
+| **Pricing-band re-pricing** (supersession) | M6 (DL-BE-060) | a band can be set once, not changed | when re-pricing UX is needed (needs a migration) |
+| **Documents: encryption at rest** | M18 (DL-BE-074) | real KYC/Aadhaar PII stored plaintext | **before real KYC docs / Production gate** (Cloud KMS) |
+| **Session token hardening** | auth (DL-BE-077) | UUIDv7 token is part-predictable; not hashed at rest | before real PII / Production gate |
 | **Schedulers** (window-expiry, KYC-refresh, review cadence) | M9/M10/M6 | time-based steps are manual/ops-triggered | scheduler-era (post-pilot ok) |
 | **Async event bus** | platform-wide | cross-context coordination is inline, in-tx | scale-era (post-pilot ok) |
 
@@ -111,22 +145,27 @@ should note the compliance ones):
 ## 6. Recommended sequence (the one-slide version)
 
 ```
-NOW ──► A. Validate every endpoint/flow (dev harness)         ◄── you are here
+NOW ──► A. Validate every endpoint/flow (dev harness) — now incl. docs/artifacts/KYB/tax   ◄── you are here
+          │  + close the M19 download-audit gap in the same pass
           │  exit: contract frozen, gaps triaged
           ▼
         B. UI plugin, module-by-module (against frozen API)
           │   ║ in parallel, non-blocking:
-          │   ╚═► D. M16 Tax → unblocks distribution/close      (do early — it's on the money path)
-          │       D. M14/M15/M17 + deferred-control sweep
+          │   ╚═► D. M15 Compliance · M14 Collections · M17 Auditor + deferred-control sweep
           ▼
         C. Integrations: stub → sandbox → production (behind ACL ports)
           │  order: notifications → verification → e-sign → escrow/banking
+          │  + Production-gate prereqs: doc encryption-at-rest, token hardening, M18c GCS
           ▼
         PRODUCTION GATE ──► Pilot (real counterparties, real money)
 ```
 
-**Two calls for the founder:**
-1. **M16 Tax priority** — recommend building it early in Phase D; without it a funded deal can't pay returns
-   or close (the spine ends at `matured`, not `distributed`).
-2. **Deferred-control cut line** — which §5 controls are pilot-blockers vs fast-follows. *Recommendation:*
-   four-eyes + suspend/blacklist before real counterparties; schedulers + event-bus as post-pilot.
+**The critical next step:** finish **Phase A** on the *extended* surface (documents, invoice artifacts,
+onboarding KYC/KYB, distribution/tax) and **close the M19 download-audit gap** in the same pass — everything
+in B/C consumes that frozen, gap-free contract.
+
+**One call for the founder** *(the M20-KYC checklist question is resolved — nothing is mandatory, Ops decides
+completeness, so no per-persona required-docs list is needed until M15):*
+- **Deferred-control cut line** — which §5 controls are pilot-blockers vs fast-follows. *Recommendation:*
+  four-eyes + suspend/blacklist + the M19 download-audit envelope before real counterparties; doc
+  encryption-at-rest + token hardening at the Production gate; schedulers + event-bus post-pilot.

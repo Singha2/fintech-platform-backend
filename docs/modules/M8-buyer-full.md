@@ -78,6 +78,9 @@ gateway. PII (gstin/cin) on columns, never in an audit payload (WS-2 rule retain
 - [x] `DL-BE-058` added; spec flipped to **Status: Done**.
 
 ## 9. Remaining gaps after M8-full (documented, with owner)
+- **Buyer documents (KYB)** — the buyer has no KYC, but real document attachments (NOA, GST cert,
+  agreements) are not modelled → **M20 Onboarding Documents** (`buyer_document`, consumes M18). Buyer
+  stays a **non-KYC** subject; M20 does not add `buyer` to `comp_kyc_subject_type`.
 - **Suspend** (BA.1, Credit+Treasury maker-checker) → post-active lifecycle slice *(flagged — pull forward)*.
 - **RecordLimitReduced / BuyerLimit.Reduced** (BA.5) → BC3 (M6 Credit).
 - **Buyer / ack-user self-service portal + login** → portal slice.

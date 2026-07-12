@@ -11,6 +11,8 @@ import com.arthvritt.platform.command.CommandRequest;
 import com.arthvritt.platform.command.CommandResult;
 import com.arthvritt.platform.credit.port.PricingBand;
 import com.arthvritt.platform.credit.port.PricingQueryPort;
+import com.arthvritt.platform.document.DocMeta;
+import com.arthvritt.platform.document.DocumentPort;
 import com.arthvritt.platform.notification.NotificationPort;
 import com.arthvritt.platform.notification.NotificationRequest;
 import com.arthvritt.platform.shared.BusinessDate;
@@ -80,11 +82,12 @@ public class ListingService {
     private final BusinessDate businessDate;
     private final VerificationPort verification;
     private final NotificationPort notifications;
+    private final DocumentPort documents;
 
     public ListingService(JdbcTemplate jdbc, CommandGateway gateway, RoleResolver roles, ObjectMapper mapper,
                           BuyerQueryPort buyer, SupplierQueryPort supplier, PricingQueryPort pricing,
                           Clock clock, BusinessDate businessDate, VerificationPort verification,
-                          NotificationPort notifications) {
+                          NotificationPort notifications, DocumentPort documents) {
         this.jdbc = jdbc;
         this.gateway = gateway;
         this.roles = roles;
@@ -96,6 +99,7 @@ public class ListingService {
         this.businessDate = businessDate;
         this.verification = verification;
         this.notifications = notifications;
+        this.documents = documents;
     }
 
     /**
@@ -199,6 +203,12 @@ public class ListingService {
                 // OPS: caller must supply "passed" or "failed".
                 if (!"passed".equals(outcomeOrNull) && !"failed".equals(outcomeOrNull)) {
                     throw new ValidationException("outcome must be 'passed' or 'failed'");
+                }
+                if (check == OperationalCheck.DOCUMENT_COMPLETENESS) {
+                    // M19 DOC.2/DOC.3: this check is no longer a bare checkbox — it must be recorded
+                    // against a REAL, stored invoice artifact, and by someone other than its uploader
+                    // (maker ≠ checker). Rejects clean 4xx with NO write to check_outcomes.
+                    requireCompleteInvoiceDocument(invoice.invoiceId(), request.actorId());
                 }
                 outcome = outcomeOrNull;
             }
@@ -616,6 +626,37 @@ public class ListingService {
     private String buyerAckStatus(InvoiceRow invoice) {
         Object ack = parseCheckOutcomes(invoice.checkOutcomesJson()).get("buyer_ack");
         return ack instanceof Map<?, ?> m ? (String) m.get("status") : null;
+    }
+
+    /**
+     * M19 DOC.2/DOC.3 — {@code document_completeness} gate: an {@code active} {@code deal_invoice_document}
+     * link must exist for this invoice, its {@code document_id} must resolve (via {@link DocumentPort}) to
+     * a {@code stored} document (DOC.2 — a {@code pending_upload} reference can never pass), and the
+     * recording actor must not be the artifact's {@code uploaded_by} (DOC.3, maker ≠ checker).
+     */
+    private void requireCompleteInvoiceDocument(UUID invoiceId, UUID recordingActorId) {
+        ActiveArtifact artifact = jdbc.query(
+                "SELECT document_id, uploaded_by FROM deal_invoice_document "
+                        + "WHERE invoice_id = ? AND status = 'active'::deal_invoice_doc_status",
+                rs -> rs.next() ? new ActiveArtifact(rs.getObject("document_id", UUID.class),
+                        rs.getObject("uploaded_by", UUID.class)) : null,
+                invoiceId);
+        if (artifact == null) {
+            throw new ValidationException(
+                    "document_completeness requires an active invoice document attached: " + invoiceId);
+        }
+        DocMeta meta = documents.resolve(artifact.documentId()).orElse(null);
+        if (meta == null || !"stored".equals(meta.status())) {
+            throw new ValidationException(
+                    "the attached invoice document is not stored: " + artifact.documentId());
+        }
+        if (recordingActorId.equals(artifact.uploadedBy())) {
+            throw new ValidationException(
+                    "document_completeness must be recorded by someone other than the document's uploader (DOC.3)");
+        }
+    }
+
+    private record ActiveArtifact(UUID documentId, UUID uploadedBy) {
     }
 
     /** Atomic JSONB merge of the {@code buyer_ack} entry onto the (listed) invoice; no read-modify-write. */

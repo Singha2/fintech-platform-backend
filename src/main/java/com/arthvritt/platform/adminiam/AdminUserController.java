@@ -38,11 +38,14 @@ public class AdminUserController {
     private static final String AGGREGATE_TYPE = "AdminUser";
 
     private final AdminUserService admins;
+    private final RbacService rbac;
     private final CommandResponseAssembler responses;
     private final JdbcTemplate jdbc;
 
-    public AdminUserController(AdminUserService admins, CommandResponseAssembler responses, JdbcTemplate jdbc) {
+    public AdminUserController(AdminUserService admins, RbacService rbac,
+                              CommandResponseAssembler responses, JdbcTemplate jdbc) {
         this.admins = admins;
+        this.rbac = rbac;
         this.responses = responses;
         this.jdbc = jdbc;
     }
@@ -74,6 +77,45 @@ public class AdminUserController {
         CommandRequest request = new CommandRequest(session, commandId, CONTEXT, CONTEXT + ".AdminUser.Disable",
                 AGGREGATE_TYPE, adminUserId, expectedVersion, "admin_user", ActionSensitivity.SENSITIVE);
         return responses.from(admins.disableAdminUser(request));
+    }
+
+    /**
+     * Assigns {@code role} (any {@link AdminRole}, including {@code super_admin}) to an existing admin_user —
+     * the HTTP surface for {@link RbacService#assignRole}. super_admin-gated at the gateway; a strict SoD pair
+     * is blocked ({@code sod_role_block}), a soft pair requires {@code override_reason}. No
+     * {@code X-Aggregate-Version}: the assignment writes the {@code admin_role_assignment} child table, not the
+     * admin_user aggregate, so it carries no optimistic-lock version.
+     */
+    @PostMapping("/{adminUserId}/roles")
+    public CommandResponse assignRole(@AuthenticationPrincipal AuthSession session,
+                                      @PathVariable UUID adminUserId,
+                                      @RequestHeader("X-Command-Id") UUID commandId,
+                                      @RequestBody(required = false) Map<String, Object> body) {
+        AdminRole role = AdminRole.fromWire(RequestBodies.requiredString(body, "role"));
+        String overrideReason = body == null ? null : optionalString(body.get("override_reason"));
+        CommandRequest request = new CommandRequest(session, commandId, CONTEXT, CONTEXT + ".Role.Assign",
+                AGGREGATE_TYPE, adminUserId, 0, "admin_user", ActionSensitivity.SENSITIVE);
+        return responses.from(rbac.assignRole(request, role, overrideReason));
+    }
+
+    /**
+     * Revokes an active assignment of {@code role} from an existing admin_user — the HTTP surface for
+     * {@link RbacService#revokeRole}. super_admin-gated; a 400 if no active assignment exists. Same
+     * no-{@code X-Aggregate-Version} rationale as {@link #assignRole}.
+     */
+    @PostMapping("/{adminUserId}/roles/{role}/revoke")
+    public CommandResponse revokeRole(@AuthenticationPrincipal AuthSession session,
+                                      @PathVariable UUID adminUserId,
+                                      @PathVariable String role,
+                                      @RequestHeader("X-Command-Id") UUID commandId) {
+        CommandRequest request = new CommandRequest(session, commandId, CONTEXT, CONTEXT + ".Role.Revoke",
+                AGGREGATE_TYPE, adminUserId, 0, "admin_user", ActionSensitivity.SENSITIVE);
+        return responses.from(rbac.revokeRole(request, AdminRole.fromWire(role)));
+    }
+
+    /** A blank/absent optional string field is {@code null} (no override), never an empty override_reason. */
+    private static String optionalString(Object value) {
+        return value == null || value.toString().isBlank() ? null : value.toString();
     }
 
     @GetMapping("/{adminUserId}")

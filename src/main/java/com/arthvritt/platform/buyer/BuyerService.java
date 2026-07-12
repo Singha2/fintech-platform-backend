@@ -171,6 +171,31 @@ public class BuyerService {
         });
     }
 
+    /**
+     * OD.8/DL-BE-073: a single manual Ops Executive attestation layered on top of the automated
+     * {@code identity_verified} (BC17 ACL). Not a status transition (gates nothing — no {@code from}-status
+     * guard) and not maker-checker; the gateway still binds idempotency/MFA/SoD/audit. {@code documentId}
+     * is stored as a bare identity reference (no FK, no DocumentPort resolution — OD.2 keeps BC9/BC16
+     * decoupled) and may be {@code null}.
+     */
+    public CommandResult<Void> recordKybVerified(CommandRequest request, UUID documentId) {
+        return gateway.execute(request, OPS, () -> {
+            UUID buyerId = request.aggregateId();
+            BuyerRow row = loadExisting(buyerId);
+            int updated = jdbc.update("UPDATE buyer_account SET kyb_verified = TRUE, kyb_verified_by = ?, "
+                            + "kyb_verified_at = now(), kyb_document_id = ?, aggregate_version = aggregate_version + 1 "
+                            + "WHERE buyer_id = ? AND aggregate_version = ?",
+                    request.actorId(), documentId, buyerId, request.expectedVersion());
+            requireUpdated(updated, buyerId, row.status(), request.expectedVersion());
+            Map<String, Object> payload = documentId == null
+                    ? Map.of("buyer_id", buyerId.toString())
+                    : Map.of("buyer_id", buyerId.toString(), "document_id", documentId.toString());
+            CommandEvent event = new CommandEvent(CONTEXT + ".Buyer.KybVerified", request.expectedVersion() + 1,
+                    payload, Map.of(), Map.of(), false);
+            return new CommandOutcome<>(null, event);
+        });
+    }
+
     // --- shared command-handler helpers ------------------------------------------------------------
 
     /** BA.3: an active ack user AND a current payment rule are required before activation. */
