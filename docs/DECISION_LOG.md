@@ -2742,3 +2742,16 @@ path), so `created_by` + the audit actor reuse the reserved **SYSTEM principal**
 (`00000000-0000-0000-0000-000000000002`), mirroring `AbstractAclService`'s `new Actor("system", …)` idiom. Audit
 payload carries `document_id`/`kind`/`doc_hash`(hex)/`byte_size` only — never the bytes (DO.2). `sys_document_object`
 + Form 16A untouched (isolation test green). **M18b** (two-phase HTTP API) is next.
+
+**M18b as-built (green — 8 tests + full suite 334).** `DocumentController` (`/documents`) + `DocumentPort`
+`initiate`/`uploadContent`/`finalizeUpload` + `UploadTicket`; `documents.max-upload-bytes` (`@Value` default 20 MB).
+As-built calls: (i) **deterministic `document_id`** via `RequestBodies.deriveAggregateId("document", commandId, …)`
+(same idiom as `ListingController.create`), then `INSERT … ON CONFLICT (document_id) DO NOTHING` with a rowcount
+check so a replay emits no second `documents.Document.Initiated`. (ii) **Human actor**, not SYSTEM: initiate/finalize
+stamp `created_by`/audit-actor from `session.identityId()` as `Actor("admin_user", identityId, …)` — mirroring
+`CommandRequest.actorId()`'s `actor_id = identityId` convention (M18a's `storeGenerated` stays SYSTEM for the
+server-generated path). (iii) content-type guarded at the edge (`consumes="application/pdf"` → 415) and **size guarded
+before writing bytes** (over-cap → `ValidationException`/4xx, row stays `pending_upload`, no blob). (iv) `finalizeUpload`
+idempotent by an explicit already-`stored` short-circuit (zero writes, zero audit on replay). (v) `DbTableDocumentStore.put`
+became an upsert so a retried `PUT …/content` replaces bytes rather than hitting the blob PK. **M18c** (GCS + presigned +
+upload token) and **M19/M20** (consumers) are next.

@@ -26,7 +26,11 @@ public class DbTableDocumentStore implements DocumentStorePort {
 
     @Override
     public void put(UUID documentId, byte[] bytes) {
-        jdbc.update("INSERT INTO sys_document_blob (document_id, content_bytes) VALUES (?, ?)",
+        // Upsert: M18a's storeGenerated always writes a fresh document_id (never re-put), but M18b's
+        // upload step may be retried by the caller for the same document_id before finalize — a second
+        // PUT should replace the bytes, not 500 on the PK.
+        jdbc.update("INSERT INTO sys_document_blob (document_id, content_bytes) VALUES (?, ?) "
+                        + "ON CONFLICT (document_id) DO UPDATE SET content_bytes = EXCLUDED.content_bytes",
                 documentId, bytes);
     }
 

@@ -65,10 +65,10 @@ These are already decided; listed so nothing is silently re-litigated at a modul
 - **M18a — Store core (local, no HTTP). ✅ DONE.** Migration V10 (`sys_document`, `sys_document_blob`);
   `DocumentStorePort` + `DbTableDocumentStore` (`@Profile("!prod")`); `DocumentPort.storeGenerated / resolve / retrieve`.
   7 tests green (round-trip, HASH-1, STATUS-1, DO.2 audit, legacy-registry isolation); full suite **326** green.
-- **M18b — Two-phase API.** `POST /documents` (initiate) → `PUT /documents/{id}/content` (local upload) →
-  `POST /documents/{id}/finalize`; `sys_document_object` upsert at finalize; upload-token scoping; audit
-  envelopes on initiate/finalize/retrieve. **This is the surface M19/M20 depend on** — the DoD line for
-  "M18 done enough to unblock consumers" is *end of M18b*.
+- **M18b — Two-phase API. ✅ DONE.** `POST /documents` (initiate) → `PUT /documents/{id}/content` (session-bearer
+  upload) → `POST /documents/{id}/finalize`; `GET /{id}` + `/content`; size + content-type guards; audit
+  `Initiated`/`Stored` (ids/hash only). Deterministic `document_id` from `X-Command-Id`; finalize idempotent on
+  `document_id`. 8 tests green (`DocumentApiTest`); full suite **334**. **M19/M20 now unblocked** (end of M18b).
 - **M18c — GCS adapter — DEFERRED to the Production gate.** `GcsDocumentStore` + presigned PUT/GET + the
   short-lived upload token, written and unit-tested against a fake GCS, **not wired**. Not required for
   M19/M20 (they run on the local backend + session bearer). Keep only the port seam now.

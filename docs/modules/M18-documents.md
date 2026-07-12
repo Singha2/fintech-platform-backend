@@ -12,7 +12,7 @@
 |---|---|
 | **Module** | M18 — Documents (BC16), unified core |
 | **Tier** | Heavy (the shared custody + upload layer for KYC, KYB, invoice, signed-legal, tax docs) |
-| **Status** | **M18a done** (store core green, 7 tests; full suite 326) — M18b next |
+| **Status** | **M18a + M18b done** (store core + two-phase API green; full suite 334) — M18c/M19 next |
 | **Owner** | Amit + Claude |
 | **Created** | 2026-07-12 (rev. — DL-BE-075 unified model + DoR resolutions) |
 
@@ -153,8 +153,9 @@ Custody + transport infrastructure; upload is not a domain state change (the con
 - **M18a — store core (local, no HTTP): ✅ DONE.** `sys_document` + `sys_document_blob` (V10);
   `DocumentStorePort` + `DbTableDocumentStore` (`@Profile("!prod")`); `DocumentPort.storeGenerated/resolve/retrieve`.
   7 RED tests → green (`DocumentStoreTest`); full suite 326 green, ArchUnit clean, Form 16A untouched.
-- **M18b — two-phase API:** `POST /documents` → `PUT …/content` → finalize; size guard; audit; deterministic
-  `document_id` from `X-Command-Id`. **End of M18b = M19/M20 unblocked.**
+- **M18b — two-phase API: ✅ DONE.** `POST /documents` → `PUT …/content` → finalize; `GET /{id}` + `/content`;
+  size + content-type guards; audit `Initiated`/`Stored`; deterministic `document_id` from `X-Command-Id`.
+  8 tests green (`DocumentApiTest`); full suite 334. **M19/M20 now unblocked.**
 - **M18c — GCS adapter + presign + upload token — DEFERRED to the Production gate** (written/fake-GCS-tested, not wired).
 
 ## 10. M18d — Form 16A convergence (separate follow-up slice)

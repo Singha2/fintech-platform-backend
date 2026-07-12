@@ -5,6 +5,8 @@ import com.arthvritt.platform.audit.AuditEnvelopes;
 import com.arthvritt.platform.audit.AuditLog;
 import com.arthvritt.platform.shared.Ids;
 import com.arthvritt.platform.shared.error.NotFoundException;
+import com.arthvritt.platform.shared.error.ValidationException;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,11 +44,14 @@ public class DocumentService implements DocumentPort {
     private final JdbcTemplate jdbc;
     private final DocumentStorePort store;
     private final AuditLog auditLog;
+    private final long maxUploadBytes;
 
-    public DocumentService(JdbcTemplate jdbc, DocumentStorePort store, AuditLog auditLog) {
+    public DocumentService(JdbcTemplate jdbc, DocumentStorePort store, AuditLog auditLog,
+                           @Value("${documents.max-upload-bytes:20971520}") long maxUploadBytes) {
         this.jdbc = jdbc;
         this.store = store;
         this.auditLog = auditLog;
+        this.maxUploadBytes = maxUploadBytes;
     }
 
     @Override
@@ -101,6 +106,80 @@ public class DocumentService implements DocumentPort {
             throw new NotFoundException("document not yet stored: " + documentId);
         }
         return store.get(documentId);
+    }
+
+    @Override
+    @Transactional
+    public UploadTicket initiate(UUID documentId, String kind, String contentType, long declaredSize, UUID createdBy) {
+        // Idempotent on document_id (the caller derives it deterministically from X-Command-Id): a replay
+        // is a no-op INSERT (0 rows) — no second row, no second audit envelope.
+        int inserted = jdbc.update("INSERT INTO sys_document (document_id, kind, content_type, created_by) "
+                        + "VALUES (?, ?, ?, ?) ON CONFLICT (document_id) DO NOTHING",
+                documentId, kind, contentType, createdBy);
+        if (inserted == 1) {
+            auditLog.append(AuditEnvelopes.seed(CONTEXT, "Document", documentId)
+                    .eventType(CONTEXT + ".Document.Initiated")
+                    .actor(new Actor("admin_user", createdBy.toString(), null, null, null))
+                    .payload(Map.of("document_id", documentId.toString(), "kind", kind,
+                            "declared_size", declaredSize))
+                    .build());
+        }
+        return new UploadTicket(documentId, "/documents/" + documentId + "/content");
+    }
+
+    @Override
+    @Transactional
+    public void uploadContent(UUID documentId, byte[] bytes) {
+        if (resolve(documentId).isEmpty()) {
+            throw new NotFoundException("document not found: " + documentId);
+        }
+        // I4: validate BEFORE any bytes are persisted — a rejected upload must leave no sys_document_blob row.
+        if (bytes.length > maxUploadBytes) {
+            throw new ValidationException(
+                    "upload exceeds the " + maxUploadBytes + "-byte cap: " + bytes.length + " bytes");
+        }
+        store.put(documentId, bytes);
+    }
+
+    @Override
+    @Transactional
+    public DocMeta finalizeUpload(UUID documentId, UUID actorId) {
+        DocMeta current = resolve(documentId)
+                .orElseThrow(() -> new NotFoundException("document not found: " + documentId));
+        if ("stored".equals(current.status())) {
+            return current; // idempotent replay: no-op, no second audit envelope
+        }
+        if (!store.exists(documentId)) {
+            throw new ValidationException("no content uploaded for document " + documentId + " — PUT the "
+                    + "content before finalizing");
+        }
+        byte[] bytes = store.get(documentId);
+        byte[] hash = sha256(bytes);
+        long byteSize = bytes.length;
+        OffsetDateTime storedAt = OffsetDateTime.now();
+
+        // Status-guarded UPDATE (the WS-6/WS-7 rowcount lesson) — a concurrent finalize would make this a
+        // no-op here too; the STATUS-1 CHECK backstops either way.
+        int updated = jdbc.update("UPDATE sys_document SET status = 'stored'::sys_document_status, "
+                        + "byte_size = ?, doc_hash = ?, stored_at = ? "
+                        + "WHERE document_id = ? AND status = 'pending_upload'::sys_document_status",
+                byteSize, hash, storedAt, documentId);
+        if (updated != 1) {
+            // Lost a race with a concurrent finalize; the other caller's row is the one that stuck.
+            return resolve(documentId).orElseThrow(() -> new NotFoundException("document not found: " + documentId));
+        }
+
+        auditLog.append(AuditEnvelopes.seed(CONTEXT, "Document", documentId)
+                .eventType(CONTEXT + ".Document.Stored")
+                .actor(new Actor("admin_user", actorId.toString(), null, null, null))
+                .payload(Map.of(
+                        "document_id", documentId.toString(),
+                        "kind", current.kind(),
+                        "doc_hash", HexFormat.of().formatHex(hash),
+                        "byte_size", byteSize))
+                .build());
+
+        return new DocMeta(documentId, current.kind(), "stored", current.contentType(), byteSize, hash);
     }
 
     private static byte[] sha256(byte[] input) {
