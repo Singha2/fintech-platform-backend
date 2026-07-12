@@ -2824,3 +2824,48 @@ audit envelope (the compliance trail for who accessed the invoice PDF). This ite
 only — no test covers download-audit, so it was scoped out. **Follow-up before pilot:** add a
 `listing.InvoiceArtifact.Downloaded` envelope (ids only) on the content GET, with a test. Tracked here so it is not
 silently dropped.
+
+## DL-BE-077 — Session auth: opaque server-side reference token (not JWT); keep for Phase 1
+
+**Status.** Recording an **existing, deliberate** design (M3b, DL-BE-017/030) so the choice is on record rather than
+implicit. No code change. Prompted by the question "the bearer is a phantom/opaque token, not a JWT — is that okay,
+and how is verification / statelessness handled?"
+
+**What the design is.** The bearer handed to a client (`POST /auth/login/verify-otp` → `{bearer}`) is the literal
+`auth_session.session_id` (a UUIDv7) — an **opaque reference token** carrying **zero** data (INV-1). Every request
+runs `SessionBearerAuthFilter → SessionService.resolveSession(sessionId)`, a **server-side DB lookup** on
+`auth_session` that validates `status` (active/revoked/expired) + both expiries (rolling idle 30 min, absolute 8 h),
+rolls the idle window, and loads identity / `tenant_claims` / `mfa_assertion_id` **from the row, never from the token**
+(INV-5). The filter only *authenticates*; role/SoD/MFA-freshness gate later at the `CommandGateway`.
+
+**Decision — this is intentionally STATEFUL, not stateless; keep it.** For a regulated money platform the opaque
+server-side token is the better default:
+- **Instant revocation** — logout, the admin-disable cascade (`SessionService.revokeAllForIdentity`), or a compromised
+  session flip `status='revoked'` and the *next* request is dead. A stateless JWT cannot revoke before expiry without a
+  denylist — which reintroduces the per-request lookup JWT was meant to avoid.
+- **No client-trusted claims** — roles / SoD / MFA-freshness are read live server-side; no `alg=none`, key-confusion,
+  or stale-role-baked-into-a-token risk.
+- **Idle + absolute TTL and `isMfaFresh`** already require live server state, so JWT would save nothing here.
+- **Cost is negligible** — one indexed PK read per request in a Postgres-backed monolith that already touches the DB
+  every request. No distributed-session-store tax.
+
+**When to revisit (explicit triggers, none true today).** (a) split into multiple services wanting to validate without
+a shared session store; (b) integrate an external OIDC IdP; (c) a *measured* per-request session-lookup bottleneck.
+The clean evolution is the **true phantom-token pattern**: keep the opaque token outward-facing (retain instant
+revocation) and have an API gateway swap it for a short-lived JWT **internally** for service-to-service calls — layer
+them, don't choose globally. Do **not** adopt client-facing JWTs while single-service (adds attack surface, kills
+revocability, buys statelessness we can't spend).
+
+**Hardening backlog (not blockers, before real counterparties / Production gate).**
+1. **Token entropy.** `session_id` is a UUIDv7 — 48 bits are a ms timestamp, leaving ~74 random bits, so part of the
+   *credential* is time-predictable. Stricter posture: mint the session **secret** from `SecureRandom` (128–256 bits)
+   as a column distinct from the sortable UUIDv7 PK — keep v7 for PK/audit ordering, don't reuse it *as* the secret.
+2. **Hash at rest.** Store `hash(token)` (e.g. SHA-256) and compare on lookup, so a read-only leak of `auth_session`
+   doesn't hand out live sessions.
+3. **Transport/logging.** TLS-only; ensure the `Authorization` header never lands in access logs (audit storing
+   `session_id` as an *identifier* is fine; logging it as a live credential is not).
+
+**What to watch for.** Don't let a future "let's just use JWTs for the SPA" change silently drop revocability — if
+JWTs are introduced, they must be gateway-internal (phantom-token) or paired with a denylist, and the admin-disable
+cascade must still kill access immediately. The three hardening items above are tracked here so they aren't forgotten
+when the store moves from dev to real PII.
