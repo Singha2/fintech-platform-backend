@@ -25,8 +25,10 @@ docker run -d --name avc-pg -p 5432:5432 \
 ./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
 ```
 
-App is at `http://localhost:8080`. Now either open **`manual-test.http`** in IntelliJ (run requests one by
-one, breakpoints work) or run **`scripts/dev-smoke.sh`** (drives the whole money-flow spine in one go).
+The API is at **`http://localhost:8080/api/v1`** (every app route lives under the `/api/v1` base path —
+DL-BE-078); health/ops is on the separate management port at `http://localhost:8081/actuator/health`. Now
+either open **`manual-test.http`** in IntelliJ (run requests one by one, breakpoints work) or run
+**`scripts/dev-smoke.sh`** (drives the whole money-flow spine in one go). Both already point at `/api/v1`.
 
 > Don't have the `exec` plugin? Alternatives for step 2: in IntelliJ right-click
 > `FlywayMigrationRunner.main()` → Run; or `./mvnw -q -Dexec.mainClass=...:exec:java` once the schema exists
@@ -191,7 +193,7 @@ SECRET='dev-banking-webhook-secret-change-me'
 BODY='{"va_id":"<va>","amount_paise":96027397,"utr":"UTR-1","event_id":"evt-1"}'
 TS=$(($(date +%s)*1000))
 SIG=$(printf '%s.%s' "$TS" "$BODY" | openssl dgst -sha256 -hmac "$SECRET" -hex | sed 's/^.* //')
-curl -s -X POST localhost:8080/webhooks/banking/stub-escrow/inflow.received \
+curl -s -X POST localhost:8080/api/v1/webhooks/banking/stub-escrow/inflow.received \
   -H "X-Timestamp: $TS" -H "X-Signature: $SIG" -H 'Content-Type: application/json' -d "$BODY"
 ```
 

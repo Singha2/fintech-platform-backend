@@ -9,6 +9,10 @@
 > 🧪 **New here? Follow [`API_TEST_PLAN.md`](API_TEST_PLAN.md)** — a step-by-step manual test plan (setup →
 > tokens → run every suite) built to be driven straight off this catalogue.
 
+**Base path** — every path below is served under **`/api/v1`** (e.g. `POST /api/v1/suppliers/create`). The
+paths in this catalogue omit that prefix for brevity. Health/ops is the exception: `/actuator/health` on the
+separate **management port 8081**, not under `/api/v1`. _(DL-BE-078)_
+
 **Auth legend** — how each route is authorised:
 - 🔓 **open** — no bearer (login / webhook / bootstrap / dev)
 - 🔑 **api-key** — `Authorization: Bearer <platform.bootstrap.api-key>`

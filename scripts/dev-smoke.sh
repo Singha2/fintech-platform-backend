@@ -7,7 +7,7 @@
 #         docs/MANUAL_TESTING.md.
 set -euo pipefail
 
-HOST=${HOST:-http://localhost:8080}
+HOST=${HOST:-http://localhost:8080/api/v1}
 PW=DevPass123!
 SECRET=${PLATFORM_WEBHOOK_BANKING_SECRET:-dev-banking-webhook-secret-change-me}
 FACE=100000000        # ₹10L invoice face value
