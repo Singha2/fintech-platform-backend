@@ -210,6 +210,130 @@ class InvoiceArtifactTest extends AbstractEdgeHttpTest {
                 .andExpect(status().is4xxClientError());
     }
 
+    // --- DOC.5/DOC.2: the attached document must be a *stored* BC16 handle ------------------------------
+
+    @Test
+    void attaching_a_document_that_is_not_yet_stored_is_rejected() throws Exception {
+        UUID pending = initiatePendingInvoiceDoc();   // initiated, never uploaded/finalized → pending_upload
+
+        attach(listingId, pending, opsA)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error_code").value("validation_failed"));
+
+        assertThat(activeArtifactCount()).isZero();
+    }
+
+    @Test
+    void attaching_a_document_that_does_not_exist_is_rejected() throws Exception {
+        attach(listingId, UUID.randomUUID(), opsA)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error_code").value("validation_failed"));
+
+        assertThat(activeArtifactCount()).isZero();
+    }
+
+    // --- unknown / malformed targets --------------------------------------------------------------------
+
+    @Test
+    void attach_to_an_unknown_listing_is_404() throws Exception {
+        UUID doc = uploadInvoicePdf("application/pdf");
+
+        attach(UUID.randomUUID(), doc, opsA)
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error_code").value("not_found"));
+    }
+
+    @Test
+    void attach_with_a_missing_document_id_is_rejected() throws Exception {
+        mvc.perform(post("/listings/{id}/invoice-documents", listingId)
+                        .header("Authorization", "Bearer " + opsA)
+                        .header("X-Command-Id", UUID.randomUUID().toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(Map.of())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error_code").value("validation_failed"));
+    }
+
+    @Test
+    void attach_with_a_malformed_document_id_is_rejected() throws Exception {
+        mvc.perform(post("/listings/{id}/invoice-documents", listingId)
+                        .header("Authorization", "Bearer " + opsA)
+                        .header("X-Command-Id", UUID.randomUUID().toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(Map.of("document_id", "not-a-uuid"))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error_code").value("validation_failed"));
+    }
+
+    // --- authZ: attach is an ops_executive command (SoD role gate, control #3) --------------------------
+
+    @Test
+    void a_non_ops_actor_may_not_attach() throws Exception {
+        String nonOps = bearerFor(seedAdminWithRoles("compliance_reviewer"));
+        UUID doc = uploadInvoicePdf("application/pdf");
+
+        attach(listingId, doc, nonOps)
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error_code").value("role_not_held"));
+
+        assertThat(activeArtifactCount()).isZero();
+    }
+
+    // --- control #4: attach is idempotent on X-Command-Id (a replay is a no-op) --------------------------
+
+    @Test
+    void attach_is_idempotent_on_command_id() throws Exception {
+        UUID doc = uploadInvoicePdf("application/pdf");
+        UUID commandId = UUID.randomUUID();
+
+        attach(listingId, doc, opsA, commandId).andExpect(status().is2xxSuccessful());
+        attach(listingId, doc, opsA, commandId).andExpect(status().is2xxSuccessful());   // replay
+
+        assertThat(activeArtifactCount()).isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM deal_invoice_document WHERE invoice_id = ? AND document_id = ?",
+                Integer.class, invoiceId, doc)).isEqualTo(1);
+    }
+
+    // --- DOC.7: supersede needs an active artifact to replace -------------------------------------------
+
+    @Test
+    void replace_when_no_active_artifact_exists_is_rejected() throws Exception {
+        UUID replacement = uploadInvoicePdf("application/pdf");
+
+        mvc.perform(put("/listings/{id}/invoice-documents/{docId}", listingId, UUID.randomUUID())
+                        .header("Authorization", "Bearer " + opsA)
+                        .header("X-Command-Id", UUID.randomUUID().toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(Map.of("new_document_id", replacement.toString()))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error_code").value("validation_failed"));
+
+        assertThat(activeArtifactCount()).isZero();
+    }
+
+    // --- DOC.6: download is gated on both the listing (live-set) and the link -------------------------
+
+    @Test
+    void download_from_an_unknown_listing_is_404() throws Exception {
+        mvc.perform(get("/listings/{id}/invoice-documents/{docId}/content", UUID.randomUUID(), UUID.randomUUID())
+                        .header("Authorization", "Bearer " + opsA))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void download_of_a_document_not_attached_to_the_listing_is_404() throws Exception {
+        UUID doc = uploadInvoicePdf("application/pdf");
+        attach(listingId, doc, opsA).andExpect(status().is2xxSuccessful());
+        jdbc.update("UPDATE deal_listing SET status = 'live'::deal_listing_status WHERE listing_id = ?", listingId);
+
+        // a live listing, but a document that was never attached to it
+        mvc.perform(get("/listings/{id}/invoice-documents/{docId}/content", listingId, UUID.randomUUID())
+                        .header("Authorization", "Bearer " + opsA))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error_code").value("not_found"));
+    }
+
     // --- flow helpers -----------------------------------------------------------------------------------
 
     /** Full ops-check → ack → snapshot flow, with a real attached artifact + a distinct document_completeness recorder. */
@@ -274,10 +398,26 @@ class InvoiceArtifactTest extends AbstractEdgeHttpTest {
         return docId;
     }
 
+    /** Initiate only (no upload/finalize) → the document stays pending_upload (an unfinished invoice upload). */
+    private UUID initiatePendingInvoiceDoc() throws Exception {
+        String initBody = json.writeValueAsString(Map.of(
+                "kind", "invoice", "content_type", "application/pdf", "declared_size", 512));
+        MvcResult init = mvc.perform(post("/documents")
+                        .header("Authorization", "Bearer " + opsA)
+                        .header("X-Command-Id", UUID.randomUUID().toString())
+                        .contentType(MediaType.APPLICATION_JSON).content(initBody))
+                .andExpect(status().is2xxSuccessful()).andReturn();
+        return UUID.fromString(node(init).get("document_id").asText());
+    }
+
     private ResultActions attach(UUID listing, UUID documentId, String bearer) throws Exception {
+        return attach(listing, documentId, bearer, UUID.randomUUID());
+    }
+
+    private ResultActions attach(UUID listing, UUID documentId, String bearer, UUID commandId) throws Exception {
         return mvc.perform(post("/listings/{id}/invoice-documents", listing)
                 .header("Authorization", "Bearer " + bearer)
-                .header("X-Command-Id", UUID.randomUUID().toString())
+                .header("X-Command-Id", commandId.toString())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsString(Map.of("document_id", documentId.toString()))));
     }

@@ -1,196 +1,3877 @@
 {
-  "info": {
-    "name": "Fintech Platform — Backend (dev)",
-    "_postman_id": "f1a7c0de-0001-4001-8001-fintechplatform",
-    "description": "Manual-test collection for the invoice-discounting backend, against the **dev profile** (`./mvnw spring-boot:run -Dspring-boot.run.profiles=dev`). One-click OTP login per role; the Golden Path folder drives a whole deal `listed → distributed/closed` (incl. TDS withholding + Form 16A) with auto-chained ids/versions and an HMAC-signed inflow webhook. See docs/MANUAL_TESTING.md. Uses the dev-seeded supplier/buyer/investor (run `Dev helpers → seed-info` first). Full endpoint reference: docs/API_CATALOGUE.md.",
-    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+ "info": {
+  "name": "Fintech Platform — Backend (dev)",
+  "_postman_id": "f1a7c0de-0001-4001-8001-fintechplatform",
+  "description": "Manual-test collection for the invoice-discounting backend, against the **dev profile** (`./mvnw spring-boot:run -Dspring-boot.run.profiles=dev`). One-click OTP login per role; the Golden Path folder drives a whole deal `listed → distributed/closed` (incl. TDS withholding + Form 16A) with auto-chained ids/versions and an HMAC-signed inflow webhook. See docs/MANUAL_TESTING.md. Uses the dev-seeded supplier/buyer/investor (run `Dev helpers → seed-info` first). Full endpoint reference: docs/API_CATALOGUE.md.",
+  "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+ },
+ "variable": [
+  {
+   "key": "baseUrl",
+   "value": "http://localhost:8080/api/v1"
   },
-  "variable": [
-    { "key": "baseUrl", "value": "http://localhost:8080/api/v1" },
-    { "key": "password", "value": "DevPass123!" },
-    { "key": "webhook_secret", "value": "dev-banking-webhook-secret-change-me" },
-    { "key": "bearer_ops", "value": "" },
-    { "key": "bearer_treasury", "value": "" },
-    { "key": "bearer_treasury2", "value": "" },
-    { "key": "bearer_credit", "value": "" },
-    { "key": "bearer_compliance", "value": "" },
-    { "key": "supplier_id", "value": "" },
-    { "key": "buyer_id", "value": "" },
-    { "key": "investor_id", "value": "" },
-    { "key": "listing_id", "value": "" },
-    { "key": "listing_ver", "value": "" },
-    { "key": "va_id", "value": "" },
-    { "key": "funding_target", "value": "" },
-    { "key": "fy_code", "value": "FY2026-27" },
-    { "key": "challenge_id", "value": "" },
-    { "key": "otp_code", "value": "" },
-    { "key": "onb_supplier_id", "value": "" },
-    { "key": "onb_supplier_ver", "value": "" },
-    { "key": "sup_pan", "value": "" },
-    { "key": "sup_gstin", "value": "" },
-    { "key": "sup_cin", "value": "" },
-    { "key": "onb_buyer_id", "value": "" },
-    { "key": "onb_buyer_ver", "value": "" },
-    { "key": "buyer_gstin", "value": "" },
-    { "key": "buyer_cin", "value": "" },
-    { "key": "ack_email", "value": "" },
-    { "key": "ack_phone", "value": "" },
-    { "key": "bootstrap_api_key", "value": "local-bootstrap-key-change-me" },
-    { "key": "boot_admin_email", "value": "" },
-    { "key": "boot_admin_password", "value": "BootPass123!" },
-    { "key": "boot_admin_id", "value": "" },
-    { "key": "boot_bearer", "value": "" }
-  ],
-  "item": [
+  {
+   "key": "password",
+   "value": "DevPass123!"
+  },
+  {
+   "key": "webhook_secret",
+   "value": "dev-banking-webhook-secret-change-me"
+  },
+  {
+   "key": "bearer_ops",
+   "value": ""
+  },
+  {
+   "key": "bearer_treasury",
+   "value": ""
+  },
+  {
+   "key": "bearer_treasury2",
+   "value": ""
+  },
+  {
+   "key": "bearer_credit",
+   "value": ""
+  },
+  {
+   "key": "bearer_compliance",
+   "value": ""
+  },
+  {
+   "key": "supplier_id",
+   "value": ""
+  },
+  {
+   "key": "buyer_id",
+   "value": ""
+  },
+  {
+   "key": "investor_id",
+   "value": ""
+  },
+  {
+   "key": "listing_id",
+   "value": ""
+  },
+  {
+   "key": "listing_ver",
+   "value": ""
+  },
+  {
+   "key": "va_id",
+   "value": ""
+  },
+  {
+   "key": "funding_target",
+   "value": ""
+  },
+  {
+   "key": "fy_code",
+   "value": "FY2026-27"
+  },
+  {
+   "key": "challenge_id",
+   "value": ""
+  },
+  {
+   "key": "otp_code",
+   "value": ""
+  },
+  {
+   "key": "onb_supplier_id",
+   "value": ""
+  },
+  {
+   "key": "onb_supplier_ver",
+   "value": ""
+  },
+  {
+   "key": "sup_pan",
+   "value": ""
+  },
+  {
+   "key": "sup_gstin",
+   "value": ""
+  },
+  {
+   "key": "sup_cin",
+   "value": ""
+  },
+  {
+   "key": "onb_buyer_id",
+   "value": ""
+  },
+  {
+   "key": "onb_buyer_ver",
+   "value": ""
+  },
+  {
+   "key": "buyer_gstin",
+   "value": ""
+  },
+  {
+   "key": "buyer_cin",
+   "value": ""
+  },
+  {
+   "key": "ack_email",
+   "value": ""
+  },
+  {
+   "key": "ack_phone",
+   "value": ""
+  },
+  {
+   "key": "bootstrap_api_key",
+   "value": "local-bootstrap-key-change-me"
+  },
+  {
+   "key": "boot_admin_email",
+   "value": ""
+  },
+  {
+   "key": "boot_admin_password",
+   "value": "BootPass123!"
+  },
+  {
+   "key": "boot_admin_id",
+   "value": ""
+  },
+  {
+   "key": "boot_bearer",
+   "value": ""
+  },
+  {
+   "key": "document_id",
+   "value": ""
+  },
+  {
+   "key": "invoice_doc_id",
+   "value": ""
+  },
+  {
+   "key": "invoice_doc_id_2",
+   "value": ""
+  },
+  {
+   "key": "pending_doc_id",
+   "value": ""
+  },
+  {
+   "key": "fresh_doc_id",
+   "value": ""
+  },
+  {
+   "key": "idem_cmd",
+   "value": ""
+  },
+  {
+   "key": "idem_doc_id",
+   "value": ""
+  },
+  {
+   "key": "kyc_file_id",
+   "value": ""
+  },
+  {
+   "key": "kyc_doc_id",
+   "value": ""
+  }
+ ],
+ "item": [
+  {
+   "name": "0 · Bootstrap first super_admin (API key)",
+   "description": "Break-glass: mint the first **super_admin** on a fresh DB, then log in — all with just the API key (`{{bootstrap_api_key}}`, from `platform.bootstrap.api-key`), in any profile. Run 1→4 top-to-bottom: bootstrap → password → peek OTP (`/bootstrap/last-otp`, same key, works for any email) → verify → bearer stashed in `bearer_ops`-style `boot_bearer`. The OTP peek reads the in-process stub; once a real SMS provider is wired it self-retires (404) and the code goes to the real phone.",
+   "item": [
     {
-      "name": "0 · Bootstrap first super_admin (API key)",
-      "description": "Break-glass: mint the first **super_admin** on a fresh DB, then log in — all with just the API key (`{{bootstrap_api_key}}`, from `platform.bootstrap.api-key`), in any profile. Run 1→4 top-to-bottom: bootstrap → password → peek OTP (`/bootstrap/last-otp`, same key, works for any email) → verify → bearer stashed in `bearer_ops`-style `boot_bearer`. The OTP peek reads the in-process stub; once a real SMS provider is wired it self-retires (404) and the code goes to the real phone.",
-      "item": [
-        { "name": "1 Bootstrap super_admin", "event": [ { "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('boot_admin_email', 'boot-' + pm.variables.replaceIn('{{$guid}}') + '@arthvritt.test');", "if (!pm.collectionVariables.get('boot_admin_password')) { pm.collectionVariables.set('boot_admin_password', 'BootPass123!'); }"] } }, { "listen": "test", "script": { "type": "text/javascript", "exec": ["const j = pm.response.json();", "pm.collectionVariables.set('boot_admin_id', j.admin_user_id);", "pm.test('created', () => pm.response.to.have.status(201));", "pm.test('role super_admin', () => pm.expect(j.role).to.eql('super_admin'));", "pm.test('active', () => pm.expect(j.status).to.eql('active'));"] } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bootstrap_api_key}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{boot_admin_email}}\",\n  \"display_name\": \"Bootstrap Super Admin\",\n  \"phone\": \"+919812345678\",\n  \"password\": \"{{boot_admin_password}}\"\n}" }, "url": "{{baseUrl}}/bootstrap/admin-users" } },
-        { "name": "2 Login: password → challenge_id", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('challenge_id', pm.response.json().challenge_id);", "pm.test('challenge', () => pm.expect(pm.response.json().challenge_id).to.be.a('string'));"] } } ], "request": { "method": "POST", "header": [ { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{boot_admin_email}}\",\n  \"password\": \"{{boot_admin_password}}\"\n}" }, "url": "{{baseUrl}}/auth/login/password" } },
-        { "name": "3 Peek OTP (API key) → otp_code", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('otp_code', pm.response.json().code);", "pm.test('code', () => pm.expect(pm.response.json().code).to.be.a('string'));"] } } ], "request": { "method": "GET", "header": [ { "key": "Authorization", "value": "Bearer {{bootstrap_api_key}}" } ], "url": "{{baseUrl}}/bootstrap/last-otp?email={{boot_admin_email}}" } },
-        { "name": "4 Login: verify-otp → boot_bearer", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('boot_bearer', pm.response.json().bearer);", "pm.test('bearer', () => pm.expect(pm.response.json().bearer).to.be.a('string'));"] } } ], "request": { "method": "POST", "header": [ { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"challenge_id\": \"{{challenge_id}}\",\n  \"code\": \"{{otp_code}}\"\n}" }, "url": "{{baseUrl}}/auth/login/verify-otp" } },
-        { "name": "NEG · Wrong key → 401 unauthorized", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('401', () => pm.response.to.have.status(401));", "pm.test('unauthorized', () => pm.expect(pm.response.json().error_code).to.eql('unauthorized'));"] } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer not-the-real-key" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"email\": \"wrongkey-{{$guid}}@arthvritt.test\",\n  \"display_name\": \"X\",\n  \"phone\": \"+919812345678\",\n  \"password\": \"BootPass123!\"\n}" }, "url": "{{baseUrl}}/bootstrap/admin-users" } },
-        { "name": "NEG · Duplicate email → 400 (run after step 1)", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('400', () => pm.response.to.have.status(400));", "pm.test('validation_failed', () => pm.expect(pm.response.json().error_code).to.eql('validation_failed'));"] } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bootstrap_api_key}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{boot_admin_email}}\",\n  \"display_name\": \"Bootstrap Super Admin\",\n  \"phone\": \"+919812345678\",\n  \"password\": \"{{boot_admin_password}}\"\n}" }, "url": "{{baseUrl}}/bootstrap/admin-users" } }
-      ]
+     "name": "1 Bootstrap super_admin",
+     "event": [
+      {
+       "listen": "prerequest",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.collectionVariables.set('boot_admin_email', 'boot-' + pm.variables.replaceIn('{{$guid}}') + '@arthvritt.test');",
+         "if (!pm.collectionVariables.get('boot_admin_password')) { pm.collectionVariables.set('boot_admin_password', 'BootPass123!'); }"
+        ]
+       }
+      },
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "const j = pm.response.json();",
+         "pm.collectionVariables.set('boot_admin_id', j.admin_user_id);",
+         "pm.test('created', () => pm.response.to.have.status(201));",
+         "pm.test('role super_admin', () => pm.expect(j.role).to.eql('super_admin'));",
+         "pm.test('active', () => pm.expect(j.status).to.eql('active'));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bootstrap_api_key}}"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"email\": \"{{boot_admin_email}}\",\n  \"display_name\": \"Bootstrap Super Admin\",\n  \"phone\": \"+919812345678\",\n  \"password\": \"{{boot_admin_password}}\"\n}"
+      },
+      "url": "{{baseUrl}}/bootstrap/admin-users"
+     }
     },
     {
-      "name": "0 · Dev helpers",
-      "item": [
+     "name": "2 Login: password → challenge_id",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.collectionVariables.set('challenge_id', pm.response.json().challenge_id);",
+         "pm.test('challenge', () => pm.expect(pm.response.json().challenge_id).to.be.a('string'));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"email\": \"{{boot_admin_email}}\",\n  \"password\": \"{{boot_admin_password}}\"\n}"
+      },
+      "url": "{{baseUrl}}/auth/login/password"
+     }
+    },
+    {
+     "name": "3 Peek OTP (API key) → otp_code",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.collectionVariables.set('otp_code', pm.response.json().code);",
+         "pm.test('code', () => pm.expect(pm.response.json().code).to.be.a('string'));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "GET",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bootstrap_api_key}}"
+       }
+      ],
+      "url": "{{baseUrl}}/bootstrap/last-otp?email={{boot_admin_email}}"
+     }
+    },
+    {
+     "name": "4 Login: verify-otp → boot_bearer",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.collectionVariables.set('boot_bearer', pm.response.json().bearer);",
+         "pm.test('bearer', () => pm.expect(pm.response.json().bearer).to.be.a('string'));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"challenge_id\": \"{{challenge_id}}\",\n  \"code\": \"{{otp_code}}\"\n}"
+      },
+      "url": "{{baseUrl}}/auth/login/verify-otp"
+     }
+    },
+    {
+     "name": "NEG · Wrong key → 401 unauthorized",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('401', () => pm.response.to.have.status(401));",
+         "pm.test('unauthorized', () => pm.expect(pm.response.json().error_code).to.eql('unauthorized'));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer not-the-real-key"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"email\": \"wrongkey-{{$guid}}@arthvritt.test\",\n  \"display_name\": \"X\",\n  \"phone\": \"+919812345678\",\n  \"password\": \"BootPass123!\"\n}"
+      },
+      "url": "{{baseUrl}}/bootstrap/admin-users"
+     }
+    },
+    {
+     "name": "NEG · Duplicate email → 400 (run after step 1)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('400', () => pm.response.to.have.status(400));",
+         "pm.test('validation_failed', () => pm.expect(pm.response.json().error_code).to.eql('validation_failed'));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bootstrap_api_key}}"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"email\": \"{{boot_admin_email}}\",\n  \"display_name\": \"Bootstrap Super Admin\",\n  \"phone\": \"+919812345678\",\n  \"password\": \"{{boot_admin_password}}\"\n}"
+      },
+      "url": "{{baseUrl}}/bootstrap/admin-users"
+     }
+    }
+   ]
+  },
+  {
+   "name": "0 · Dev helpers",
+   "item": [
+    {
+     "name": "seed-info (capture supplier/buyer/investor ids)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "const j = pm.response.json();",
+         "pm.collectionVariables.set('supplier_id', j.supplier_id);",
+         "pm.collectionVariables.set('buyer_id', j.buyer_id);",
+         "pm.collectionVariables.set('investor_id', j.investor_id);",
+         "pm.test('seed ids present', () => pm.expect(j.supplier_id).to.be.a('string'));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "GET",
+      "url": "{{baseUrl}}/dev/seed-info"
+     }
+    },
+    {
+     "name": "last-otp (peek the login OTP)",
+     "request": {
+      "method": "GET",
+      "url": "{{baseUrl}}/dev/last-otp?email=ops@dev.local"
+     }
+    }
+   ]
+  },
+  {
+   "name": "1 · Login (one click per role)",
+   "description": "Each request runs password → fetch OTP (dev) → verify, and saves the bearer. If a bearer comes back empty, just send the request once more.",
+   "item": [
+    {
+     "name": "Login: Ops",
+     "event": [
+      {
+       "listen": "prerequest",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.collectionVariables.set('loginEmail','ops@dev.local');",
+         "loginPrep();"
+        ]
+       }
+      },
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.collectionVariables.set('bearer_ops', pm.response.json().bearer);",
+         "pm.test('bearer', () => pm.expect(pm.response.json().bearer).to.be.a('string'));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"challenge_id\": \"{{challenge_id}}\",\n  \"code\": \"{{otp_code}}\"\n}"
+      },
+      "url": "{{baseUrl}}/auth/login/verify-otp"
+     }
+    },
+    {
+     "name": "Login: Treasury",
+     "event": [
+      {
+       "listen": "prerequest",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.collectionVariables.set('loginEmail','treasury@dev.local');",
+         "loginPrep();"
+        ]
+       }
+      },
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.collectionVariables.set('bearer_treasury', pm.response.json().bearer);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"challenge_id\": \"{{challenge_id}}\",\n  \"code\": \"{{otp_code}}\"\n}"
+      },
+      "url": "{{baseUrl}}/auth/login/verify-otp"
+     }
+    },
+    {
+     "name": "Login: Treasury2",
+     "event": [
+      {
+       "listen": "prerequest",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.collectionVariables.set('loginEmail','treasury2@dev.local');",
+         "loginPrep();"
+        ]
+       }
+      },
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.collectionVariables.set('bearer_treasury2', pm.response.json().bearer);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"challenge_id\": \"{{challenge_id}}\",\n  \"code\": \"{{otp_code}}\"\n}"
+      },
+      "url": "{{baseUrl}}/auth/login/verify-otp"
+     }
+    },
+    {
+     "name": "Login: Credit",
+     "event": [
+      {
+       "listen": "prerequest",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.collectionVariables.set('loginEmail','credit@dev.local');",
+         "loginPrep();"
+        ]
+       }
+      },
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.collectionVariables.set('bearer_credit', pm.response.json().bearer);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"challenge_id\": \"{{challenge_id}}\",\n  \"code\": \"{{otp_code}}\"\n}"
+      },
+      "url": "{{baseUrl}}/auth/login/verify-otp"
+     }
+    },
+    {
+     "name": "Login: Compliance",
+     "event": [
+      {
+       "listen": "prerequest",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.collectionVariables.set('loginEmail','compliance@dev.local');",
+         "loginPrep();"
+        ]
+       }
+      },
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.collectionVariables.set('bearer_compliance', pm.response.json().bearer);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"challenge_id\": \"{{challenge_id}}\",\n  \"code\": \"{{otp_code}}\"\n}"
+      },
+      "url": "{{baseUrl}}/auth/login/verify-otp"
+     }
+    }
+   ]
+  },
+  {
+   "name": "2 · Golden Path (run top-to-bottom)",
+   "description": "A whole deal lifecycle. Prereq: run `Dev helpers → seed-info`, then `Login: Ops`, `Login: Treasury`, `Login: Treasury2`. Each request chains the listing id + aggregate-version automatically.",
+   "item": [
+    {
+     "name": "01 Create listing (Ops)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "const j = pm.response.json();",
+         "pm.collectionVariables.set('listing_id', j.aggregate_id);",
+         "pm.collectionVariables.set('listing_ver', j.aggregate_version);",
+         "pm.test('created', () => pm.response.to.have.status(201));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_ops}}"
+       },
+       {
+        "key": "X-Command-Id",
+        "value": "{{$guid}}"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"supplier_id\": \"{{supplier_id}}\",\n  \"buyer_id\": \"{{buyer_id}}\",\n  \"invoice_number\": \"INV-{{$guid}}\",\n  \"face_value_paise\": 100000000,\n  \"invoice_date\": \"2026-06-01\",\n  \"tenor_days\": 60\n}"
+      },
+      "url": "{{baseUrl}}/listings"
+     }
+    },
+    {
+     "name": "02 Start ops-checks (Ops)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.collectionVariables.set('listing_ver', pm.response.json().aggregate_version);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_ops}}"
+       },
+       {
+        "key": "X-Command-Id",
+        "value": "{{$guid}}"
+       },
+       {
+        "key": "X-Aggregate-Version",
+        "value": "{{listing_ver}}"
+       }
+      ],
+      "url": "{{baseUrl}}/listings/{{listing_id}}/start-ops-checks"
+     }
+    },
+    {
+     "name": "03 Ops-check: irn_validity",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.collectionVariables.set('listing_ver', pm.response.json().aggregate_version);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_ops}}"
+       },
+       {
+        "key": "X-Command-Id",
+        "value": "{{$guid}}"
+       },
+       {
+        "key": "X-Aggregate-Version",
+        "value": "{{listing_ver}}"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{ \"check_name\": \"irn_validity\" }"
+      },
+      "url": "{{baseUrl}}/listings/{{listing_id}}/record-ops-check"
+     }
+    },
+    {
+     "name": "04 Ops-check: eway_bill_match",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.collectionVariables.set('listing_ver', pm.response.json().aggregate_version);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_ops}}"
+       },
+       {
+        "key": "X-Command-Id",
+        "value": "{{$guid}}"
+       },
+       {
+        "key": "X-Aggregate-Version",
+        "value": "{{listing_ver}}"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{ \"check_name\": \"eway_bill_match\", \"outcome\": \"passed\" }"
+      },
+      "url": "{{baseUrl}}/listings/{{listing_id}}/record-ops-check"
+     }
+    },
+    {
+     "name": "05 Ops-check: buyer_supplier_relationship",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.collectionVariables.set('listing_ver', pm.response.json().aggregate_version);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_ops}}"
+       },
+       {
+        "key": "X-Command-Id",
+        "value": "{{$guid}}"
+       },
+       {
+        "key": "X-Aggregate-Version",
+        "value": "{{listing_ver}}"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{ \"check_name\": \"buyer_supplier_relationship\", \"outcome\": \"passed\" }"
+      },
+      "url": "{{baseUrl}}/listings/{{listing_id}}/record-ops-check"
+     }
+    },
+    {
+     "name": "06 Ops-check: duplicate_check",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.collectionVariables.set('listing_ver', pm.response.json().aggregate_version);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_ops}}"
+       },
+       {
+        "key": "X-Command-Id",
+        "value": "{{$guid}}"
+       },
+       {
+        "key": "X-Aggregate-Version",
+        "value": "{{listing_ver}}"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{ \"check_name\": \"duplicate_check\", \"outcome\": \"passed\" }"
+      },
+      "url": "{{baseUrl}}/listings/{{listing_id}}/record-ops-check"
+     }
+    },
+    {
+     "name": "07 Ops-check: supplier_exposure_cap",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.collectionVariables.set('listing_ver', pm.response.json().aggregate_version);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_ops}}"
+       },
+       {
+        "key": "X-Command-Id",
+        "value": "{{$guid}}"
+       },
+       {
+        "key": "X-Aggregate-Version",
+        "value": "{{listing_ver}}"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{ \"check_name\": \"supplier_exposure_cap\", \"outcome\": \"passed\" }"
+      },
+      "url": "{{baseUrl}}/listings/{{listing_id}}/record-ops-check"
+     }
+    },
+    {
+     "name": "08 Ops-check: buyer_limit_headroom",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.collectionVariables.set('listing_ver', pm.response.json().aggregate_version);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_ops}}"
+       },
+       {
+        "key": "X-Command-Id",
+        "value": "{{$guid}}"
+       },
+       {
+        "key": "X-Aggregate-Version",
+        "value": "{{listing_ver}}"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{ \"check_name\": \"buyer_limit_headroom\", \"outcome\": \"passed\" }"
+      },
+      "url": "{{baseUrl}}/listings/{{listing_id}}/record-ops-check"
+     }
+    },
+    {
+     "name": "09 Ops-check: document_completeness",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.collectionVariables.set('listing_ver', pm.response.json().aggregate_version);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_ops}}"
+       },
+       {
+        "key": "X-Command-Id",
+        "value": "{{$guid}}"
+       },
+       {
+        "key": "X-Aggregate-Version",
+        "value": "{{listing_ver}}"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{ \"check_name\": \"document_completeness\", \"outcome\": \"passed\" }"
+      },
+      "url": "{{baseUrl}}/listings/{{listing_id}}/record-ops-check"
+     }
+    },
+    {
+     "name": "10 Complete ops-checks (Ops)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.collectionVariables.set('listing_ver', pm.response.json().aggregate_version);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_ops}}"
+       },
+       {
+        "key": "X-Command-Id",
+        "value": "{{$guid}}"
+       },
+       {
+        "key": "X-Aggregate-Version",
+        "value": "{{listing_ver}}"
+       }
+      ],
+      "url": "{{baseUrl}}/listings/{{listing_id}}/complete-ops-checks"
+     }
+    },
+    {
+     "name": "11 Record buyer-ack (Ops)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.collectionVariables.set('listing_ver', pm.response.json().aggregate_version);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_ops}}"
+       },
+       {
+        "key": "X-Command-Id",
+        "value": "{{$guid}}"
+       },
+       {
+        "key": "X-Aggregate-Version",
+        "value": "{{listing_ver}}"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{ \"outcome\": \"acknowledged\", \"method\": \"email\" }"
+      },
+      "url": "{{baseUrl}}/listings/{{listing_id}}/record-buyer-ack"
+     }
+    },
+    {
+     "name": "12 Snapshot & ready @1200bps (Ops)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.collectionVariables.set('listing_ver', pm.response.json().aggregate_version);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_ops}}"
+       },
+       {
+        "key": "X-Command-Id",
+        "value": "{{$guid}}"
+       },
+       {
+        "key": "X-Aggregate-Version",
+        "value": "{{listing_ver}}"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{ \"rate_bps\": 1200 }"
+      },
+      "url": "{{baseUrl}}/listings/{{listing_id}}/snapshot-and-ready"
+     }
+    },
+    {
+     "name": "13 Approve go-live (Treasury — maker≠checker)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.collectionVariables.set('listing_ver', pm.response.json().aggregate_version);",
+         "pm.test('live', () => pm.response.to.have.status(200));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_treasury}}"
+       },
+       {
+        "key": "X-Command-Id",
+        "value": "{{$guid}}"
+       },
+       {
+        "key": "X-Aggregate-Version",
+        "value": "{{listing_ver}}"
+       }
+      ],
+      "url": "{{baseUrl}}/listings/{{listing_id}}/approve-go-live"
+     }
+    },
+    {
+     "name": "14 Get listing (capture va_id + funding_target)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "const j = pm.response.json();",
+         "pm.collectionVariables.set('va_id', j.va_id);",
+         "pm.collectionVariables.set('funding_target', j.funding_target);",
+         "pm.test('is live', () => pm.expect(j.status).to.eql('live'));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "GET",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_ops}}"
+       }
+      ],
+      "url": "{{baseUrl}}/listings/{{listing_id}}"
+     }
+    },
+    {
+     "name": "15 Subscribe full funding_target (Ops)",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_ops}}"
+       },
+       {
+        "key": "X-Command-Id",
+        "value": "{{$guid}}"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"investor_id\": \"{{investor_id}}\",\n  \"amount_paise\": {{funding_target}}\n}"
+      },
+      "url": "{{baseUrl}}/listings/{{listing_id}}/subscriptions/commit"
+     }
+    },
+    {
+     "name": "16 Inflow webhook (HMAC-signed)",
+     "event": [
+      {
+       "listen": "prerequest",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "const ts = Date.now();",
+         "const body = JSON.stringify({",
+         "  va_id: pm.collectionVariables.get('va_id'),",
+         "  amount_paise: Number(pm.collectionVariables.get('funding_target')),",
+         "  utr: 'UTR-' + pm.variables.replaceIn('{{$guid}}'),",
+         "  event_id: 'evt-' + pm.variables.replaceIn('{{$guid}}')",
+         "});",
+         "const sig = CryptoJS.HmacSHA256(ts + '.' + body, pm.collectionVariables.get('webhook_secret')).toString();",
+         "pm.collectionVariables.set('wh_ts', String(ts));",
+         "pm.collectionVariables.set('wh_sig', sig);",
+         "pm.collectionVariables.set('wh_body', body);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "X-Timestamp",
+        "value": "{{wh_ts}}"
+       },
+       {
+        "key": "X-Signature",
+        "value": "{{wh_sig}}"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{{wh_body}}"
+      },
+      "url": "{{baseUrl}}/webhooks/banking/stub-escrow/inflow.received"
+     }
+    },
+    {
+     "name": "17 Assignment: request (Ops)",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_ops}}"
+       },
+       {
+        "key": "X-Command-Id",
+        "value": "{{$guid}}"
+       }
+      ],
+      "url": "{{baseUrl}}/listings/{{listing_id}}/assignment-set/request"
+     }
+    },
+    {
+     "name": "18 Assignment: complete-signing (Ops)",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_ops}}"
+       },
+       {
+        "key": "X-Command-Id",
+        "value": "{{$guid}}"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{ \"investor_id\": \"{{investor_id}}\" }"
+      },
+      "url": "{{baseUrl}}/listings/{{listing_id}}/assignment-set/complete-signing"
+     }
+    },
+    {
+     "name": "19 Disbursement: draft (Treasury)",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_treasury}}"
+       },
+       {
+        "key": "X-Command-Id",
+        "value": "{{$guid}}"
+       }
+      ],
+      "url": "{{baseUrl}}/listings/{{listing_id}}/disbursement/draft"
+     }
+    },
+    {
+     "name": "20 Disbursement: approve (Treasury2 — maker≠checker)",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_treasury2}}"
+       },
+       {
+        "key": "X-Command-Id",
+        "value": "{{$guid}}"
+       }
+      ],
+      "url": "{{baseUrl}}/listings/{{listing_id}}/disbursement/approve"
+     }
+    },
+    {
+     "name": "21 Record maturity / full repayment (Ops)",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_ops}}"
+       },
+       {
+        "key": "X-Command-Id",
+        "value": "{{$guid}}"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"amount_paise\": 100000000,\n  \"utr\": \"UTR-{{$guid}}\"\n}"
+      },
+      "url": "{{baseUrl}}/listings/{{listing_id}}/record-maturity"
+     }
+    },
+    {
+     "name": "22 Final state (expect matured_payment_received)",
+     "request": {
+      "method": "GET",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_ops}}"
+       }
+      ],
+      "url": "{{baseUrl}}/listings/{{listing_id}}"
+     }
+    },
+    {
+     "name": "23 Distribution: draft (Treasury)",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_treasury}}"
+       },
+       {
+        "key": "X-Command-Id",
+        "value": "{{$guid}}"
+       }
+      ],
+      "url": "{{baseUrl}}/listings/{{listing_id}}/distribution/draft"
+     }
+    },
+    {
+     "name": "24 Distribution: approve (Treasury2 — maker≠checker)",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_treasury2}}"
+       },
+       {
+        "key": "X-Command-Id",
+        "value": "{{$guid}}"
+       }
+      ],
+      "url": "{{baseUrl}}/listings/{{listing_id}}/distribution/approve"
+     }
+    },
+    {
+     "name": "25 Get distribution (expect executed + deal closed/distributed)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "const j = pm.response.json();",
+         "pm.test('distribution executed', () => pm.expect(j.status).to.eql('executed'));",
+         "pm.test('deal closed', () => pm.expect(j.listing_status).to.eql('closed'));",
+         "pm.test('terminal outcome distributed', () => pm.expect(j.terminal_outcome).to.eql('distributed'));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "GET",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_treasury}}"
+       }
+      ],
+      "url": "{{baseUrl}}/listings/{{listing_id}}/distribution"
+     }
+    },
+    {
+     "name": "26 Investor TDS deductions (capture fy_code)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "const j = pm.response.json();",
+         "pm.test('has a TDS deduction', () => pm.expect(j.length).to.be.above(0));",
+         "if (j.length) pm.collectionVariables.set('fy_code', j[0].fy_code);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "GET",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_ops}}"
+       }
+      ],
+      "url": "{{baseUrl}}/investors/{{investor_id}}/tax/deductions"
+     }
+    },
+    {
+     "name": "27 Issue Form 16A (Compliance)",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_compliance}}"
+       },
+       {
+        "key": "X-Command-Id",
+        "value": "{{$guid}}"
+       }
+      ],
+      "url": "{{baseUrl}}/investors/{{investor_id}}/tax/form-16a/{{fy_code}}/issue"
+     }
+    },
+    {
+     "name": "28 Download Form 16A (frozen document)",
+     "request": {
+      "method": "GET",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_ops}}"
+       }
+      ],
+      "url": "{{baseUrl}}/investors/{{investor_id}}/tax/form-16a/{{fy_code}}"
+     }
+    },
+    {
+     "name": "29 Investor tax statements (expect form_16a)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "const j = pm.response.json();",
+         "pm.test('has a form_16a statement', () => pm.expect(j.some(s => s.kind === 'form_16a')).to.be.true);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "GET",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_ops}}"
+       }
+      ],
+      "url": "{{baseUrl}}/investors/{{investor_id}}/tax/statements"
+     }
+    }
+   ]
+  },
+  {
+   "name": "3 · Credit (M6)",
+   "item": [
+    {
+     "name": "Set pricing band (Credit)",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_credit}}"
+       },
+       {
+        "key": "X-Command-Id",
+        "value": "{{$guid}}"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"buyer_id\": \"{{buyer_id}}\",\n  \"tenor_bucket\": \"31_60d\",\n  \"rate_range_min_bps\": 1000,\n  \"rate_range_max_bps\": 1500,\n  \"fee_bps\": 200\n}"
+      },
+      "url": "{{baseUrl}}/credit/pricing-bands"
+     }
+    },
+    {
+     "name": "Set buyer credit profile (Credit)",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_credit}}"
+       },
+       {
+        "key": "X-Command-Id",
+        "value": "{{$guid}}"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"sector\": \"manufacturing\",\n  \"rating_source\": \"internal\",\n  \"rating\": \"BBB\",\n  \"credit_limit_paise\": 5000000000,\n  \"tenor_cap_days\": 90\n}"
+      },
+      "url": "{{baseUrl}}/credit/buyers/{{buyer_id}}/profile"
+     }
+    },
+    {
+     "name": "Set buyer profile > ₹10 Cr → 422 four_eyes_required",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_credit}}"
+       },
+       {
+        "key": "X-Command-Id",
+        "value": "{{$guid}}"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"sector\": \"manufacturing\",\n  \"rating_source\": \"internal\",\n  \"rating\": \"AAA\",\n  \"credit_limit_paise\": 10000000001,\n  \"tenor_cap_days\": 90\n}"
+      },
+      "url": "{{baseUrl}}/credit/buyers/{{buyer_id}}/profile"
+     }
+    },
+    {
+     "name": "Set supplier credit profile (Credit)",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_credit}}"
+       },
+       {
+        "key": "X-Command-Id",
+        "value": "{{$guid}}"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"risk_rating\": \"BBB\",\n  \"exposure_cap_paise\": 3000000000\n}"
+      },
+      "url": "{{baseUrl}}/credit/suppliers/{{supplier_id}}/profile"
+     }
+    }
+   ]
+  },
+  {
+   "name": "5 · Supplier onboarding (M7 · BC8)",
+   "description": "WS-1 supplier lifecycle `created → active`, all admin-on-behalf. Prereq: `Login: Ops`, `Login: Compliance`, `Login: Credit`. Each step chains onb_supplier_id + X-Aggregate-Version automatically. KYC approval is done by Compliance (maker≠checker vs the Ops submitter); credit-review by Credit (SoD).",
+   "item": [
+    {
+     "name": "01 Create supplier (Ops)",
+     "event": [
+      {
+       "listen": "prerequest",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "const L = () => String.fromCharCode(65 + Math.floor(Math.random()*26));",
+         "const pan = L()+L()+L()+L()+L() + String(1000 + Math.floor(Math.random()*9000)) + L();",
+         "pm.collectionVariables.set('sup_pan', pan);",
+         "pm.collectionVariables.set('sup_gstin', '27' + pan + '1Z5');",
+         "pm.collectionVariables.set('sup_cin', 'U72200KA2020PTC' + String(100000 + Math.floor(Math.random()*900000)));"
+        ]
+       }
+      },
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "const j = pm.response.json();",
+         "pm.collectionVariables.set('onb_supplier_id', j.aggregate_id);",
+         "pm.collectionVariables.set('onb_supplier_ver', j.aggregate_version);",
+         "pm.test('created', () => pm.response.to.have.status(201));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_ops}}"
+       },
+       {
+        "key": "X-Command-Id",
+        "value": "{{$guid}}"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"legal_name\": \"Supplier {{$guid}}\",\n  \"constitution_type\": \"private_limited\",\n  \"pan\": \"{{sup_pan}}\",\n  \"gstin\": \"{{sup_gstin}}\",\n  \"cin\": \"{{sup_cin}}\"\n}"
+      },
+      "url": "{{baseUrl}}/suppliers/create"
+     }
+    },
+    {
+     "name": "02 Grant agency consent (Ops)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.collectionVariables.set('onb_supplier_ver', pm.response.json().aggregate_version);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_ops}}"
+       },
+       {
+        "key": "X-Command-Id",
+        "value": "{{$guid}}"
+       },
+       {
+        "key": "X-Aggregate-Version",
+        "value": "{{onb_supplier_ver}}"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{ \"scope\": [\"listing_intake\", \"disbursement\"] }"
+      },
+      "url": "{{baseUrl}}/suppliers/{{onb_supplier_id}}/grant-agency-consent"
+     }
+    },
+    {
+     "name": "03 Record identity verified (Ops)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.collectionVariables.set('onb_supplier_ver', pm.response.json().aggregate_version);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_ops}}"
+       },
+       {
+        "key": "X-Command-Id",
+        "value": "{{$guid}}"
+       },
+       {
+        "key": "X-Aggregate-Version",
+        "value": "{{onb_supplier_ver}}"
+       }
+      ],
+      "url": "{{baseUrl}}/suppliers/{{onb_supplier_id}}/record-identity-verified"
+     }
+    },
+    {
+     "name": "04 Submit KYC (Ops)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.collectionVariables.set('onb_supplier_ver', pm.response.json().aggregate_version);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_ops}}"
+       },
+       {
+        "key": "X-Command-Id",
+        "value": "{{$guid}}"
+       },
+       {
+        "key": "X-Aggregate-Version",
+        "value": "{{onb_supplier_ver}}"
+       }
+      ],
+      "url": "{{baseUrl}}/suppliers/{{onb_supplier_id}}/submit-kyc"
+     }
+    },
+    {
+     "name": "05 Record KYC approved (Compliance — maker≠checker)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.collectionVariables.set('onb_supplier_ver', pm.response.json().aggregate_version);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_compliance}}"
+       },
+       {
+        "key": "X-Command-Id",
+        "value": "{{$guid}}"
+       },
+       {
+        "key": "X-Aggregate-Version",
+        "value": "{{onb_supplier_ver}}"
+       }
+      ],
+      "url": "{{baseUrl}}/suppliers/{{onb_supplier_id}}/record-kyc-approved"
+     }
+    },
+    {
+     "name": "06 Submit financial profile (Ops)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.collectionVariables.set('onb_supplier_ver', pm.response.json().aggregate_version);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_ops}}"
+       },
+       {
+        "key": "X-Command-Id",
+        "value": "{{$guid}}"
+       },
+       {
+        "key": "X-Aggregate-Version",
+        "value": "{{onb_supplier_ver}}"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"top_buyers\": [\n    { \"buyer_name\": \"Acme\", \"annual_turnover_paise\": 50000000 }\n  ]\n}"
+      },
+      "url": "{{baseUrl}}/suppliers/{{onb_supplier_id}}/submit-financial-profile"
+     }
+    },
+    {
+     "name": "07 Record credit review (Credit)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.collectionVariables.set('onb_supplier_ver', pm.response.json().aggregate_version);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_credit}}"
+       },
+       {
+        "key": "X-Command-Id",
+        "value": "{{$guid}}"
+       },
+       {
+        "key": "X-Aggregate-Version",
+        "value": "{{onb_supplier_ver}}"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"exposure_cap_paise\": 500000000,\n  \"risk_rating\": \"BBB\"\n}"
+      },
+      "url": "{{baseUrl}}/suppliers/{{onb_supplier_id}}/record-credit-review"
+     }
+    },
+    {
+     "name": "08 Record MAA signed (Ops)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.collectionVariables.set('onb_supplier_ver', pm.response.json().aggregate_version);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_ops}}"
+       },
+       {
+        "key": "X-Command-Id",
+        "value": "{{$guid}}"
+       },
+       {
+        "key": "X-Aggregate-Version",
+        "value": "{{onb_supplier_ver}}"
+       }
+      ],
+      "url": "{{baseUrl}}/suppliers/{{onb_supplier_id}}/record-maa-signed"
+     }
+    },
+    {
+     "name": "09 Activate (Ops)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.collectionVariables.set('onb_supplier_ver', pm.response.json().aggregate_version);",
+         "pm.test('activated', () => pm.response.to.have.status(200));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_ops}}"
+       },
+       {
+        "key": "X-Command-Id",
+        "value": "{{$guid}}"
+       },
+       {
+        "key": "X-Aggregate-Version",
+        "value": "{{onb_supplier_ver}}"
+       }
+      ],
+      "url": "{{baseUrl}}/suppliers/{{onb_supplier_id}}/activate"
+     }
+    },
+    {
+     "name": "10 Get supplier (expect active)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('is active', () => pm.expect(pm.response.json().status).to.eql('active'));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "GET",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_ops}}"
+       }
+      ],
+      "url": "{{baseUrl}}/suppliers/{{onb_supplier_id}}"
+     }
+    },
+    {
+     "name": "NEG · Credit review by Ops → 403 role_not_held",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_ops}}"
+       },
+       {
+        "key": "X-Command-Id",
+        "value": "{{$guid}}"
+       },
+       {
+        "key": "X-Aggregate-Version",
+        "value": "{{onb_supplier_ver}}"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"exposure_cap_paise\": 500000000,\n  \"risk_rating\": \"BBB\"\n}"
+      },
+      "url": "{{baseUrl}}/suppliers/{{onb_supplier_id}}/record-credit-review"
+     }
+    }
+   ]
+  },
+  {
+   "name": "6 · Buyer management (M8 · BC9)",
+   "description": "WS-2 buyer lifecycle `nominated → active`, all admin-on-behalf, plus its OTP-only acknowledgment user. Prereq: `Login: Ops`, `Login: Credit`. Nominate is a Credit action; credit-assessment is Credit (SoD); the rest are Ops. Each step chains onb_buyer_id + X-Aggregate-Version automatically.",
+   "item": [
+    {
+     "name": "01 Nominate buyer (Credit)",
+     "event": [
+      {
+       "listen": "prerequest",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "const L = () => String.fromCharCode(65 + Math.floor(Math.random()*26));",
+         "const pan = L()+L()+L()+L()+L() + String(1000 + Math.floor(Math.random()*9000)) + L();",
+         "pm.collectionVariables.set('buyer_gstin', '27' + pan + '1Z5');",
+         "pm.collectionVariables.set('buyer_cin', 'U72200KA2020PTC' + String(100000 + Math.floor(Math.random()*900000)));"
+        ]
+       }
+      },
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "const j = pm.response.json();",
+         "pm.collectionVariables.set('onb_buyer_id', j.aggregate_id);",
+         "pm.collectionVariables.set('onb_buyer_ver', j.aggregate_version);",
+         "pm.test('created', () => pm.response.to.have.status(201));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_credit}}"
+       },
+       {
+        "key": "X-Command-Id",
+        "value": "{{$guid}}"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"legal_name\": \"Buyer {{$guid}}\",\n  \"mca_cin\": \"{{buyer_cin}}\",\n  \"gstin\": \"{{buyer_gstin}}\",\n  \"sector\": \"manufacturing\"\n}"
+      },
+      "url": "{{baseUrl}}/buyers/nominate"
+     }
+    },
+    {
+     "name": "02 Record identity verified (Ops)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.collectionVariables.set('onb_buyer_ver', pm.response.json().aggregate_version);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_ops}}"
+       },
+       {
+        "key": "X-Command-Id",
+        "value": "{{$guid}}"
+       },
+       {
+        "key": "X-Aggregate-Version",
+        "value": "{{onb_buyer_ver}}"
+       }
+      ],
+      "url": "{{baseUrl}}/buyers/{{onb_buyer_id}}/record-identity-verified"
+     }
+    },
+    {
+     "name": "03 Record credit assessment (Credit)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.collectionVariables.set('onb_buyer_ver', pm.response.json().aggregate_version);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_credit}}"
+       },
+       {
+        "key": "X-Command-Id",
+        "value": "{{$guid}}"
+       },
+       {
+        "key": "X-Aggregate-Version",
+        "value": "{{onb_buyer_ver}}"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{ \"credit_limit_paise\": 500000000 }"
+      },
+      "url": "{{baseUrl}}/buyers/{{onb_buyer_id}}/record-credit-assessment"
+     }
+    },
+    {
+     "name": "04 Start engagement (Ops)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.collectionVariables.set('onb_buyer_ver', pm.response.json().aggregate_version);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_ops}}"
+       },
+       {
+        "key": "X-Command-Id",
+        "value": "{{$guid}}"
+       },
+       {
+        "key": "X-Aggregate-Version",
+        "value": "{{onb_buyer_ver}}"
+       }
+      ],
+      "url": "{{baseUrl}}/buyers/{{onb_buyer_id}}/start-engagement"
+     }
+    },
+    {
+     "name": "05 Designate ack user (Ops)",
+     "event": [
+      {
+       "listen": "prerequest",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.collectionVariables.set('ack_email', 'ack-' + pm.variables.replaceIn('{{$guid}}') + '@buyer.test');",
+         "pm.collectionVariables.set('ack_phone', '+9198' + String(10000000 + Math.floor(Math.random()*89999999)));"
+        ]
+       }
+      },
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.collectionVariables.set('onb_buyer_ver', pm.response.json().aggregate_version);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_ops}}"
+       },
+       {
+        "key": "X-Command-Id",
+        "value": "{{$guid}}"
+       },
+       {
+        "key": "X-Aggregate-Version",
+        "value": "{{onb_buyer_ver}}"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"email\": \"{{ack_email}}\",\n  \"phone\": \"{{ack_phone}}\",\n  \"display_name\": \"Ack User\"\n}"
+      },
+      "url": "{{baseUrl}}/buyers/{{onb_buyer_id}}/designate-ack-user"
+     }
+    },
+    {
+     "name": "06 Confirm payment instruction (Ops)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.collectionVariables.set('onb_buyer_ver', pm.response.json().aggregate_version);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_ops}}"
+       },
+       {
+        "key": "X-Command-Id",
+        "value": "{{$guid}}"
+       },
+       {
+        "key": "X-Aggregate-Version",
+        "value": "{{onb_buyer_ver}}"
+       }
+      ],
+      "url": "{{baseUrl}}/buyers/{{onb_buyer_id}}/confirm-payment-instruction"
+     }
+    },
+    {
+     "name": "07 Activate (Ops)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.collectionVariables.set('onb_buyer_ver', pm.response.json().aggregate_version);",
+         "pm.test('activated', () => pm.response.to.have.status(200));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_ops}}"
+       },
+       {
+        "key": "X-Command-Id",
+        "value": "{{$guid}}"
+       },
+       {
+        "key": "X-Aggregate-Version",
+        "value": "{{onb_buyer_ver}}"
+       }
+      ],
+      "url": "{{baseUrl}}/buyers/{{onb_buyer_id}}/activate"
+     }
+    },
+    {
+     "name": "08 Get buyer (expect active)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('is active', () => pm.expect(pm.response.json().status).to.eql('active'));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "GET",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_ops}}"
+       }
+      ],
+      "url": "{{baseUrl}}/buyers/{{onb_buyer_id}}"
+     }
+    },
+    {
+     "name": "NEG · Credit assessment by Ops → 403 role_not_held",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_ops}}"
+       },
+       {
+        "key": "X-Command-Id",
+        "value": "{{$guid}}"
+       },
+       {
+        "key": "X-Aggregate-Version",
+        "value": "{{onb_buyer_ver}}"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{ \"credit_limit_paise\": 500000000 }"
+      },
+      "url": "{{baseUrl}}/buyers/{{onb_buyer_id}}/record-credit-assessment"
+     }
+    }
+   ]
+  },
+  {
+   "name": "4 · Reads & inspection",
+   "item": [
+    {
+     "name": "Get listing",
+     "request": {
+      "method": "GET",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_ops}}"
+       }
+      ],
+      "url": "{{baseUrl}}/listings/{{listing_id}}"
+     }
+    },
+    {
+     "name": "Get assignment-set",
+     "request": {
+      "method": "GET",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{bearer_ops}}"
+       }
+      ],
+      "url": "{{baseUrl}}/listings/{{listing_id}}/assignment-set"
+     }
+    },
+    {
+     "name": "Health",
+     "request": {
+      "method": "GET",
+      "url": "{{baseUrl}}/actuator/health"
+     }
+    }
+   ]
+  },
+  {
+   "name": "7 · Documents & Invoice Upload (M18/M19)",
+   "description": "**Everything document-related, in the order an intern should learn it.**\n\n- **A** — the generic 3-step upload (initiate → upload → finalize → read).\n- **B** — generic guard rails (idempotency, validation, unknown ids, sealed bytes).\n- **C** — the invoice flow: upload a PDF and attach it to a listing.\n- **D** — invoice attach negatives (not-stored / unknown / wrong role / duplicate).\n- **E** — replace / supersede an attached invoice.\n- **F** — KYC documents (advanced; needs a kyc_file_id).\n\n**One-time setup:** run `1 · Login → Login: Ops` and (for C–E) `0 · Dev helpers → seed-info`. See `postman/README.md` for the full walkthrough.",
+   "item": [
+    {
+     "name": "A · Generic /documents upload — happy path",
+     "description": "The 3-step BC16 upload every UI/operator uses: **initiate → upload → finalize**, then read.\n\n**Before running:** open `1 · Login → Login: Ops` once (sets `bearer_ops`). Then run A1→A5 top-to-bottom.\n\nThe PDF body is plain text starting with `%PDF-1.4` — the server keys off the `application/pdf` *content-type*, not the bytes, so you never need a real file.",
+     "item": [
+      {
+       "name": "A1 Initiate upload → document_id",
+       "request": {
+        "method": "POST",
+        "header": [
+         {
+          "key": "Authorization",
+          "value": "Bearer {{bearer_ops}}"
+         },
+         {
+          "key": "X-Command-Id",
+          "value": "{{$guid}}"
+         },
+         {
+          "key": "Content-Type",
+          "value": "application/json"
+         }
+        ],
+        "url": "{{baseUrl}}/documents",
+        "body": {
+         "mode": "raw",
+         "raw": "{\n  \"kind\": \"invoice\",\n  \"content_type\": \"application/pdf\",\n  \"declared_size\": 32\n}",
+         "options": {
+          "raw": {
+           "language": "json"
+          }
+         }
+        }
+       },
+       "response": [],
+       "event": [
         {
-          "name": "seed-info (capture supplier/buyer/investor ids)",
-          "event": [
-            { "listen": "test", "script": { "type": "text/javascript", "exec": [
-              "const j = pm.response.json();",
-              "pm.collectionVariables.set('supplier_id', j.supplier_id);",
-              "pm.collectionVariables.set('buyer_id', j.buyer_id);",
-              "pm.collectionVariables.set('investor_id', j.investor_id);",
-              "pm.test('seed ids present', () => pm.expect(j.supplier_id).to.be.a('string'));"
-            ] } }
-          ],
-          "request": { "method": "GET", "url": "{{baseUrl}}/dev/seed-info" }
+         "listen": "test",
+         "script": {
+          "type": "text/javascript",
+          "exec": [
+           "const j = pm.response.json();",
+           "pm.collectionVariables.set('document_id', j.document_id);",
+           "pm.test('200 + document_id', () => { pm.response.to.have.status(200); pm.expect(j.document_id).to.be.a('string'); });",
+           "pm.test('upload_url returned', () => pm.expect(j.upload_url).to.be.a('string'));"
+          ]
+         }
+        }
+       ]
+      },
+      {
+       "name": "A2 Upload PDF bytes",
+       "request": {
+        "method": "PUT",
+        "header": [
+         {
+          "key": "Authorization",
+          "value": "Bearer {{bearer_ops}}"
+         },
+         {
+          "key": "Content-Type",
+          "value": "application/pdf"
+         }
+        ],
+        "url": "{{baseUrl}}/documents/{{document_id}}/content",
+        "body": {
+         "mode": "raw",
+         "raw": "%PDF-1.4\nSAMPLE INVOICE {{$guid}}\n%%EOF",
+         "options": {
+          "raw": {
+           "language": "text"
+          }
+         }
+        }
+       },
+       "response": [],
+       "event": [
+        {
+         "listen": "test",
+         "script": {
+          "type": "text/javascript",
+          "exec": [
+           "pm.test('uploaded (200)', () => pm.response.to.have.status(200));"
+          ]
+         }
+        }
+       ]
+      },
+      {
+       "name": "A3 Finalize → stored",
+       "request": {
+        "method": "POST",
+        "header": [
+         {
+          "key": "Authorization",
+          "value": "Bearer {{bearer_ops}}"
+         }
+        ],
+        "url": "{{baseUrl}}/documents/{{document_id}}/finalize"
+       },
+       "response": [],
+       "event": [
+        {
+         "listen": "test",
+         "script": {
+          "type": "text/javascript",
+          "exec": [
+           "const j = pm.response.json();",
+           "pm.test('200 + stored', () => { pm.response.to.have.status(200); pm.expect(j.status).to.eql('stored'); });"
+          ]
+         }
+        }
+       ]
+      },
+      {
+       "name": "A4 Get metadata → stored",
+       "request": {
+        "method": "GET",
+        "header": [
+         {
+          "key": "Authorization",
+          "value": "Bearer {{bearer_ops}}"
+         }
+        ],
+        "url": "{{baseUrl}}/documents/{{document_id}}"
+       },
+       "response": [],
+       "event": [
+        {
+         "listen": "test",
+         "script": {
+          "type": "text/javascript",
+          "exec": [
+           "const j = pm.response.json();",
+           "pm.test('stored metadata', () => { pm.response.to.have.status(200); pm.expect(j.status).to.eql('stored'); pm.expect(j.content_type).to.eql('application/pdf'); });"
+          ]
+         }
+        }
+       ]
+      },
+      {
+       "name": "A5 Download bytes → 200",
+       "request": {
+        "method": "GET",
+        "header": [
+         {
+          "key": "Authorization",
+          "value": "Bearer {{bearer_ops}}"
+         }
+        ],
+        "url": "{{baseUrl}}/documents/{{document_id}}/content"
+       },
+       "response": [],
+       "event": [
+        {
+         "listen": "test",
+         "script": {
+          "type": "text/javascript",
+          "exec": [
+           "pm.test('200 + PDF bytes', () => { pm.response.to.have.status(200); pm.expect(pm.response.text()).to.include('%PDF'); });"
+          ]
+         }
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "name": "B · Generic /documents — negatives & idempotency",
+     "description": "Each request here is **independent** — run any one on its own (after `Login: Ops`). These prove the guard rails: idempotency, body validation, missing headers, unknown ids, and the 'bytes are sealed until stored' rule.",
+     "item": [
+      {
+       "name": "B1 Initiate — idempotent (1st, sets idem_cmd)",
+       "request": {
+        "method": "POST",
+        "header": [
+         {
+          "key": "Authorization",
+          "value": "Bearer {{bearer_ops}}"
+         },
+         {
+          "key": "X-Command-Id",
+          "value": "{{idem_cmd}}"
+         },
+         {
+          "key": "Content-Type",
+          "value": "application/json"
+         }
+        ],
+        "url": "{{baseUrl}}/documents",
+        "body": {
+         "mode": "raw",
+         "raw": "{\n  \"kind\": \"invoice\",\n  \"content_type\": \"application/pdf\",\n  \"declared_size\": 100\n}",
+         "options": {
+          "raw": {
+           "language": "json"
+          }
+         }
+        }
+       },
+       "response": [],
+       "event": [
+        {
+         "listen": "prerequest",
+         "script": {
+          "type": "text/javascript",
+          "exec": [
+           "pm.collectionVariables.set('idem_cmd', pm.variables.replaceIn('{{$guid}}'));"
+          ]
+         }
         },
         {
-          "name": "last-otp (peek the login OTP)",
-          "request": { "method": "GET", "url": "{{baseUrl}}/dev/last-otp?email=ops@dev.local" }
+         "listen": "test",
+         "script": {
+          "type": "text/javascript",
+          "exec": [
+           "pm.collectionVariables.set('idem_doc_id', pm.response.json().document_id);",
+           "pm.test('200', () => pm.response.to.have.status(200));"
+          ]
+         }
         }
-      ]
+       ]
+      },
+      {
+       "name": "B2 Initiate — replay (same X-Command-Id) → same id",
+       "request": {
+        "method": "POST",
+        "header": [
+         {
+          "key": "Authorization",
+          "value": "Bearer {{bearer_ops}}"
+         },
+         {
+          "key": "X-Command-Id",
+          "value": "{{idem_cmd}}"
+         },
+         {
+          "key": "Content-Type",
+          "value": "application/json"
+         }
+        ],
+        "url": "{{baseUrl}}/documents",
+        "body": {
+         "mode": "raw",
+         "raw": "{\n  \"kind\": \"invoice\",\n  \"content_type\": \"application/pdf\",\n  \"declared_size\": 100\n}",
+         "options": {
+          "raw": {
+           "language": "json"
+          }
+         }
+        }
+       },
+       "response": [],
+       "event": [
+        {
+         "listen": "test",
+         "script": {
+          "type": "text/javascript",
+          "exec": [
+           "pm.test('same document_id (idempotent, control #4)', () => pm.expect(pm.response.json().document_id).to.eql(pm.collectionVariables.get('idem_doc_id')));"
+          ]
+         }
+        }
+       ]
+      },
+      {
+       "name": "B3 Initiate without declared_size → 400",
+       "request": {
+        "method": "POST",
+        "header": [
+         {
+          "key": "Authorization",
+          "value": "Bearer {{bearer_ops}}"
+         },
+         {
+          "key": "X-Command-Id",
+          "value": "{{$guid}}"
+         },
+         {
+          "key": "Content-Type",
+          "value": "application/json"
+         }
+        ],
+        "url": "{{baseUrl}}/documents",
+        "body": {
+         "mode": "raw",
+         "raw": "{\n  \"kind\": \"invoice\",\n  \"content_type\": \"application/pdf\"\n}",
+         "options": {
+          "raw": {
+           "language": "json"
+          }
+         }
+        }
+       },
+       "response": [],
+       "event": [
+        {
+         "listen": "test",
+         "script": {
+          "type": "text/javascript",
+          "exec": [
+           "pm.test('400 validation_failed', () => pm.response.to.have.status(400));",
+           "pm.test('error_code = validation_failed', () => pm.expect(pm.response.json().error_code).to.eql('validation_failed'));"
+          ]
+         }
+        }
+       ]
+      },
+      {
+       "name": "B4 Initiate without X-Command-Id → 400 missing_header",
+       "request": {
+        "method": "POST",
+        "header": [
+         {
+          "key": "Authorization",
+          "value": "Bearer {{bearer_ops}}"
+         },
+         {
+          "key": "Content-Type",
+          "value": "application/json"
+         }
+        ],
+        "url": "{{baseUrl}}/documents",
+        "body": {
+         "mode": "raw",
+         "raw": "{\n  \"kind\": \"invoice\",\n  \"content_type\": \"application/pdf\",\n  \"declared_size\": 100\n}",
+         "options": {
+          "raw": {
+           "language": "json"
+          }
+         }
+        }
+       },
+       "response": [],
+       "event": [
+        {
+         "listen": "test",
+         "script": {
+          "type": "text/javascript",
+          "exec": [
+           "pm.test('400 missing_header', () => pm.response.to.have.status(400));",
+           "pm.test('error_code = missing_header', () => pm.expect(pm.response.json().error_code).to.eql('missing_header'));"
+          ]
+         }
+        }
+       ]
+      },
+      {
+       "name": "B5 Finalize before any upload → 400",
+       "request": {
+        "method": "POST",
+        "header": [
+         {
+          "key": "Authorization",
+          "value": "Bearer {{bearer_ops}}"
+         }
+        ],
+        "url": "{{baseUrl}}/documents/{{pending_doc_id}}/finalize"
+       },
+       "response": [],
+       "event": [
+        {
+         "listen": "prerequest",
+         "script": {
+          "type": "text/javascript",
+          "exec": [
+           "initPendingDoc();"
+          ]
+         }
+        },
+        {
+         "listen": "test",
+         "script": {
+          "type": "text/javascript",
+          "exec": [
+           "pm.test('400 — cannot finalize with no uploaded bytes', () => pm.response.to.have.status(400));"
+          ]
+         }
+        }
+       ]
+      },
+      {
+       "name": "B6 Upload a non-PDF content-type → 415",
+       "request": {
+        "method": "PUT",
+        "header": [
+         {
+          "key": "Authorization",
+          "value": "Bearer {{bearer_ops}}"
+         },
+         {
+          "key": "Content-Type",
+          "value": "text/plain"
+         }
+        ],
+        "url": "{{baseUrl}}/documents/{{document_id}}/content",
+        "body": {
+         "mode": "raw",
+         "raw": "not a pdf",
+         "options": {
+          "raw": {
+           "language": "text"
+          }
+         }
+        },
+        "description": "Spring rejects the wrong content-type at routing (consumes=application/pdf) before the service sees it."
+       },
+       "response": [],
+       "event": [
+        {
+         "listen": "test",
+         "script": {
+          "type": "text/javascript",
+          "exec": [
+           "pm.test('415 unsupported media type', () => pm.response.to.have.status(415));"
+          ]
+         }
+        }
+       ]
+      },
+      {
+       "name": "B7 Upload to an unknown document → 404",
+       "request": {
+        "method": "PUT",
+        "header": [
+         {
+          "key": "Authorization",
+          "value": "Bearer {{bearer_ops}}"
+         },
+         {
+          "key": "Content-Type",
+          "value": "application/pdf"
+         }
+        ],
+        "url": "{{baseUrl}}/documents/{{$guid}}/content",
+        "body": {
+         "mode": "raw",
+         "raw": "%PDF-1.4\nSAMPLE INVOICE {{$guid}}\n%%EOF",
+         "options": {
+          "raw": {
+           "language": "text"
+          }
+         }
+        }
+       },
+       "response": [],
+       "event": [
+        {
+         "listen": "test",
+         "script": {
+          "type": "text/javascript",
+          "exec": [
+           "pm.test('404 not_found', () => pm.response.to.have.status(404));",
+           "pm.test('error_code = not_found', () => pm.expect(pm.response.json().error_code).to.eql('not_found'));"
+          ]
+         }
+        }
+       ]
+      },
+      {
+       "name": "B8 Finalize an unknown document → 404",
+       "request": {
+        "method": "POST",
+        "header": [
+         {
+          "key": "Authorization",
+          "value": "Bearer {{bearer_ops}}"
+         }
+        ],
+        "url": "{{baseUrl}}/documents/{{$guid}}/finalize"
+       },
+       "response": [],
+       "event": [
+        {
+         "listen": "test",
+         "script": {
+          "type": "text/javascript",
+          "exec": [
+           "pm.test('404 not_found', () => pm.response.to.have.status(404));",
+           "pm.test('error_code = not_found', () => pm.expect(pm.response.json().error_code).to.eql('not_found'));"
+          ]
+         }
+        }
+       ]
+      },
+      {
+       "name": "B9 Download before finalize → 404 (bytes sealed)",
+       "request": {
+        "method": "GET",
+        "header": [
+         {
+          "key": "Authorization",
+          "value": "Bearer {{bearer_ops}}"
+         }
+        ],
+        "url": "{{baseUrl}}/documents/{{pending_doc_id}}/content"
+       },
+       "response": [],
+       "event": [
+        {
+         "listen": "prerequest",
+         "script": {
+          "type": "text/javascript",
+          "exec": [
+           "initPendingDoc();"
+          ]
+         }
+        },
+        {
+         "listen": "test",
+         "script": {
+          "type": "text/javascript",
+          "exec": [
+           "pm.test('404 — not yet stored', () => pm.response.to.have.status(404));"
+          ]
+         }
+        }
+       ]
+      },
+      {
+       "name": "B10 Get an unknown document → 404",
+       "request": {
+        "method": "GET",
+        "header": [
+         {
+          "key": "Authorization",
+          "value": "Bearer {{bearer_ops}}"
+         }
+        ],
+        "url": "{{baseUrl}}/documents/{{$guid}}"
+       },
+       "response": [],
+       "event": [
+        {
+         "listen": "test",
+         "script": {
+          "type": "text/javascript",
+          "exec": [
+           "pm.test('404 not_found', () => pm.response.to.have.status(404));",
+           "pm.test('error_code = not_found', () => pm.expect(pm.response.json().error_code).to.eql('not_found'));"
+          ]
+         }
+        }
+       ]
+      }
+     ]
     },
     {
-      "name": "1 · Login (one click per role)",
-      "description": "Each request runs password → fetch OTP (dev) → verify, and saves the bearer. If a bearer comes back empty, just send the request once more.",
-      "item": [
-        { "name": "Login: Ops",        "event": [ { "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('loginEmail','ops@dev.local');", "loginPrep();"] } }, { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('bearer_ops', pm.response.json().bearer);", "pm.test('bearer', () => pm.expect(pm.response.json().bearer).to.be.a('string'));"] } } ], "request": { "method": "POST", "header": [ { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"challenge_id\": \"{{challenge_id}}\",\n  \"code\": \"{{otp_code}}\"\n}" }, "url": "{{baseUrl}}/auth/login/verify-otp" } },
-        { "name": "Login: Treasury",   "event": [ { "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('loginEmail','treasury@dev.local');", "loginPrep();"] } }, { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('bearer_treasury', pm.response.json().bearer);"] } } ], "request": { "method": "POST", "header": [ { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"challenge_id\": \"{{challenge_id}}\",\n  \"code\": \"{{otp_code}}\"\n}" }, "url": "{{baseUrl}}/auth/login/verify-otp" } },
-        { "name": "Login: Treasury2",  "event": [ { "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('loginEmail','treasury2@dev.local');", "loginPrep();"] } }, { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('bearer_treasury2', pm.response.json().bearer);"] } } ], "request": { "method": "POST", "header": [ { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"challenge_id\": \"{{challenge_id}}\",\n  \"code\": \"{{otp_code}}\"\n}" }, "url": "{{baseUrl}}/auth/login/verify-otp" } },
-        { "name": "Login: Credit",     "event": [ { "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('loginEmail','credit@dev.local');", "loginPrep();"] } }, { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('bearer_credit', pm.response.json().bearer);"] } } ], "request": { "method": "POST", "header": [ { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"challenge_id\": \"{{challenge_id}}\",\n  \"code\": \"{{otp_code}}\"\n}" }, "url": "{{baseUrl}}/auth/login/verify-otp" } },
-        { "name": "Login: Compliance", "event": [ { "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('loginEmail','compliance@dev.local');", "loginPrep();"] } }, { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('bearer_compliance', pm.response.json().bearer);"] } } ], "request": { "method": "POST", "header": [ { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"challenge_id\": \"{{challenge_id}}\",\n  \"code\": \"{{otp_code}}\"\n}" }, "url": "{{baseUrl}}/auth/login/verify-otp" } }
-      ]
+     "name": "C · Invoice upload & attach (BC1) — happy path",
+     "description": "Upload an invoice PDF, then **attach** its `document_id` to a listing's invoice (M19).\n\n**Before running:** (1) `1 · Login → Login: Ops`, (2) `0 · Dev helpers → seed-info` (sets `supplier_id` + `buyer_id`). Then run C1→C8 top-to-bottom.\n\nC1 creates a fresh **draft** listing so the artifact set is still open (DOC.4). C8 shows the download gate: a draft listing is not downloadable — you get a clean 400 until the deal is live.",
+     "item": [
+      {
+       "name": "C1 Create listing (Ops) → listing_id",
+       "request": {
+        "method": "POST",
+        "header": [
+         {
+          "key": "Authorization",
+          "value": "Bearer {{bearer_ops}}"
+         },
+         {
+          "key": "X-Command-Id",
+          "value": "{{$guid}}"
+         },
+         {
+          "key": "Content-Type",
+          "value": "application/json"
+         }
+        ],
+        "url": "{{baseUrl}}/listings",
+        "body": {
+         "mode": "raw",
+         "raw": "{\n  \"supplier_id\": \"{{supplier_id}}\",\n  \"buyer_id\": \"{{buyer_id}}\",\n  \"invoice_number\": \"INV-{{$guid}}\",\n  \"face_value_paise\": 100000000,\n  \"invoice_date\": \"2026-06-01\",\n  \"tenor_days\": 60\n}",
+         "options": {
+          "raw": {
+           "language": "json"
+          }
+         }
+        }
+       },
+       "response": [],
+       "event": [
+        {
+         "listen": "test",
+         "script": {
+          "type": "text/javascript",
+          "exec": [
+           "const j = pm.response.json();",
+           "pm.collectionVariables.set('listing_id', j.aggregate_id);",
+           "pm.test('201 created', () => pm.response.to.have.status(201));"
+          ]
+         }
+        }
+       ]
+      },
+      {
+       "name": "C2 Initiate invoice doc → invoice_doc_id",
+       "request": {
+        "method": "POST",
+        "header": [
+         {
+          "key": "Authorization",
+          "value": "Bearer {{bearer_ops}}"
+         },
+         {
+          "key": "X-Command-Id",
+          "value": "{{$guid}}"
+         },
+         {
+          "key": "Content-Type",
+          "value": "application/json"
+         }
+        ],
+        "url": "{{baseUrl}}/documents",
+        "body": {
+         "mode": "raw",
+         "raw": "{\n  \"kind\": \"invoice\",\n  \"content_type\": \"application/pdf\",\n  \"declared_size\": 32\n}",
+         "options": {
+          "raw": {
+           "language": "json"
+          }
+         }
+        }
+       },
+       "response": [],
+       "event": [
+        {
+         "listen": "test",
+         "script": {
+          "type": "text/javascript",
+          "exec": [
+           "pm.collectionVariables.set('invoice_doc_id', pm.response.json().document_id);",
+           "pm.test('200', () => pm.response.to.have.status(200));"
+          ]
+         }
+        }
+       ]
+      },
+      {
+       "name": "C3 Upload invoice PDF bytes",
+       "request": {
+        "method": "PUT",
+        "header": [
+         {
+          "key": "Authorization",
+          "value": "Bearer {{bearer_ops}}"
+         },
+         {
+          "key": "Content-Type",
+          "value": "application/pdf"
+         }
+        ],
+        "url": "{{baseUrl}}/documents/{{invoice_doc_id}}/content",
+        "body": {
+         "mode": "raw",
+         "raw": "%PDF-1.4\nSAMPLE INVOICE {{$guid}}\n%%EOF",
+         "options": {
+          "raw": {
+           "language": "text"
+          }
+         }
+        }
+       },
+       "response": [],
+       "event": [
+        {
+         "listen": "test",
+         "script": {
+          "type": "text/javascript",
+          "exec": [
+           "pm.test('uploaded (200)', () => pm.response.to.have.status(200));"
+          ]
+         }
+        }
+       ]
+      },
+      {
+       "name": "C4 Finalize invoice doc → stored",
+       "request": {
+        "method": "POST",
+        "header": [
+         {
+          "key": "Authorization",
+          "value": "Bearer {{bearer_ops}}"
+         }
+        ],
+        "url": "{{baseUrl}}/documents/{{invoice_doc_id}}/finalize"
+       },
+       "response": [],
+       "event": [
+        {
+         "listen": "test",
+         "script": {
+          "type": "text/javascript",
+          "exec": [
+           "pm.test('stored', () => pm.expect(pm.response.json().status).to.eql('stored'));"
+          ]
+         }
+        }
+       ]
+      },
+      {
+       "name": "C5 Attach to invoice (Ops, sets idem_cmd) → 2xx",
+       "request": {
+        "method": "POST",
+        "header": [
+         {
+          "key": "Authorization",
+          "value": "Bearer {{bearer_ops}}"
+         },
+         {
+          "key": "X-Command-Id",
+          "value": "{{idem_cmd}}"
+         },
+         {
+          "key": "Content-Type",
+          "value": "application/json"
+         }
+        ],
+        "url": "{{baseUrl}}/listings/{{listing_id}}/invoice-documents",
+        "body": {
+         "mode": "raw",
+         "raw": "{\n  \"document_id\": \"{{invoice_doc_id}}\"\n}",
+         "options": {
+          "raw": {
+           "language": "json"
+          }
+         }
+        }
+       },
+       "response": [],
+       "event": [
+        {
+         "listen": "prerequest",
+         "script": {
+          "type": "text/javascript",
+          "exec": [
+           "pm.collectionVariables.set('idem_cmd', pm.variables.replaceIn('{{$guid}}'));"
+          ]
+         }
+        },
+        {
+         "listen": "test",
+         "script": {
+          "type": "text/javascript",
+          "exec": [
+           "pm.test('attached (2xx)', () => pm.response.to.have.status(200));"
+          ]
+         }
+        }
+       ]
+      },
+      {
+       "name": "C6 Attach — idempotent replay (same X-Command-Id) → 2xx",
+       "request": {
+        "method": "POST",
+        "header": [
+         {
+          "key": "Authorization",
+          "value": "Bearer {{bearer_ops}}"
+         },
+         {
+          "key": "X-Command-Id",
+          "value": "{{idem_cmd}}"
+         },
+         {
+          "key": "Content-Type",
+          "value": "application/json"
+         }
+        ],
+        "url": "{{baseUrl}}/listings/{{listing_id}}/invoice-documents",
+        "body": {
+         "mode": "raw",
+         "raw": "{\n  \"document_id\": \"{{invoice_doc_id}}\"\n}",
+         "options": {
+          "raw": {
+           "language": "json"
+          }
+         }
+        }
+       },
+       "response": [],
+       "event": [
+        {
+         "listen": "test",
+         "script": {
+          "type": "text/javascript",
+          "exec": [
+           "pm.test('replay is a no-op (2xx)', () => pm.response.to.have.status(200));"
+          ]
+         }
+        }
+       ]
+      },
+      {
+       "name": "C7 List invoice documents → one active",
+       "request": {
+        "method": "GET",
+        "header": [
+         {
+          "key": "Authorization",
+          "value": "Bearer {{bearer_ops}}"
+         }
+        ],
+        "url": "{{baseUrl}}/listings/{{listing_id}}/invoice-documents"
+       },
+       "response": [],
+       "event": [
+        {
+         "listen": "test",
+         "script": {
+          "type": "text/javascript",
+          "exec": [
+           "const arr = pm.response.json();",
+           "pm.test('exactly one artifact, active', () => { pm.expect(arr).to.have.lengthOf(1); pm.expect(arr[0].status).to.eql('active'); pm.expect(arr[0].document_id).to.eql(pm.collectionVariables.get('invoice_doc_id')); });"
+          ]
+         }
+        }
+       ]
+      },
+      {
+       "name": "C8 Download before live → 400 (DOC.6 gate)",
+       "request": {
+        "method": "GET",
+        "header": [
+         {
+          "key": "Authorization",
+          "value": "Bearer {{bearer_ops}}"
+         }
+        ],
+        "url": "{{baseUrl}}/listings/{{listing_id}}/invoice-documents/{{invoice_doc_id}}/content",
+        "description": "Downloads open only once the listing reaches the live-set. Run the '2 · Golden Path' to take a listing live, then a GET on its attached doc returns 200 bytes."
+       },
+       "response": [],
+       "event": [
+        {
+         "listen": "test",
+         "script": {
+          "type": "text/javascript",
+          "exec": [
+           "pm.test('400 — not eligible until listing is live', () => pm.response.to.have.status(400));",
+           "pm.test('error_code = validation_failed', () => pm.expect(pm.response.json().error_code).to.eql('validation_failed'));"
+          ]
+         }
+        }
+       ]
+      }
+     ]
     },
     {
-      "name": "2 · Golden Path (run top-to-bottom)",
-      "description": "A whole deal lifecycle. Prereq: run `Dev helpers → seed-info`, then `Login: Ops`, `Login: Treasury`, `Login: Treasury2`. Each request chains the listing id + aggregate-version automatically.",
-      "item": [
-        { "name": "01 Create listing (Ops)", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["const j = pm.response.json();", "pm.collectionVariables.set('listing_id', j.aggregate_id);", "pm.collectionVariables.set('listing_ver', j.aggregate_version);", "pm.test('created', () => pm.response.to.have.status(201));"] } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"supplier_id\": \"{{supplier_id}}\",\n  \"buyer_id\": \"{{buyer_id}}\",\n  \"invoice_number\": \"INV-{{$guid}}\",\n  \"face_value_paise\": 100000000,\n  \"invoice_date\": \"2026-06-01\",\n  \"tenor_days\": 60\n}" }, "url": "{{baseUrl}}/listings" } },
-        { "name": "02 Start ops-checks (Ops)", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('listing_ver', pm.response.json().aggregate_version);"] } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "X-Aggregate-Version", "value": "{{listing_ver}}" } ], "url": "{{baseUrl}}/listings/{{listing_id}}/start-ops-checks" } },
-        { "name": "03 Ops-check: irn_validity", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('listing_ver', pm.response.json().aggregate_version);"] } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "X-Aggregate-Version", "value": "{{listing_ver}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{ \"check_name\": \"irn_validity\" }" }, "url": "{{baseUrl}}/listings/{{listing_id}}/record-ops-check" } },
-        { "name": "04 Ops-check: eway_bill_match", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('listing_ver', pm.response.json().aggregate_version);"] } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "X-Aggregate-Version", "value": "{{listing_ver}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{ \"check_name\": \"eway_bill_match\", \"outcome\": \"passed\" }" }, "url": "{{baseUrl}}/listings/{{listing_id}}/record-ops-check" } },
-        { "name": "05 Ops-check: buyer_supplier_relationship", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('listing_ver', pm.response.json().aggregate_version);"] } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "X-Aggregate-Version", "value": "{{listing_ver}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{ \"check_name\": \"buyer_supplier_relationship\", \"outcome\": \"passed\" }" }, "url": "{{baseUrl}}/listings/{{listing_id}}/record-ops-check" } },
-        { "name": "06 Ops-check: duplicate_check", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('listing_ver', pm.response.json().aggregate_version);"] } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "X-Aggregate-Version", "value": "{{listing_ver}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{ \"check_name\": \"duplicate_check\", \"outcome\": \"passed\" }" }, "url": "{{baseUrl}}/listings/{{listing_id}}/record-ops-check" } },
-        { "name": "07 Ops-check: supplier_exposure_cap", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('listing_ver', pm.response.json().aggregate_version);"] } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "X-Aggregate-Version", "value": "{{listing_ver}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{ \"check_name\": \"supplier_exposure_cap\", \"outcome\": \"passed\" }" }, "url": "{{baseUrl}}/listings/{{listing_id}}/record-ops-check" } },
-        { "name": "08 Ops-check: buyer_limit_headroom", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('listing_ver', pm.response.json().aggregate_version);"] } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "X-Aggregate-Version", "value": "{{listing_ver}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{ \"check_name\": \"buyer_limit_headroom\", \"outcome\": \"passed\" }" }, "url": "{{baseUrl}}/listings/{{listing_id}}/record-ops-check" } },
-        { "name": "09 Ops-check: document_completeness", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('listing_ver', pm.response.json().aggregate_version);"] } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "X-Aggregate-Version", "value": "{{listing_ver}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{ \"check_name\": \"document_completeness\", \"outcome\": \"passed\" }" }, "url": "{{baseUrl}}/listings/{{listing_id}}/record-ops-check" } },
-        { "name": "10 Complete ops-checks (Ops)", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('listing_ver', pm.response.json().aggregate_version);"] } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "X-Aggregate-Version", "value": "{{listing_ver}}" } ], "url": "{{baseUrl}}/listings/{{listing_id}}/complete-ops-checks" } },
-        { "name": "11 Record buyer-ack (Ops)", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('listing_ver', pm.response.json().aggregate_version);"] } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "X-Aggregate-Version", "value": "{{listing_ver}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{ \"outcome\": \"acknowledged\", \"method\": \"email\" }" }, "url": "{{baseUrl}}/listings/{{listing_id}}/record-buyer-ack" } },
-        { "name": "12 Snapshot & ready @1200bps (Ops)", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('listing_ver', pm.response.json().aggregate_version);"] } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "X-Aggregate-Version", "value": "{{listing_ver}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{ \"rate_bps\": 1200 }" }, "url": "{{baseUrl}}/listings/{{listing_id}}/snapshot-and-ready" } },
-        { "name": "13 Approve go-live (Treasury — maker≠checker)", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('listing_ver', pm.response.json().aggregate_version);", "pm.test('live', () => pm.response.to.have.status(200));"] } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_treasury}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "X-Aggregate-Version", "value": "{{listing_ver}}" } ], "url": "{{baseUrl}}/listings/{{listing_id}}/approve-go-live" } },
-        { "name": "14 Get listing (capture va_id + funding_target)", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["const j = pm.response.json();", "pm.collectionVariables.set('va_id', j.va_id);", "pm.collectionVariables.set('funding_target', j.funding_target);", "pm.test('is live', () => pm.expect(j.status).to.eql('live'));"] } } ], "request": { "method": "GET", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" } ], "url": "{{baseUrl}}/listings/{{listing_id}}" } },
-        { "name": "15 Subscribe full funding_target (Ops)", "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"investor_id\": \"{{investor_id}}\",\n  \"amount_paise\": {{funding_target}}\n}" }, "url": "{{baseUrl}}/listings/{{listing_id}}/subscriptions/commit" } },
-        { "name": "16 Inflow webhook (HMAC-signed)", "event": [ { "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["const ts = Date.now();", "const body = JSON.stringify({", "  va_id: pm.collectionVariables.get('va_id'),", "  amount_paise: Number(pm.collectionVariables.get('funding_target')),", "  utr: 'UTR-' + pm.variables.replaceIn('{{$guid}}'),", "  event_id: 'evt-' + pm.variables.replaceIn('{{$guid}}')", "});", "const sig = CryptoJS.HmacSHA256(ts + '.' + body, pm.collectionVariables.get('webhook_secret')).toString();", "pm.collectionVariables.set('wh_ts', String(ts));", "pm.collectionVariables.set('wh_sig', sig);", "pm.collectionVariables.set('wh_body', body);"] } } ], "request": { "method": "POST", "header": [ { "key": "X-Timestamp", "value": "{{wh_ts}}" }, { "key": "X-Signature", "value": "{{wh_sig}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{{wh_body}}" }, "url": "{{baseUrl}}/webhooks/banking/stub-escrow/inflow.received" } },
-        { "name": "17 Assignment: request (Ops)", "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" } ], "url": "{{baseUrl}}/listings/{{listing_id}}/assignment-set/request" } },
-        { "name": "18 Assignment: complete-signing (Ops)", "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{ \"investor_id\": \"{{investor_id}}\" }" }, "url": "{{baseUrl}}/listings/{{listing_id}}/assignment-set/complete-signing" } },
-        { "name": "19 Disbursement: draft (Treasury)", "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_treasury}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" } ], "url": "{{baseUrl}}/listings/{{listing_id}}/disbursement/draft" } },
-        { "name": "20 Disbursement: approve (Treasury2 — maker≠checker)", "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_treasury2}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" } ], "url": "{{baseUrl}}/listings/{{listing_id}}/disbursement/approve" } },
-        { "name": "21 Record maturity / full repayment (Ops)", "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"amount_paise\": 100000000,\n  \"utr\": \"UTR-{{$guid}}\"\n}" }, "url": "{{baseUrl}}/listings/{{listing_id}}/record-maturity" } },
-        { "name": "22 Final state (expect matured_payment_received)", "request": { "method": "GET", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" } ], "url": "{{baseUrl}}/listings/{{listing_id}}" } },
-        { "name": "23 Distribution: draft (Treasury)", "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_treasury}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" } ], "url": "{{baseUrl}}/listings/{{listing_id}}/distribution/draft" } },
-        { "name": "24 Distribution: approve (Treasury2 — maker≠checker)", "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_treasury2}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" } ], "url": "{{baseUrl}}/listings/{{listing_id}}/distribution/approve" } },
-        { "name": "25 Get distribution (expect executed + deal closed/distributed)", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["const j = pm.response.json();", "pm.test('distribution executed', () => pm.expect(j.status).to.eql('executed'));", "pm.test('deal closed', () => pm.expect(j.listing_status).to.eql('closed'));", "pm.test('terminal outcome distributed', () => pm.expect(j.terminal_outcome).to.eql('distributed'));"] } } ], "request": { "method": "GET", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_treasury}}" } ], "url": "{{baseUrl}}/listings/{{listing_id}}/distribution" } },
-        { "name": "26 Investor TDS deductions (capture fy_code)", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["const j = pm.response.json();", "pm.test('has a TDS deduction', () => pm.expect(j.length).to.be.above(0));", "if (j.length) pm.collectionVariables.set('fy_code', j[0].fy_code);"] } } ], "request": { "method": "GET", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" } ], "url": "{{baseUrl}}/investors/{{investor_id}}/tax/deductions" } },
-        { "name": "27 Issue Form 16A (Compliance)", "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_compliance}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" } ], "url": "{{baseUrl}}/investors/{{investor_id}}/tax/form-16a/{{fy_code}}/issue" } },
-        { "name": "28 Download Form 16A (frozen document)", "request": { "method": "GET", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" } ], "url": "{{baseUrl}}/investors/{{investor_id}}/tax/form-16a/{{fy_code}}" } },
-        { "name": "29 Investor tax statements (expect form_16a)", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["const j = pm.response.json();", "pm.test('has a form_16a statement', () => pm.expect(j.some(s => s.kind === 'form_16a')).to.be.true);"] } } ], "request": { "method": "GET", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" } ], "url": "{{baseUrl}}/investors/{{investor_id}}/tax/statements" } }
-      ]
+     "name": "D · Invoice attach — negatives & policy",
+     "description": "Run **folder C first** (these reuse `{{listing_id}}` and its attached artifact). Each proves one rule.",
+     "item": [
+      {
+       "name": "D1 Attach a not-yet-stored doc → 400",
+       "request": {
+        "method": "POST",
+        "header": [
+         {
+          "key": "Authorization",
+          "value": "Bearer {{bearer_ops}}"
+         },
+         {
+          "key": "X-Command-Id",
+          "value": "{{$guid}}"
+         },
+         {
+          "key": "Content-Type",
+          "value": "application/json"
+         }
+        ],
+        "url": "{{baseUrl}}/listings/{{listing_id}}/invoice-documents",
+        "body": {
+         "mode": "raw",
+         "raw": "{\n  \"document_id\": \"{{pending_doc_id}}\"\n}",
+         "options": {
+          "raw": {
+           "language": "json"
+          }
+         }
+        }
+       },
+       "response": [],
+       "event": [
+        {
+         "listen": "prerequest",
+         "script": {
+          "type": "text/javascript",
+          "exec": [
+           "initPendingDoc();"
+          ]
+         }
+        },
+        {
+         "listen": "test",
+         "script": {
+          "type": "text/javascript",
+          "exec": [
+           "pm.test('400 — must be a stored PDF (DOC.5)', () => pm.response.to.have.status(400));",
+           "pm.test('error_code = validation_failed', () => pm.expect(pm.response.json().error_code).to.eql('validation_failed'));"
+          ]
+         }
+        }
+       ]
+      },
+      {
+       "name": "D2 Attach an unknown document → 400",
+       "request": {
+        "method": "POST",
+        "header": [
+         {
+          "key": "Authorization",
+          "value": "Bearer {{bearer_ops}}"
+         },
+         {
+          "key": "X-Command-Id",
+          "value": "{{$guid}}"
+         },
+         {
+          "key": "Content-Type",
+          "value": "application/json"
+         }
+        ],
+        "url": "{{baseUrl}}/listings/{{listing_id}}/invoice-documents",
+        "body": {
+         "mode": "raw",
+         "raw": "{\n  \"document_id\": \"{{$guid}}\"\n}",
+         "options": {
+          "raw": {
+           "language": "json"
+          }
+         }
+        }
+       },
+       "response": [],
+       "event": [
+        {
+         "listen": "test",
+         "script": {
+          "type": "text/javascript",
+          "exec": [
+           "pm.test('400 — document not found', () => pm.response.to.have.status(400));",
+           "pm.test('error_code = validation_failed', () => pm.expect(pm.response.json().error_code).to.eql('validation_failed'));"
+          ]
+         }
+        }
+       ]
+      },
+      {
+       "name": "D3 Attach to an unknown listing → 404",
+       "request": {
+        "method": "POST",
+        "header": [
+         {
+          "key": "Authorization",
+          "value": "Bearer {{bearer_ops}}"
+         },
+         {
+          "key": "X-Command-Id",
+          "value": "{{$guid}}"
+         },
+         {
+          "key": "Content-Type",
+          "value": "application/json"
+         }
+        ],
+        "url": "{{baseUrl}}/listings/{{$guid}}/invoice-documents",
+        "body": {
+         "mode": "raw",
+         "raw": "{\n  \"document_id\": \"{{invoice_doc_id}}\"\n}",
+         "options": {
+          "raw": {
+           "language": "json"
+          }
+         }
+        }
+       },
+       "response": [],
+       "event": [
+        {
+         "listen": "test",
+         "script": {
+          "type": "text/javascript",
+          "exec": [
+           "pm.test('404 — listing not found', () => pm.response.to.have.status(404));",
+           "pm.test('error_code = not_found', () => pm.expect(pm.response.json().error_code).to.eql('not_found'));"
+          ]
+         }
+        }
+       ]
+      },
+      {
+       "name": "D4 Attach with missing document_id → 400",
+       "request": {
+        "method": "POST",
+        "header": [
+         {
+          "key": "Authorization",
+          "value": "Bearer {{bearer_ops}}"
+         },
+         {
+          "key": "X-Command-Id",
+          "value": "{{$guid}}"
+         },
+         {
+          "key": "Content-Type",
+          "value": "application/json"
+         }
+        ],
+        "url": "{{baseUrl}}/listings/{{listing_id}}/invoice-documents",
+        "body": {
+         "mode": "raw",
+         "raw": "{}",
+         "options": {
+          "raw": {
+           "language": "json"
+          }
+         }
+        }
+       },
+       "response": [],
+       "event": [
+        {
+         "listen": "test",
+         "script": {
+          "type": "text/javascript",
+          "exec": [
+           "pm.test('400 — missing required field', () => pm.response.to.have.status(400));",
+           "pm.test('error_code = validation_failed', () => pm.expect(pm.response.json().error_code).to.eql('validation_failed'));"
+          ]
+         }
+        }
+       ]
+      },
+      {
+       "name": "D5 Attach by non-ops (Compliance) → 403",
+       "request": {
+        "method": "POST",
+        "header": [
+         {
+          "key": "Authorization",
+          "value": "Bearer {{bearer_compliance}}"
+         },
+         {
+          "key": "X-Command-Id",
+          "value": "{{$guid}}"
+         },
+         {
+          "key": "Content-Type",
+          "value": "application/json"
+         }
+        ],
+        "url": "{{baseUrl}}/listings/{{listing_id}}/invoice-documents",
+        "body": {
+         "mode": "raw",
+         "raw": "{\n  \"document_id\": \"{{invoice_doc_id}}\"\n}",
+         "options": {
+          "raw": {
+           "language": "json"
+          }
+         }
+        },
+        "description": "Run '1 · Login → Login: Compliance' first so bearer_compliance is set."
+       },
+       "response": [],
+       "event": [
+        {
+         "listen": "test",
+         "script": {
+          "type": "text/javascript",
+          "exec": [
+           "pm.test('403 role_not_held (SoD, control #3)', () => pm.response.to.have.status(403));",
+           "pm.test('error_code = role_not_held', () => pm.expect(pm.response.json().error_code).to.eql('role_not_held'));"
+          ]
+         }
+        }
+       ]
+      },
+      {
+       "name": "D6 Second active attach → 400 already active (DOC.1)",
+       "request": {
+        "method": "POST",
+        "header": [
+         {
+          "key": "Authorization",
+          "value": "Bearer {{bearer_ops}}"
+         },
+         {
+          "key": "X-Command-Id",
+          "value": "{{$guid}}"
+         },
+         {
+          "key": "Content-Type",
+          "value": "application/json"
+         }
+        ],
+        "url": "{{baseUrl}}/listings/{{listing_id}}/invoice-documents",
+        "body": {
+         "mode": "raw",
+         "raw": "{\n  \"document_id\": \"{{fresh_doc_id}}\"\n}",
+         "options": {
+          "raw": {
+           "language": "json"
+          }
+         }
+        }
+       },
+       "response": [],
+       "event": [
+        {
+         "listen": "prerequest",
+         "script": {
+          "type": "text/javascript",
+          "exec": [
+           "uploadStoredPdf('fresh_doc_id');"
+          ]
+         }
+        },
+        {
+         "listen": "test",
+         "script": {
+          "type": "text/javascript",
+          "exec": [
+           "pm.test('400 — one active artifact per invoice', () => pm.response.to.have.status(400));",
+           "pm.test('error_code = validation_failed', () => pm.expect(pm.response.json().error_code).to.eql('validation_failed'));"
+          ]
+         }
+        }
+       ]
+      }
+     ]
     },
     {
-      "name": "3 · Credit (M6)",
-      "item": [
-        { "name": "Set pricing band (Credit)", "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_credit}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"buyer_id\": \"{{buyer_id}}\",\n  \"tenor_bucket\": \"31_60d\",\n  \"rate_range_min_bps\": 1000,\n  \"rate_range_max_bps\": 1500,\n  \"fee_bps\": 200\n}" }, "url": "{{baseUrl}}/credit/pricing-bands" } },
-        { "name": "Set buyer credit profile (Credit)", "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_credit}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"sector\": \"manufacturing\",\n  \"rating_source\": \"internal\",\n  \"rating\": \"BBB\",\n  \"credit_limit_paise\": 5000000000,\n  \"tenor_cap_days\": 90\n}" }, "url": "{{baseUrl}}/credit/buyers/{{buyer_id}}/profile" } },
-        { "name": "Set buyer profile > ₹10 Cr → 422 four_eyes_required", "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_credit}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"sector\": \"manufacturing\",\n  \"rating_source\": \"internal\",\n  \"rating\": \"AAA\",\n  \"credit_limit_paise\": 10000000001,\n  \"tenor_cap_days\": 90\n}" }, "url": "{{baseUrl}}/credit/buyers/{{buyer_id}}/profile" } },
-        { "name": "Set supplier credit profile (Credit)", "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_credit}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"risk_rating\": \"BBB\",\n  \"exposure_cap_paise\": 3000000000\n}" }, "url": "{{baseUrl}}/credit/suppliers/{{supplier_id}}/profile" } }
-      ]
+     "name": "E · Replace / supersede (DOC.7)",
+     "description": "Run **folder C first**. Upload a replacement PDF, then supersede the active artifact — the old one goes `superseded`, the new one becomes `active` (never a hard delete).",
+     "item": [
+      {
+       "name": "E1 Initiate replacement doc → invoice_doc_id_2",
+       "request": {
+        "method": "POST",
+        "header": [
+         {
+          "key": "Authorization",
+          "value": "Bearer {{bearer_ops}}"
+         },
+         {
+          "key": "X-Command-Id",
+          "value": "{{$guid}}"
+         },
+         {
+          "key": "Content-Type",
+          "value": "application/json"
+         }
+        ],
+        "url": "{{baseUrl}}/documents",
+        "body": {
+         "mode": "raw",
+         "raw": "{\n  \"kind\": \"invoice\",\n  \"content_type\": \"application/pdf\",\n  \"declared_size\": 32\n}",
+         "options": {
+          "raw": {
+           "language": "json"
+          }
+         }
+        }
+       },
+       "response": [],
+       "event": [
+        {
+         "listen": "test",
+         "script": {
+          "type": "text/javascript",
+          "exec": [
+           "pm.collectionVariables.set('invoice_doc_id_2', pm.response.json().document_id);",
+           "pm.test('200', () => pm.response.to.have.status(200));"
+          ]
+         }
+        }
+       ]
+      },
+      {
+       "name": "E2 Upload replacement bytes",
+       "request": {
+        "method": "PUT",
+        "header": [
+         {
+          "key": "Authorization",
+          "value": "Bearer {{bearer_ops}}"
+         },
+         {
+          "key": "Content-Type",
+          "value": "application/pdf"
+         }
+        ],
+        "url": "{{baseUrl}}/documents/{{invoice_doc_id_2}}/content",
+        "body": {
+         "mode": "raw",
+         "raw": "%PDF-1.4\nSAMPLE INVOICE {{$guid}}\n%%EOF",
+         "options": {
+          "raw": {
+           "language": "text"
+          }
+         }
+        }
+       },
+       "response": [],
+       "event": [
+        {
+         "listen": "test",
+         "script": {
+          "type": "text/javascript",
+          "exec": [
+           "pm.test('uploaded (200)', () => pm.response.to.have.status(200));"
+          ]
+         }
+        }
+       ]
+      },
+      {
+       "name": "E3 Finalize replacement → stored",
+       "request": {
+        "method": "POST",
+        "header": [
+         {
+          "key": "Authorization",
+          "value": "Bearer {{bearer_ops}}"
+         }
+        ],
+        "url": "{{baseUrl}}/documents/{{invoice_doc_id_2}}/finalize"
+       },
+       "response": [],
+       "event": [
+        {
+         "listen": "test",
+         "script": {
+          "type": "text/javascript",
+          "exec": [
+           "pm.test('stored', () => pm.expect(pm.response.json().status).to.eql('stored'));"
+          ]
+         }
+        }
+       ]
+      },
+      {
+       "name": "E4 Replace the active artifact → 2xx",
+       "request": {
+        "method": "PUT",
+        "header": [
+         {
+          "key": "Authorization",
+          "value": "Bearer {{bearer_ops}}"
+         },
+         {
+          "key": "X-Command-Id",
+          "value": "{{$guid}}"
+         },
+         {
+          "key": "Content-Type",
+          "value": "application/json"
+         }
+        ],
+        "url": "{{baseUrl}}/listings/{{listing_id}}/invoice-documents/{{invoice_doc_id}}",
+        "body": {
+         "mode": "raw",
+         "raw": "{\n  \"new_document_id\": \"{{invoice_doc_id_2}}\"\n}",
+         "options": {
+          "raw": {
+           "language": "json"
+          }
+         }
+        }
+       },
+       "response": [],
+       "event": [
+        {
+         "listen": "test",
+         "script": {
+          "type": "text/javascript",
+          "exec": [
+           "pm.test('superseded (2xx)', () => pm.response.to.have.status(200));"
+          ]
+         }
+        }
+       ]
+      },
+      {
+       "name": "E5 List → new active, old superseded",
+       "request": {
+        "method": "GET",
+        "header": [
+         {
+          "key": "Authorization",
+          "value": "Bearer {{bearer_ops}}"
+         }
+        ],
+        "url": "{{baseUrl}}/listings/{{listing_id}}/invoice-documents"
+       },
+       "response": [],
+       "event": [
+        {
+         "listen": "test",
+         "script": {
+          "type": "text/javascript",
+          "exec": [
+           "const byId = {}; pm.response.json().forEach(d => byId[d.document_id] = d.status);",
+           "pm.test('new is active', () => pm.expect(byId[pm.collectionVariables.get('invoice_doc_id_2')]).to.eql('active'));",
+           "pm.test('old is superseded', () => pm.expect(byId[pm.collectionVariables.get('invoice_doc_id')]).to.eql('superseded'));"
+          ]
+         }
+        }
+       ]
+      }
+     ]
     },
     {
-      "name": "5 · Supplier onboarding (M7 · BC8)",
-      "description": "WS-1 supplier lifecycle `created → active`, all admin-on-behalf. Prereq: `Login: Ops`, `Login: Compliance`, `Login: Credit`. Each step chains onb_supplier_id + X-Aggregate-Version automatically. KYC approval is done by Compliance (maker≠checker vs the Ops submitter); credit-review by Credit (SoD).",
-      "item": [
-        { "name": "01 Create supplier (Ops)", "event": [ { "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["const L = () => String.fromCharCode(65 + Math.floor(Math.random()*26));", "const pan = L()+L()+L()+L()+L() + String(1000 + Math.floor(Math.random()*9000)) + L();", "pm.collectionVariables.set('sup_pan', pan);", "pm.collectionVariables.set('sup_gstin', '27' + pan + '1Z5');", "pm.collectionVariables.set('sup_cin', 'U72200KA2020PTC' + String(100000 + Math.floor(Math.random()*900000)));"] } }, { "listen": "test", "script": { "type": "text/javascript", "exec": ["const j = pm.response.json();", "pm.collectionVariables.set('onb_supplier_id', j.aggregate_id);", "pm.collectionVariables.set('onb_supplier_ver', j.aggregate_version);", "pm.test('created', () => pm.response.to.have.status(201));"] } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"legal_name\": \"Supplier {{$guid}}\",\n  \"constitution_type\": \"private_limited\",\n  \"pan\": \"{{sup_pan}}\",\n  \"gstin\": \"{{sup_gstin}}\",\n  \"cin\": \"{{sup_cin}}\"\n}" }, "url": "{{baseUrl}}/suppliers/create" } },
-        { "name": "02 Grant agency consent (Ops)", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('onb_supplier_ver', pm.response.json().aggregate_version);"] } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "X-Aggregate-Version", "value": "{{onb_supplier_ver}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{ \"scope\": [\"listing_intake\", \"disbursement\"] }" }, "url": "{{baseUrl}}/suppliers/{{onb_supplier_id}}/grant-agency-consent" } },
-        { "name": "03 Record identity verified (Ops)", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('onb_supplier_ver', pm.response.json().aggregate_version);"] } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "X-Aggregate-Version", "value": "{{onb_supplier_ver}}" } ], "url": "{{baseUrl}}/suppliers/{{onb_supplier_id}}/record-identity-verified" } },
-        { "name": "04 Submit KYC (Ops)", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('onb_supplier_ver', pm.response.json().aggregate_version);"] } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "X-Aggregate-Version", "value": "{{onb_supplier_ver}}" } ], "url": "{{baseUrl}}/suppliers/{{onb_supplier_id}}/submit-kyc" } },
-        { "name": "05 Record KYC approved (Compliance — maker≠checker)", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('onb_supplier_ver', pm.response.json().aggregate_version);"] } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_compliance}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "X-Aggregate-Version", "value": "{{onb_supplier_ver}}" } ], "url": "{{baseUrl}}/suppliers/{{onb_supplier_id}}/record-kyc-approved" } },
-        { "name": "06 Submit financial profile (Ops)", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('onb_supplier_ver', pm.response.json().aggregate_version);"] } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "X-Aggregate-Version", "value": "{{onb_supplier_ver}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"top_buyers\": [\n    { \"buyer_name\": \"Acme\", \"annual_turnover_paise\": 50000000 }\n  ]\n}" }, "url": "{{baseUrl}}/suppliers/{{onb_supplier_id}}/submit-financial-profile" } },
-        { "name": "07 Record credit review (Credit)", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('onb_supplier_ver', pm.response.json().aggregate_version);"] } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_credit}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "X-Aggregate-Version", "value": "{{onb_supplier_ver}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"exposure_cap_paise\": 500000000,\n  \"risk_rating\": \"BBB\"\n}" }, "url": "{{baseUrl}}/suppliers/{{onb_supplier_id}}/record-credit-review" } },
-        { "name": "08 Record MAA signed (Ops)", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('onb_supplier_ver', pm.response.json().aggregate_version);"] } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "X-Aggregate-Version", "value": "{{onb_supplier_ver}}" } ], "url": "{{baseUrl}}/suppliers/{{onb_supplier_id}}/record-maa-signed" } },
-        { "name": "09 Activate (Ops)", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('onb_supplier_ver', pm.response.json().aggregate_version);", "pm.test('activated', () => pm.response.to.have.status(200));"] } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "X-Aggregate-Version", "value": "{{onb_supplier_ver}}" } ], "url": "{{baseUrl}}/suppliers/{{onb_supplier_id}}/activate" } },
-        { "name": "10 Get supplier (expect active)", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('is active', () => pm.expect(pm.response.json().status).to.eql('active'));"] } } ], "request": { "method": "GET", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" } ], "url": "{{baseUrl}}/suppliers/{{onb_supplier_id}}" } },
-        { "name": "NEG · Credit review by Ops → 403 role_not_held", "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "X-Aggregate-Version", "value": "{{onb_supplier_ver}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"exposure_cap_paise\": 500000000,\n  \"risk_rating\": \"BBB\"\n}" }, "url": "{{baseUrl}}/suppliers/{{onb_supplier_id}}/record-credit-review" } }
-      ]
-    },
-    {
-      "name": "6 · Buyer management (M8 · BC9)",
-      "description": "WS-2 buyer lifecycle `nominated → active`, all admin-on-behalf, plus its OTP-only acknowledgment user. Prereq: `Login: Ops`, `Login: Credit`. Nominate is a Credit action; credit-assessment is Credit (SoD); the rest are Ops. Each step chains onb_buyer_id + X-Aggregate-Version automatically.",
-      "item": [
-        { "name": "01 Nominate buyer (Credit)", "event": [ { "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["const L = () => String.fromCharCode(65 + Math.floor(Math.random()*26));", "const pan = L()+L()+L()+L()+L() + String(1000 + Math.floor(Math.random()*9000)) + L();", "pm.collectionVariables.set('buyer_gstin', '27' + pan + '1Z5');", "pm.collectionVariables.set('buyer_cin', 'U72200KA2020PTC' + String(100000 + Math.floor(Math.random()*900000)));"] } }, { "listen": "test", "script": { "type": "text/javascript", "exec": ["const j = pm.response.json();", "pm.collectionVariables.set('onb_buyer_id', j.aggregate_id);", "pm.collectionVariables.set('onb_buyer_ver', j.aggregate_version);", "pm.test('created', () => pm.response.to.have.status(201));"] } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_credit}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"legal_name\": \"Buyer {{$guid}}\",\n  \"mca_cin\": \"{{buyer_cin}}\",\n  \"gstin\": \"{{buyer_gstin}}\",\n  \"sector\": \"manufacturing\"\n}" }, "url": "{{baseUrl}}/buyers/nominate" } },
-        { "name": "02 Record identity verified (Ops)", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('onb_buyer_ver', pm.response.json().aggregate_version);"] } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "X-Aggregate-Version", "value": "{{onb_buyer_ver}}" } ], "url": "{{baseUrl}}/buyers/{{onb_buyer_id}}/record-identity-verified" } },
-        { "name": "03 Record credit assessment (Credit)", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('onb_buyer_ver', pm.response.json().aggregate_version);"] } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_credit}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "X-Aggregate-Version", "value": "{{onb_buyer_ver}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{ \"credit_limit_paise\": 500000000 }" }, "url": "{{baseUrl}}/buyers/{{onb_buyer_id}}/record-credit-assessment" } },
-        { "name": "04 Start engagement (Ops)", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('onb_buyer_ver', pm.response.json().aggregate_version);"] } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "X-Aggregate-Version", "value": "{{onb_buyer_ver}}" } ], "url": "{{baseUrl}}/buyers/{{onb_buyer_id}}/start-engagement" } },
-        { "name": "05 Designate ack user (Ops)", "event": [ { "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('ack_email', 'ack-' + pm.variables.replaceIn('{{$guid}}') + '@buyer.test');", "pm.collectionVariables.set('ack_phone', '+9198' + String(10000000 + Math.floor(Math.random()*89999999)));"] } }, { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('onb_buyer_ver', pm.response.json().aggregate_version);"] } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "X-Aggregate-Version", "value": "{{onb_buyer_ver}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{ack_email}}\",\n  \"phone\": \"{{ack_phone}}\",\n  \"display_name\": \"Ack User\"\n}" }, "url": "{{baseUrl}}/buyers/{{onb_buyer_id}}/designate-ack-user" } },
-        { "name": "06 Confirm payment instruction (Ops)", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('onb_buyer_ver', pm.response.json().aggregate_version);"] } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "X-Aggregate-Version", "value": "{{onb_buyer_ver}}" } ], "url": "{{baseUrl}}/buyers/{{onb_buyer_id}}/confirm-payment-instruction" } },
-        { "name": "07 Activate (Ops)", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.collectionVariables.set('onb_buyer_ver', pm.response.json().aggregate_version);", "pm.test('activated', () => pm.response.to.have.status(200));"] } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "X-Aggregate-Version", "value": "{{onb_buyer_ver}}" } ], "url": "{{baseUrl}}/buyers/{{onb_buyer_id}}/activate" } },
-        { "name": "08 Get buyer (expect active)", "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('is active', () => pm.expect(pm.response.json().status).to.eql('active'));"] } } ], "request": { "method": "GET", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" } ], "url": "{{baseUrl}}/buyers/{{onb_buyer_id}}" } },
-        { "name": "NEG · Credit assessment by Ops → 403 role_not_held", "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" }, { "key": "X-Command-Id", "value": "{{$guid}}" }, { "key": "X-Aggregate-Version", "value": "{{onb_buyer_ver}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{ \"credit_limit_paise\": 500000000 }" }, "url": "{{baseUrl}}/buyers/{{onb_buyer_id}}/record-credit-assessment" } }
-      ]
-    },
-    {
-      "name": "4 · Reads & inspection",
-      "item": [
-        { "name": "Get listing", "request": { "method": "GET", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" } ], "url": "{{baseUrl}}/listings/{{listing_id}}" } },
-        { "name": "Get assignment-set", "request": { "method": "GET", "header": [ { "key": "Authorization", "value": "Bearer {{bearer_ops}}" } ], "url": "{{baseUrl}}/listings/{{listing_id}}/assignment-set" } },
-        { "name": "Health", "request": { "method": "GET", "url": "{{baseUrl}}/actuator/health" } }
-      ]
+     "name": "F · KYC document upload (BC11) — advanced",
+     "description": "Same upload → attach pattern over a KYC file (M20). **Requires a `kyc_file_id`**, which is created by supplier/investor onboarding (`5 · Supplier onboarding` up to *Submit KYC*). There is no read endpoint for the id in dev, so set the `kyc_file_id` collection variable manually (from the DB or app logs) before running F1. Uploads reuse the generic `/documents` flow from folder A.",
+     "item": [
+      {
+       "name": "F1 Attach KYC document (Ops) → 2xx",
+       "request": {
+        "method": "POST",
+        "header": [
+         {
+          "key": "Authorization",
+          "value": "Bearer {{bearer_ops}}"
+         },
+         {
+          "key": "X-Command-Id",
+          "value": "{{$guid}}"
+         },
+         {
+          "key": "Content-Type",
+          "value": "application/json"
+         }
+        ],
+        "url": "{{baseUrl}}/kyc/{{kyc_file_id}}/documents",
+        "body": {
+         "mode": "raw",
+         "raw": "{\n  \"document_id\": \"{{kyc_doc_id}}\",\n  \"doc_kind\": \"pan_card\"\n}",
+         "options": {
+          "raw": {
+           "language": "json"
+          }
+         }
+        }
+       },
+       "response": [],
+       "event": [
+        {
+         "listen": "prerequest",
+         "script": {
+          "type": "text/javascript",
+          "exec": [
+           "uploadStoredPdf('kyc_doc_id');"
+          ]
+         }
+        },
+        {
+         "listen": "test",
+         "script": {
+          "type": "text/javascript",
+          "exec": [
+           "pm.test('attached (2xx)', () => pm.response.to.have.status(200));"
+          ]
+         }
+        }
+       ]
+      },
+      {
+       "name": "F2 List KYC documents",
+       "request": {
+        "method": "GET",
+        "header": [
+         {
+          "key": "Authorization",
+          "value": "Bearer {{bearer_ops}}"
+         }
+        ],
+        "url": "{{baseUrl}}/kyc/{{kyc_file_id}}/documents"
+       },
+       "response": [],
+       "event": [
+        {
+         "listen": "test",
+         "script": {
+          "type": "text/javascript",
+          "exec": [
+           "pm.test('200 + pan_card listed', () => { pm.response.to.have.status(200); pm.expect(pm.response.text()).to.include('pan_card'); });"
+          ]
+         }
+        }
+       ]
+      },
+      {
+       "name": "F3 Coverage (advisory)",
+       "request": {
+        "method": "GET",
+        "header": [
+         {
+          "key": "Authorization",
+          "value": "Bearer {{bearer_ops}}"
+         }
+        ],
+        "url": "{{baseUrl}}/kyc/{{kyc_file_id}}/documents/coverage"
+       },
+       "response": [],
+       "event": [
+        {
+         "listen": "test",
+         "script": {
+          "type": "text/javascript",
+          "exec": [
+           "pm.test('200 coverage map', () => pm.response.to.have.status(200));"
+          ]
+         }
+        }
+       ]
+      },
+      {
+       "name": "F4 Attach by non-ops (Compliance) → 403",
+       "request": {
+        "method": "POST",
+        "header": [
+         {
+          "key": "Authorization",
+          "value": "Bearer {{bearer_compliance}}"
+         },
+         {
+          "key": "X-Command-Id",
+          "value": "{{$guid}}"
+         },
+         {
+          "key": "Content-Type",
+          "value": "application/json"
+         }
+        ],
+        "url": "{{baseUrl}}/kyc/{{kyc_file_id}}/documents",
+        "body": {
+         "mode": "raw",
+         "raw": "{\n  \"document_id\": \"{{kyc_doc_id}}\",\n  \"doc_kind\": \"address_proof\"\n}",
+         "options": {
+          "raw": {
+           "language": "json"
+          }
+         }
+        }
+       },
+       "response": [],
+       "event": [
+        {
+         "listen": "prerequest",
+         "script": {
+          "type": "text/javascript",
+          "exec": [
+           "uploadStoredPdf('kyc_doc_id');"
+          ]
+         }
+        },
+        {
+         "listen": "test",
+         "script": {
+          "type": "text/javascript",
+          "exec": [
+           "pm.test('403 role_not_held', () => pm.response.to.have.status(403));",
+           "pm.test('error_code = role_not_held', () => pm.expect(pm.response.json().error_code).to.eql('role_not_held'));"
+          ]
+         }
+        }
+       ]
+      }
+     ]
     }
-  ],
-  "event": [
-    { "listen": "prerequest", "script": { "type": "text/javascript", "exec": [
-      "// Shared helper for the Login folder: password → fetch dev OTP → stash challenge_id + otp_code.",
-      "globalThis.loginPrep = function () {",
-      "  const base = pm.collectionVariables.get('baseUrl');",
-      "  const email = pm.collectionVariables.get('loginEmail');",
-      "  pm.sendRequest({",
-      "    url: base + '/auth/login/password', method: 'POST',",
-      "    header: { 'Content-Type': 'application/json' },",
-      "    body: { mode: 'raw', raw: JSON.stringify({ email: email, password: pm.collectionVariables.get('password') }) }",
-      "  }, function (err, res) {",
-      "    if (err || res.code !== 200) { console.log('login password failed', err, res && res.code, res && res.text()); return; }",
-      "    pm.collectionVariables.set('challenge_id', res.json().challenge_id);",
-      "    pm.sendRequest(base + '/dev/last-otp?email=' + encodeURIComponent(email), function (e2, r2) {",
-      "      if (e2 || r2.code !== 200) { console.log('otp fetch failed', e2, r2 && r2.code); return; }",
-      "      pm.collectionVariables.set('otp_code', r2.json().code);",
-      "    });",
-      "  });",
-      "};"
-    ] } }
-  ]
+   ]
+  }
+ ],
+ "event": [
+  {
+   "listen": "prerequest",
+   "script": {
+    "type": "text/javascript",
+    "exec": [
+     "// Shared helper for the Login folder: password → fetch dev OTP → stash challenge_id + otp_code.",
+     "globalThis.loginPrep = function () {",
+     "  const base = pm.collectionVariables.get('baseUrl');",
+     "  const email = pm.collectionVariables.get('loginEmail');",
+     "  pm.sendRequest({",
+     "    url: base + '/auth/login/password', method: 'POST',",
+     "    header: { 'Content-Type': 'application/json' },",
+     "    body: { mode: 'raw', raw: JSON.stringify({ email: email, password: pm.collectionVariables.get('password') }) }",
+     "  }, function (err, res) {",
+     "    if (err || res.code !== 200) { console.log('login password failed', err, res && res.code, res && res.text()); return; }",
+     "    pm.collectionVariables.set('challenge_id', res.json().challenge_id);",
+     "    pm.sendRequest(base + '/dev/last-otp?email=' + encodeURIComponent(email), function (e2, r2) {",
+     "      if (e2 || r2.code !== 200) { console.log('otp fetch failed', e2, r2 && r2.code); return; }",
+     "      pm.collectionVariables.set('otp_code', r2.json().code);",
+     "    });",
+     "  });",
+     "};",
+     "",
+     "// Helper: initiate a doc but never upload/finalize it -> stays pending_upload.",
+     "globalThis.initPendingDoc = function () {",
+     "  const base = pm.collectionVariables.get('baseUrl');",
+     "  const bearer = pm.collectionVariables.get('bearer_ops');",
+     "  pm.sendRequest({ url: base + '/documents', method: 'POST',",
+     "    header: { 'Content-Type':'application/json', 'Authorization':'Bearer '+bearer, 'X-Command-Id': pm.variables.replaceIn('{{$guid}}') },",
+     "    body: { mode:'raw', raw: JSON.stringify({ kind:'invoice', content_type:'application/pdf', declared_size:512 }) }",
+     "  }, function (err, res) {",
+     "    if (err || res.code >= 300) { console.log('initPendingDoc failed', err, res && res.code, res && res.text()); return; }",
+     "    pm.collectionVariables.set('pending_doc_id', res.json().document_id);",
+     "  });",
+     "};",
+     "",
+     "// Helper: full initiate -> upload -> finalize; stores the stored document_id into varName.",
+     "globalThis.uploadStoredPdf = function (varName) {",
+     "  const base = pm.collectionVariables.get('baseUrl');",
+     "  const bearer = pm.collectionVariables.get('bearer_ops');",
+     "  const auth = function (extra) { return Object.assign({ 'Authorization':'Bearer '+bearer }, extra || {}); };",
+     "  pm.sendRequest({ url: base + '/documents', method: 'POST',",
+     "    header: auth({ 'Content-Type':'application/json', 'X-Command-Id': pm.variables.replaceIn('{{$guid}}') }),",
+     "    body: { mode:'raw', raw: JSON.stringify({ kind:'invoice', content_type:'application/pdf', declared_size:64 }) }",
+     "  }, function (e1, r1) {",
+     "    if (e1 || r1.code >= 300) { console.log('uploadStoredPdf#init failed', e1, r1 && r1.text()); return; }",
+     "    const id = r1.json().document_id;",
+     "    pm.sendRequest({ url: base + '/documents/' + id + '/content', method: 'PUT',",
+     "      header: auth({ 'Content-Type':'application/pdf' }), body: { mode:'raw', raw: '%PDF-1.4\\nfresh ' + id }",
+     "    }, function (e2, r2) {",
+     "      if (e2 || r2.code >= 300) { console.log('uploadStoredPdf#content failed', e2, r2 && r2.text()); return; }",
+     "      pm.sendRequest({ url: base + '/documents/' + id + '/finalize', method: 'POST', header: auth() },",
+     "        function (e3, r3) {",
+     "          if (e3 || r3.code >= 300) { console.log('uploadStoredPdf#finalize failed', e3, r3 && r3.text()); return; }",
+     "          pm.collectionVariables.set(varName, id);",
+     "        });",
+     "    });",
+     "  });",
+     "};"
+    ]
+   }
+  }
+ ]
 }
