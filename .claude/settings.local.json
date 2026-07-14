@@ -200,7 +200,8 @@
       "Bash(echo \"npx: $\\(command -v npx || echo none\\)\")",
       "Bash(curl -s -o /dev/null -w '%{http_code}' --max-time 2 http://localhost:8080/api/v1/dev/seed-info)",
       "Bash(echo \"app health: $\\(curl -s -o /dev/null -w '%{http_code}' --max-time 2 http://localhost:8080/api/v1/dev/seed-info 2>/dev/null || echo down\\)\")",
-      "Bash(PGPASSWORD='avc@2026' psql -h localhost -U platform -d platform -c \"select 1 as ok;\")"
+      "Bash(PGPASSWORD='avc@2026' psql -h localhost -U platform -d platform -c \"select 1 as ok;\")",
+      "Bash(bc)"
     ]
   }
 }

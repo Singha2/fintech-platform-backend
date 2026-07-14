@@ -1,9 +1,9 @@
 # API Catalogue — working endpoints & what they do
 
-> **Status: all endpoints below are fully working** — implemented, covered by the 359-test suite, and the
+> **Status: all endpoints below are fully working** — implemented, covered by the 378-test suite, and the
 > money-flow spine runs end-to-end as an automated smoke test (now all the way to **`distributed / closed`**,
-> incl. TDS + Form 16A). Generated from the controllers on 2026-07-12; **documents (BC16), invoice artifacts
-> (BC1), buyer KYB + investor/supplier KYC docs (BC9/BC11)** added this pass.
+> incl. TDS + Form 16A). Generated from the controllers on 2026-07-12 (reviewed 2026-07-14); **documents (BC16),
+> invoice artifacts (BC1), buyer KYB + investor/supplier KYC docs (BC9/BC11)** added this pass.
 > Postman: `postman/fintech-platform.postman_collection.json`. Endpoint map + golden path: `MANUAL_TESTING.md`.
 >
 > 🧪 **New here? Follow [`API_TEST_PLAN.md`](API_TEST_PLAN.md)** — a step-by-step manual test plan (setup →
@@ -210,7 +210,9 @@ Closes the money lifecycle: pay investors their principal + return, withhold TDS
   non-negotiables live on the *consumer's* attach command (invoice attach, buyer KYB). No encryption at rest
   yet, and GCS blob storage is deferred — both gated on the Production milestone (DL-BE-072/074).
 - **Buyer KYB (BC9):** `kyb-verification` is a single manual Ops attestation on top of the *automated*
-  `identity_verified` (GSTIN+CIN) — the two are independent and neither gates the buyer lifecycle. Investor/
-  supplier **KYC** documents (typed, checklist-driven) are not built yet — pending the compliance checklist (M20 §9b).
+  `identity_verified` (GSTIN+CIN) — the two are independent and neither gates the buyer lifecycle. This is a
+  *bare* document reference (one optional `document_id`), distinct from the typed investor/supplier **KYC
+  documents** (BC11, `/kyc/...` above), which are capture-only and advisory. Restricted/investor-403 download
+  of KYC docs (OD.5) is deferred with the investor portal.
 - **Not yet built:** post-`active` counterparty management (suspend/blacklist/off-board), field amendments, and
   self-service (non-admin) actions. See `USE_CASES_COUNTERPARTY_ONBOARDING.md` §4 and `ROADMAP.md`.
