@@ -95,7 +95,7 @@ Each item: **Unblocks · Design-fit · Route/Auth · Params · Response (PROPOSA
 - **Response (PROPOSAL):**
   ```json
   { "identity_id":"uuid", "kind":"admin_user|investor|acknowledgment_user|auditor",
-    "email":"…", "roles":["ops_executive", …], "admin_user_id":"uuid|null",
+    "email":"ops@dev.local", "roles":["ops_executive"], "admin_user_id":"uuid|null",
     "mfa_fresh": true, "idle_expires_at":"ISO", "absolute_expires_at":"ISO" }
   ```
   `roles` empty for non-admin kinds. `admin_user_id` null unless kind=admin_user. `mfa_fresh` = `SessionService
