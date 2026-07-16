@@ -13,7 +13,7 @@
 > **Source of truth.** The backend owns the final shapes. Every response below is a **PROPOSAL**; source the
 > exact columns from the underlying write table + the matching existing by-id read, and the UI will adhere to
 > whatever ships. UI-side counterparts: `../fintech-patform-mock/docs/API_ALIGNMENT.md` (gap register G1–G13),
-> `INTEGRATION_PLAN.md` (UI steps), `INTEGRATION_WORK_SPLIT.md` (Part A ↔ Part B).
+> `INTEGRATION_PLAN.md` (UI steps), `HARMONIZATION.md` (the integration overview / readiness map / index).
 
 ---
 
@@ -221,7 +221,7 @@ Each item: **Unblocks · Design-fit · Route/Auth · Params · Response (PROPOSA
 - **Migrations:** **none** for BE-1…BE-13 (pure reads over existing write tables — the established pattern).
   BE-15's ack-user login is auth surface (WS-2), not a read migration. Any item that appears to need DDL is
   out of scope for this spec — raise it separately (e.g. pricing-band supersession DL-BE-060).
-- **Tests:** the existing suite (**359 green**) must stay green untouched — no write-side code changes here.
+- **Tests:** the existing suite (**413 green**, incl. BE-1/BE-2/BE-4…BE-12) must stay green untouched — no write-side code changes here.
   Add integration tests for each new read in the existing style (real-Postgres, dev-seed-driven, assert the
   proposed keys). A read endpoint must not alter or depend on the frozen command/by-id contract.
 - **Contract-freeze note (ROADMAP Phase A):** these additive reads extend the frozen contract; they do not

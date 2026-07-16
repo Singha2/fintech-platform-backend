@@ -10,7 +10,9 @@ import com.arthvritt.platform.infrastructure.web.RequestBodies;
 import com.arthvritt.platform.shared.error.ValidationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -18,6 +20,8 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -33,10 +37,38 @@ public class CreditController {
 
     private final CreditService credit;
     private final CommandResponseAssembler responses;
+    private final JdbcTemplate jdbc;
 
-    public CreditController(CreditService credit, CommandResponseAssembler responses) {
+    public CreditController(CreditService credit, CommandResponseAssembler responses, JdbcTemplate jdbc) {
         this.credit = credit;
         this.responses = responses;
+        this.jdbc = jdbc;
+    }
+
+    /**
+     * BE-5 (UI_INTEGRATION_BACKEND_SPEC) — a buyer's pricing bands (S4). Additive read over
+     * {@code risk_pricing_policy}; {@code status} is derived from {@code superseded_by} (re-pricing/supersession
+     * itself stays deferred, DL-BE-060 — so bands read {@code active} today). Empty list for an unknown buyer.
+     */
+    @GetMapping("/buyers/{id}/pricing-bands")
+    public List<Map<String, Object>> pricingBands(@AuthenticationPrincipal AuthSession session,
+                                                  @PathVariable UUID id) {
+        return jdbc.query(
+                "SELECT pricing_band_id, tenor_bucket::text AS tenor_bucket, rate_range_min_bps, "
+                        + "rate_range_max_bps, fee_bps, effective_from, superseded_by "
+                        + "FROM risk_pricing_policy WHERE buyer_id = ? ORDER BY effective_from DESC, tenor_bucket",
+                (rs, n) -> {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("pricing_band_id", rs.getObject("pricing_band_id", UUID.class).toString());
+                    row.put("tenor_bucket", rs.getString("tenor_bucket"));
+                    row.put("rate_range_min_bps", rs.getInt("rate_range_min_bps"));
+                    row.put("rate_range_max_bps", rs.getInt("rate_range_max_bps"));
+                    row.put("fee_bps", rs.getInt("fee_bps"));
+                    row.put("effective_from", rs.getObject("effective_from", java.time.LocalDate.class));
+                    row.put("status", rs.getObject("superseded_by") == null ? "active" : "superseded");
+                    return row;
+                },
+                id);
     }
 
     @PostMapping("/pricing-bands")

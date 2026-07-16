@@ -6,6 +6,7 @@ import com.arthvritt.platform.command.CommandRequest;
 import com.arthvritt.platform.command.CommandResult;
 import com.arthvritt.platform.infrastructure.web.CommandResponse;
 import com.arthvritt.platform.infrastructure.web.CommandResponseAssembler;
+import com.arthvritt.platform.infrastructure.web.ListQuery;
 import com.arthvritt.platform.infrastructure.web.RequestBodies;
 import com.arthvritt.platform.shared.error.NotFoundException;
 import com.arthvritt.platform.shared.error.ValidationException;
@@ -19,8 +20,11 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -183,6 +187,31 @@ public class InvestorController {
             throw new NotFoundException("investor not found: " + id);
         }
         return row;
+    }
+
+    /**
+     * BE-9 (UI_INTEGRATION_BACKEND_SPEC) — the S3 investor-invite tracker. Additive read over {@code inv_invite};
+     * optional {@code status} filter ({@code pending}/{@code consumed}/{@code expired}), newest first,
+     * {@code LIMIT 500}. The {@code email_hash}/{@code phone_hash} columns are PII and are <b>not</b> surfaced —
+     * an invite is identified by its id and lifecycle timestamps only.
+     */
+    @GetMapping("/investor-invites")
+    public List<Map<String, Object>> invites(@AuthenticationPrincipal AuthSession session,
+                                             @RequestParam(name = "status", required = false) String status) {
+        return ListQuery.from(
+                        "SELECT invite_id, status::text AS status, issued_by, issued_at, expiry_at, consumed_at "
+                                + "FROM inv_invite")
+                .eq("status", "inv_invite_status", status)
+                .query(jdbc, "ORDER BY issued_at DESC", (rs, n) -> {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("invite_id", rs.getObject("invite_id", UUID.class).toString());
+                    row.put("status", rs.getString("status"));
+                    row.put("issued_by", rs.getObject("issued_by", UUID.class).toString());
+                    row.put("issued_at", rs.getObject("issued_at", java.time.OffsetDateTime.class));
+                    row.put("expiry_at", rs.getObject("expiry_at", java.time.OffsetDateTime.class));
+                    row.put("consumed_at", rs.getObject("consumed_at", java.time.OffsetDateTime.class));
+                    return row;
+                });
     }
 
     private ResponseEntity<CommandResponse> created(CommandResult<UUID> result) {

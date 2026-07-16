@@ -6,6 +6,7 @@ import com.arthvritt.platform.command.CommandRequest;
 import com.arthvritt.platform.command.CommandResult;
 import com.arthvritt.platform.infrastructure.web.CommandResponse;
 import com.arthvritt.platform.infrastructure.web.CommandResponseAssembler;
+import com.arthvritt.platform.infrastructure.web.ListQuery;
 import com.arthvritt.platform.infrastructure.web.RequestBodies;
 import com.arthvritt.platform.shared.error.NotFoundException;
 import org.springframework.http.HttpStatus;
@@ -18,8 +19,11 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -165,6 +169,68 @@ public class SupplierController {
             throw new NotFoundException("supplier not found: " + id);
         }
         return row;
+    }
+
+    /**
+     * BE-4 (UI_INTEGRATION_BACKEND_SPEC) — the S3 supplier list. Additive read over {@code sup_account} with
+     * optional {@code status} / {@code q} (legal-name) filters; capped at {@code LIMIT 500} (pilot scale, no
+     * pagination yet). Authenticated-only, like the by-id get. Newest display columns beyond the by-id get.
+     */
+    @GetMapping
+    public List<Map<String, Object>> list(@AuthenticationPrincipal AuthSession session,
+                                          @RequestParam(name = "status", required = false) String status,
+                                          @RequestParam(name = "q", required = false) String q) {
+        return ListQuery.from(
+                        "SELECT supplier_id, legal_name, constitution_type::text AS constitution_type, "
+                                + "pan::text AS pan, gstin::text AS gstin, status::text AS status, activated_at "
+                                + "FROM sup_account")
+                .eq("status", "sup_account_status", status)
+                .ilike("legal_name", q)
+                .query(jdbc, "ORDER BY legal_name", (rs, n) -> {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("supplier_id", rs.getObject("supplier_id", UUID.class).toString());
+                    row.put("legal_name", rs.getString("legal_name"));
+                    row.put("constitution_type", rs.getString("constitution_type"));
+                    row.put("pan", rs.getString("pan"));
+                    row.put("gstin", rs.getString("gstin"));
+                    row.put("status", rs.getString("status"));
+                    row.put("activated_at", rs.getObject("activated_at", java.time.OffsetDateTime.class));
+                    return row;
+                });
+    }
+
+    /**
+     * BE-11 (UI_INTEGRATION_BACKEND_SPEC) — the S14 supplier tracker (<b>admin</b> view; suppliers have no
+     * login, V3 schema). Per-supplier invoice/listing rows with <b>funding progress</b>
+     * ({@code committed_total} vs {@code funding_target}) and the timeline — richer than the flat catalogue
+     * list, which for a single supplier is just BE-6 {@code GET /listings?supplier_id=}. Reads {@code deal_listing}
+     * + {@code deal_invoice} (raw-SQL read-model, no Java-level cross-BC coupling); shares {@link ListQuery}'s
+     * {@code WHERE}/{@code LIMIT} mechanics but keeps its own {@code SELECT} (BC isolation). Empty list for an
+     * unknown supplier.
+     */
+    @GetMapping("/{id}/listings")
+    public List<Map<String, Object>> listings(@AuthenticationPrincipal AuthSession session, @PathVariable UUID id) {
+        return ListQuery.from(
+                        "SELECT l.listing_id, i.invoice_number, i.face_value AS face_value_paise, i.tenor_days, "
+                                + "i.invoice_date, i.due_date, l.status::text AS status, l.funding_target, "
+                                + "l.committed_total, (l.pricing_snapshot ->> 'rate_bps')::int AS rate_bps, "
+                                + "l.created_at FROM deal_listing l JOIN deal_invoice i ON i.invoice_id = l.invoice_id")
+                .eq("l.supplier_id", id)
+                .query(jdbc, "ORDER BY l.created_at DESC", (rs, n) -> {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("listing_id", rs.getObject("listing_id", UUID.class).toString());
+                    row.put("invoice_number", rs.getString("invoice_number"));
+                    row.put("face_value_paise", rs.getLong("face_value_paise"));
+                    row.put("tenor_days", rs.getInt("tenor_days"));
+                    row.put("invoice_date", rs.getObject("invoice_date", java.time.LocalDate.class));
+                    row.put("due_date", rs.getObject("due_date", java.time.LocalDate.class));
+                    row.put("status", rs.getString("status"));
+                    row.put("funding_target", rs.getObject("funding_target", Long.class));
+                    row.put("committed_total", rs.getLong("committed_total"));
+                    row.put("rate_bps", rs.getObject("rate_bps", Integer.class));
+                    row.put("created_at", rs.getObject("created_at", java.time.OffsetDateTime.class));
+                    return row;
+                });
     }
 
     // --- helpers -----------------------------------------------------------------------------------

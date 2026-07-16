@@ -2929,3 +2929,215 @@ coordinate it. (b) When real k8s/ingress lands, confirm the management port (808
 posture (probes reach it; it is not behind the session bearer). (c) If a gateway is later introduced, do **not**
 double-prefix — either the gateway strips `/api/v1` before forwarding, or the app context path is removed in favour
 of the gateway owning it.
+
+## DL-BE-079 — UI-integration P0 reads: `GET /auth/session` (BE-1) + KYC-file resolvers (BE-2), green
+
+**Status.** Applied (2026-07-16). First slice of `docs/UI_INTEGRATION_BACKEND_SPEC.md` (P0). The 15-screen mock
+frontend needs a "who am I" read (role-nav + MFA gating) and a way to discover a subject's `kyc_file_id`; both were
+missing. **Purely additive** per the spec guardrails: no command, no `CommandResponse` envelope, no existing by-id
+`GET`, no schema/migration, and no `SecurityConfig` write-path change. Suite **386 green** (+8: `SessionApiTest` 4,
+`KycFileResolverTest` 4).
+
+**Decision.**
+- **BE-1 `GET /auth/session`** (`SessionController`, new) — assembles the request principal (`AuthSession`),
+  `auth_identity.kind`/`email`, roles from `RoleResolver.activeRoles` (the *same* resolver `CommandGateway`
+  authorises with), and `SessionService.isMfaFresh(session, SENSITIVE)`. Returns
+  `{identity_id, kind, email, roles[], admin_user_id, mfa_fresh, idle_expires_at, absolute_expires_at}`.
+- **BE-2 `GET /suppliers|investors/{id}/kyc-file`** (`KycFileController`, new) — native one-row read over
+  `comp_kyc_file` (`UNIQUE (subject_id, subject_type)`); `NotFoundException` (404) until the subject has submitted
+  KYC, so the UI hides the KYC-doc panel until then.
+- **BE-3 (doc-only)** — recorded the MFA-freshness contract in `API_CATALOGUE.md` (every admin-actor command is
+  `SENSITIVE`/5-min; no per-command allowlist; non-admin commands skip the gate) so the UI gates correctly.
+
+**Non-obvious choices (why this shape).**
+- **No `SecurityConfig` edit for BE-1.** `/auth/session` is deliberately *not* under the `permitAll("/auth/login/**")`
+  matcher, so the chain's `anyRequest().authenticated()` already makes it authenticated-only (anonymous → 401). A test
+  pins this so a later `/auth/**` broadening can't silently open it.
+- **`admin_user_id` read directly (nullable), not via `RoleResolver.adminUserId()`** — the latter *throws* for a
+  non-admin identity; the session read must return `null` for investor/auditor/ack-user kinds. Roles come back `[]`
+  for non-admins because `activeRoles`' join requires an active `admin_user` row.
+- **Expiries returned as ISO strings via `Instant.toString()`**, not the raw `Instant` — no `JavaTimeModule` is
+  registered, so serialising a raw `Instant` would emit epoch millis (or fail); `.toString()` is stable ISO-8601.
+- **Dedicated `KycFileController` (mirrors `TaxQueryController`)** rather than adding methods to the two onboarding
+  controllers — keeps the change one new additive file and the KYC-resolution logic in one place, no edit to the
+  frozen onboarding surface. Reads stay authenticated-only (any live bearer), matching the deliberate deferred
+  sensitive-read-gating posture — **not** per-role gated here.
+
+**What to watch for.** (a) `mfa_fresh` for **non-admin** sessions is computed but semantically ignored by the UI
+(only admin commands are MFA-gated); don't build non-admin gating off it. (b) These reads are **ungated** (any live
+bearer) by design — when the deferred *sensitive-read-gating* control lands, `/auth/session` and the kyc-file
+resolvers inherit it; the **ownership-scoped** investor/buyer portal reads remain **BE-14/BE-15** (M10-full/WS-2),
+not these. (c) `KycFileController` maps under `/suppliers` and `/investors` from the compliance package — if a future
+wildcard mapping is added to those controllers, re-confirm no ambiguous-mapping clash (the green boot confirms none today).
+
+## DL-BE-080 — UI-integration P1 reads: `GET /suppliers`, `GET /buyers`, `GET /credit/buyers/{id}/pricing-bands` (BE-4/BE-5), green
+
+**Status.** Applied (2026-07-16). Second slice of `docs/UI_INTEGRATION_BACKEND_SPEC.md` (P1). The S3/S4 console
+screens need supplier/buyer **lists** and a buyer's **pricing bands** — the API had only by-id reads. **Additive**
+(new `@GetMapping`s + one injected `JdbcTemplate`): no command, envelope, existing by-id `GET`, schema/migration, or
+security change. Suite **392 green** (+6: `SupplierListTest` 2, `BuyerReadTest` 4).
+
+**Decision.**
+- **BE-4 `GET /suppliers?status=&q=`** (added to `SupplierController`, where the by-id get already lives) — over
+  `sup_account`; `[{supplier_id, legal_name, constitution_type, pan, gstin, status, activated_at}]`, `LIMIT 500`.
+- **BE-5a `GET /buyers?status=&q=`** (added to `BuyerController`) — over `buyer_account`;
+  `[{buyer_id, legal_name, sector, status, credit_limit_paise, mca_cin, gstin}]`, `LIMIT 500`.
+- **BE-5b `GET /credit/buyers/{id}/pricing-bands`** (added to `CreditController`, `JdbcTemplate` injected) — over
+  `risk_pricing_policy`; `[{pricing_band_id, tenor_bucket, rate_range_min_bps, rate_range_max_bps, fee_bps,
+  effective_from, status}]`; empty list for an unknown buyer (no 404 for a collection).
+
+**Non-obvious choices.**
+- **List reads live in the resource controllers**, not a standalone read controller — consistent with the existing
+  by-id `SupplierController.get`/`BuyerController.get`. `CreditController` had no `JdbcTemplate`; injected it (additive
+  constructor param, Spring-wired, no existing handler touched) rather than spawn a separate credit-read controller.
+- **`risk_pricing_policy` has no `status` column** — the proposal's `status` is **derived** from
+  `superseded_by IS NULL` (`active` | `superseded`). Re-pricing/supersession itself stays deferred (DL-BE-060), so
+  every band reads `active` today; the derivation is forward-compatible for when supersession lands.
+- **`LIMIT 500`, no pagination** — the spec's documented pilot-scale cap (§0.8). `status`/`q` are optional
+  `@RequestParam`s; `q` is a `legal_name ILIKE '%…%'`. Reads stay authenticated-only (any live bearer), matching the
+  deferred sensitive-read-gating posture — **not** per-role gated.
+- **Nullable columns returned via `rs.getObject(..., Type.class)`** (`credit_limit_paise` Long, `activated_at`
+  OffsetDateTime, `effective_from` LocalDate) so a pre-active counterparty yields JSON `null`, not `0`/an error;
+  enum/domain columns cast `::text` (`status`, `constitution_type`, `pan`, `gstin`, `tenor_bucket`).
+
+**What to watch for.** (a) An **invalid** `?status=` value casts to the enum and would surface as a DB error (500)
+rather than a clean 400 — acceptable for now (matches the native read pattern; the UI sends only valid statuses), but
+tighten to a 400 if a screen ever takes free-text status. (b) `LIMIT 500` is silent — when a list can exceed it, add
+real pagination (spec §0.8 leaves this to the owner). (c) The remaining P1 reads (BE-6…BE-12: listings+ops-checks,
+disbursement/distribution queues, invites, tracker, dashboard) follow this same additive pattern; BE-13 audit is M17,
+BE-14/BE-15 portals stay deferred (M10-full/WS-2).
+
+## DL-BE-081 — UI-integration P1 reads: listings + ops-checks (BE-6), disbursement queue + detail (BE-7), and a shared `ListQuery` helper, green
+
+**Status.** Applied (2026-07-16). Third P1 slice of `docs/UI_INTEGRATION_BACKEND_SPEC.md` (S5/S6). **Additive**
+reads only — no command, envelope, existing by-id `GET`, schema/migration, or security change. Suite **400 green**
+(+8: `ListingReadTest` 5, `DisbursementReadTest` 3). Also **de-duplicated** the list-read boilerplate.
+
+**Decision.**
+- **BE-6 `GET /listings?status=&supplier_id=&buyer_id=`** (`ListingController`) — JOIN `deal_listing` +
+  `deal_invoice` (invoice display fields live on the invoice); `rate_bps` read from the frozen `pricing_snapshot`
+  JSONB (`->> 'rate_bps'`, null pre-snapshot).
+- **BE-6 `GET /listings/{id}/ops-checks`** — expands `deal_invoice.check_outcomes` JSONB via
+  `LATERAL jsonb_each` into `[{check_name, outcome, verification_id, checked_at}]` (the exact map
+  `record-ops-check` writes); 404 for an unknown listing, empty list when none recorded.
+- **BE-7 `GET /disbursements?status=`** (`DisbursementController`) — the S6 queue over `cash_payout_instruction`
+  (kind `disbursement`) JOINed to its listing; the maker's "awaiting-draft" queue is just BE-6
+  `GET /listings?status=fully_funded` (no duplicate endpoint).
+- **BE-7 `GET /listings/{id}/disbursement/detail`** — a **new** richer read *alongside* the frozen
+  `GET /listings/{id}/disbursement` (which is untouched).
+
+**Reuse (the load-bearing maintainability decision).** BE-4/BE-5 had each hand-rolled the same "build an
+optional-filter `WHERE` + `LIMIT` + map rows" block. Rather than let BE-6/BE-7 make it a fourth and fifth copy,
+extracted **`infrastructure.web.ListQuery`** — a tiny fluent builder (`from(select).eq(col,cast,val).eq(col,uuid)
+.ilike(col,q).query(jdbc, orderBy, mapper)`) that owns the `WHERE` assembly, the `LIMIT 500` cap, and
+parameter-binding (all filter values are `?`-bound — no interpolation). **Refactored BE-4 and BE-5 onto it** (their
+tests stayed green, proving behaviour-preserving), and BE-6's listings list + BE-7's queue use it too — the queue
+even models its fixed `kind='disbursement'` as a constant `.eq(...)` so the optional `status` filter composes with
+no special-casing. Per-entity `SELECT` + `RowMapper` stay in the controllers (genuinely entity-specific); only the
+boilerplate is shared.
+
+**Non-obvious choices.**
+- **`utr` is not surfaced in BE-7 detail.** It is **not a column** — `DisbursementService` writes it only into the
+  payout's **audit envelope payload**. Reading it here would couple a settlement read to audit-payload internals
+  (fragile). Decision: return the real instruction columns; surface `utr` via the audit read (BE-13), or promote it
+  to a `cash_payout_instruction` column via a future migration if a screen needs it inline. `funding_completed_at`
+  (no clean source) is likewise omitted.
+- **`face_value` aliased to `face_value_paise`** in BE-6 (the invoice column is `face_value`; the UI/paise
+  convention wants the `_paise` suffix). `rate_bps` / `funding_target` are nullable (`getObject`) → JSON `null`
+  pre-snapshot, not `0`.
+- **ops-checks entry keys** are `{outcome, verification_id, checked_at}` — the spec's proposed `checked_by` is
+  **not stored**, so it is not invented; the read returns exactly what `record-ops-check` persists.
+
+**What to watch for.** (a) Invalid `?status=` still casts to the enum → 500 not 400 (as BE-4/BE-5; UI sends valid
+values). (b) `ListQuery` is the single place to add pagination when a list outgrows `LIMIT 500` — do it there, once.
+(c) If `utr`-on-disbursement becomes a real screen need, prefer a migration promoting it to a column over an
+audit-payload subquery. (d) Remaining P1: BE-8 (distribution investors + reconciliation), BE-9 (invites),
+BE-10 (listing detail), BE-11 (supplier tracker), BE-12 (dashboard/stats).
+
+## DL-BE-082 — UI-integration P1 reads: distribution investors + reconciliation (BE-8), invite tracker (BE-9), green
+
+**Status.** Applied (2026-07-16). Fourth P1 slice of `docs/UI_INTEGRATION_BACKEND_SPEC.md` (S3/S7/S8). **Additive**
+reads only — no command, envelope, existing by-id `GET`, schema/migration, or security change. Suite **406 green**
+(+6: `DistributionInvestorsTest` 2, `ReconciliationReadTest` 2, `InvestorInviteListTest` 2). All three reads reuse
+the shared `ListQuery` helper (DL-BE-081) — no new list-read boilerplate.
+
+**Decision.**
+- **BE-8 `GET /listings/{id}/distribution/investors`** (`DistributionController`) — the S8 per-investor split over
+  `tax_tds_deduction`, the **same table** `TaxQueryController` already reads FY-wide (no new table, no parallel
+  read path): `[{investor_id, gross_paise, tds_amount_paise, fee_paise, net_paise, challan_ref}]`, ordered by
+  investor. Empty list (not 404) for a listing with no distribution — it is a collection read.
+- **BE-8 `GET /reconciliation?status=`** (new `ReconciliationController`, settlement) — the S7 dashboard over
+  `cash_recon_ledger`.
+- **BE-9 `GET /investor-invites?status=`** (`InvestorController`) — the S3 tracker over `inv_invite`:
+  `[{invite_id, status, issued_by, issued_at, expiry_at, consumed_at}]`, newest first.
+
+**Non-obvious choices.**
+- **Reconciliation is platform-*daily*, not per-listing.** `cash_recon_ledger` is keyed by `business_date` (PK) —
+  there is no per-listing reconciliation table. So the endpoint is `GET /reconciliation` listing **days** (newest
+  first), a **documented deviation** from the spec's proposed `/listings/{id}/reconciliation`. If a per-listing
+  recon view is ever needed it requires new persistence, not just a read.
+- **JSONB surfaced as a count, not a blob.** `cash_recon_ledger.discrepancies`/`summary` are variable-shape JSONB.
+  Following `ListingController`'s decompose-in-SQL precedent (BE-6 ops-checks), the read exposes
+  `discrepancy_count = jsonb_array_length(discrepancies)` rather than dumping a raw blob (which Jackson would
+  double-encode as an escaped string). A drill-down read can expand the detail if a screen needs it.
+- **Invite PII omitted.** `inv_invite.email_hash`/`phone_hash` (BYTEA) are **not** surfaced — an invite is
+  identified by its id + lifecycle timestamps only. `issued_by` carries an enforced FK → `admin_user` (the test
+  seeds a real admin); `tax_tds_deduction`'s `investor_id`/`payout_instruction_id` are **logical** BC references
+  (no enforced FK), so those rows seed freely.
+
+**What to watch for.** (a) Invalid `?status=` still casts to the enum → 500 not 400 (as BE-4..BE-7; UI sends valid
+values). (b) `/reconciliation` returns every day with no listing filter — a future date-range/pagination filter
+belongs in `ListQuery`. (c) If the recon `discrepancies` detail (or the distribution `utr`) becomes a real screen
+need, add a drill-down read rather than widening these list rows. (d) Remaining P1: BE-10 (listing detail),
+BE-11 (supplier tracker), BE-12 (dashboard/stats).
+
+## DL-BE-083 — UI-integration P1 reads: listing detail (BE-10), supplier tracker (BE-11), admin dashboard (BE-12), green
+
+**Status.** Applied (2026-07-16). Final P1 slice of `docs/UI_INTEGRATION_BACKEND_SPEC.md` (S12/S14/S2) — closes
+the admin read surface (BE-1..BE-12). **Additive** reads only — no command, envelope, existing by-id `GET`,
+schema/migration, or security change. Suite **413 green** (+7: `ListingDetailTest` 3, `SupplierListingsTest` 2,
+`AdminDashboardTest` 2). `anyRequest().authenticated()` already covers `/admin/**` and the new sub-paths — no
+`SecurityConfig` change.
+
+**Decision.**
+- **BE-10 `GET /listings/{id}/detail`** (`ListingController`, new — the frozen thin `GET /listings/{id}` is
+  untouched) — a composed read-model: listing + frozen `pricing_snapshot` + `cash_virtual_account`
+  (1:1, `UNIQUE(listing_id)`) + `deal_invoice` + buyer/supplier, as nested JSON objects. `pricing_snapshot` and
+  `virtual_account` render `null` until the listing is priced / gets its VA; 404 for an unknown listing.
+- **BE-11 `GET /suppliers/{id}/listings`** (`SupplierController`) — the S14 admin tracker: per-supplier rows with
+  **funding progress** (`committed_total` vs `funding_target`) + timeline (`invoice_date`/`due_date`/`created_at`).
+- **BE-12 `GET /admin/work-queues?role=` + `GET /admin/stats`** (new `AdminDashboardController`, neutral
+  `dashboard` package) — per-role pending counts + headline tiles, computed live from the write tables.
+
+**DRY / dedup (the load-bearing decision this slice).**
+- **BE-11 vs BE-6.** BE-6 `GET /listings?supplier_id=` already returns a supplier's catalogue list, so BE-11 does
+  **not** duplicate it — it is the richer *tracker* (funding progress + timeline the flat list lacks). Both share
+  `ListQuery`'s `WHERE`/`LIMIT`/binding mechanics but keep their own `SELECT`: extracting a shared "listing row"
+  query object would couple the supplier and listing BCs at the Java level (worse than a little SQL overlap). The
+  DL records that the plain per-supplier catalogue remains BE-6.
+- **BE-12 work-queues** are a single static `List<Queue>` of `(name, role, countSql)` descriptors iterated by one
+  handler — no per-queue endpoint sprawl. The `?role=` filter is matched **in Java** (never interpolated); every
+  `countSql` is a constant with a hard-coded status literal (no injection surface).
+
+**Non-obvious choices.**
+- **Cross-BC read-models via raw SQL.** BE-10 (listing→buyer/supplier/VA) and BE-11/BE-12 (supplier/dashboard→
+  listing/settlement) JOIN across BC tables. This is deliberate: ArchUnit ARCH.1 enforces the *Java-level* boundary
+  only (these use `JdbcTemplate` string SQL, import no foreign BC types → harness stays green), and the read
+  surface already accepts it (`DisbursementController` JOINs `deal_listing`). A read-model spanning BCs is the
+  correct shape for a detail/dashboard view; the pilot explicitly avoids projection tables (spec §BE-12 design-fit).
+  BE-12 lives in a neutral `dashboard` package precisely because it belongs to no single BC.
+- **Real column names win over the spec's proposals.** VA is surfaced as `{account_no, ifsc, status}` (the real
+  `cash_virtual_account` columns; the spec's `va_number`/`va_ifsc` don't exist). `pricing_snapshot` carries
+  `{rate_bps, fee_bps, pricing_band_id}` — the spec's `snapshot_at` is **not stored**, so it is not invented.
+- **Stat definitions (documented, since "deployed"/"active" are ambiguous).** `total_deployed_paise` = gross of
+  disbursement instructions past `drafted` (approved onward, excl. `failed`) — cash actually put out to suppliers,
+  cast `::bigint` so `SUM` returns `Long` not `BigDecimal`. `active_listings` = the in-flight set
+  (`live`/`fully_funded`/`disbursed`/`in_repayment`/`matured_payment_received`).
+
+**What to watch for.** (a) Counts/sums are platform-global and computed on every call — fine at pilot scale; when
+they get heavy, the "queue/stats as a projection" note (this log) is the upgrade path, not a bigger query.
+(b) The work-queue `(status → role)` pairings are grounded in today's command role gates (`API_CATALOGUE.md`); if a
+lifecycle's owning role changes, update the `QUEUES` table with it. (c) BE-10's investor-facing S12 variant
+(ownership + KYC'd-investor gate) is **BE-14 / M10-full**, not this admin read — do not reuse this endpoint for the
+investor portal. (d) P1 admin read surface is now complete; remaining UI-integration items are BE-13 (audit list,
+in M17), BE-14/BE-15 (investor/buyer portals, M10-full/WS-2), BE-16 (CORS, prod).

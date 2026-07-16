@@ -53,6 +53,18 @@ public abstract class AbstractEdgeHttpTest extends AbstractIntegrationTest {
         return new Seeded(adminUserId, identityId, email, password);
     }
 
+    /**
+     * A non-admin login identity (password + phone) of the given {@code kind} — enough to obtain a session
+     * bearer. No {@code admin_user} row and no roles, so {@code /auth/session} reports {@code roles:[]}.
+     */
+    protected Seeded seedLoginIdentity(String kind) {
+        String email = kind + "-" + UUID.randomUUID() + "@arthvritt.test";
+        String password = "Pw-" + UUID.randomUUID();
+        UUID identityId = auth.provisionIdentity(kind, email, phone(), kind);
+        auth.setPassword(identityId, password);
+        return new Seeded(Ids.newId(), identityId, email, password);   // adminUserId unused for login
+    }
+
     /** Logs the seeded admin in over HTTP (password → verify-otp) and returns the session bearer. */
     protected String bearerFor(Seeded admin) {
         try {
