@@ -16,6 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -169,6 +170,118 @@ class DocumentApiTest extends AbstractEdgeHttpTest {
     void get_unknown_document_is_404() throws Exception {
         mvc.perform(get("/documents/{id}", UUID.randomUUID()).header("Authorization", "Bearer " + bearer))
                 .andExpect(status().isNotFound());
+    }
+
+    // --- initiate body validation (the requiredLong / requiredString edge, B4 400) -----------------------
+
+    @Test
+    void initiate_without_declared_size_is_rejected() throws Exception {
+        String body = json.writeValueAsString(Map.of("kind", "invoice", "content_type", "application/pdf"));
+
+        mvc.perform(post("/documents")
+                        .header("Authorization", "Bearer " + bearer)
+                        .header("X-Command-Id", UUID.randomUUID().toString())
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error_code").value("validation_failed"));
+    }
+
+    @Test
+    void initiate_with_a_non_numeric_declared_size_is_rejected() throws Exception {
+        String body = json.writeValueAsString(Map.of(
+                "kind", "invoice", "content_type", "application/pdf", "declared_size", "not-a-number"));
+
+        mvc.perform(post("/documents")
+                        .header("Authorization", "Bearer " + bearer)
+                        .header("X-Command-Id", UUID.randomUUID().toString())
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error_code").value("validation_failed"));
+    }
+
+    @Test
+    void initiate_without_kind_is_rejected() throws Exception {
+        String body = json.writeValueAsString(Map.of("content_type", "application/pdf", "declared_size", 100));
+
+        mvc.perform(post("/documents")
+                        .header("Authorization", "Bearer " + bearer)
+                        .header("X-Command-Id", UUID.randomUUID().toString())
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error_code").value("validation_failed"));
+    }
+
+    @Test
+    void initiate_without_a_command_id_header_is_rejected() throws Exception {
+        String body = json.writeValueAsString(Map.of(
+                "kind", "invoice", "content_type", "application/pdf", "declared_size", 100));
+
+        mvc.perform(post("/documents")
+                        .header("Authorization", "Bearer " + bearer)
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error_code").value("missing_header"));
+    }
+
+    // --- upload / finalize against a document that was never initiated -----------------------------------
+
+    @Test
+    void upload_to_an_unknown_document_is_404() throws Exception {
+        upload(UUID.randomUUID(), MediaType.APPLICATION_PDF, pdf("orphan"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error_code").value("not_found"));
+    }
+
+    @Test
+    void finalize_of_an_unknown_document_is_404() throws Exception {
+        finalize(UUID.randomUUID())
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error_code").value("not_found"));
+    }
+
+    // --- STORE-1: bytes are unreadable until the document is finalized (stored) --------------------------
+
+    @Test
+    void content_download_before_finalize_is_404() throws Exception {
+        byte[] pdf = pdf("uploaded-not-final");
+        UUID id = initiate("invoice", "application/pdf", pdf.length);
+        upload(id, MediaType.APPLICATION_PDF, pdf).andExpect(status().is2xxSuccessful());   // uploaded, still pending
+
+        mvc.perform(get("/documents/{id}/content", id).header("Authorization", "Bearer " + bearer))
+                .andExpect(status().isNotFound());
+
+        assertThat(rowStatus(id)).isEqualTo("pending_upload");
+    }
+
+    // --- metadata body carries the resolvable view (kind/status/content_type/byte_size), never bytes -----
+
+    @Test
+    void resolve_returns_the_metadata_view_after_finalize() throws Exception {
+        byte[] pdf = pdf("meta");
+        UUID id = initiate("invoice", "application/pdf", pdf.length);
+        upload(id, MediaType.APPLICATION_PDF, pdf).andExpect(status().is2xxSuccessful());
+        finalize(id).andExpect(status().is2xxSuccessful());
+
+        mvc.perform(get("/documents/{id}", id).header("Authorization", "Bearer " + bearer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.document_id").value(id.toString()))
+                .andExpect(jsonPath("$.kind").value("invoice"))
+                .andExpect(jsonPath("$.status").value("stored"))
+                .andExpect(jsonPath("$.content_type").value("application/pdf"))
+                .andExpect(jsonPath("$.byte_size").value(pdf.length));
+    }
+
+    // --- I3: the upload surface is session-authenticated; an anonymous caller is turned away -------------
+
+    @Test
+    void an_unauthenticated_initiate_is_rejected() throws Exception {
+        String body = json.writeValueAsString(Map.of(
+                "kind", "invoice", "content_type", "application/pdf", "declared_size", 100));
+
+        mvc.perform(post("/documents")
+                        .header("X-Command-Id", UUID.randomUUID().toString())
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isUnauthorized());
     }
 
     // --- helpers ----------------------------------------------------------------------------------------

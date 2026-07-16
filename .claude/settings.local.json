@@ -184,7 +184,25 @@
       "Bash(grep -i \"\\\\.java$\")",
       "Bash(awk -F: '{sum+=$2} END{print sum}')",
       "Bash(awk -F'[ ,]+' '{run+=$3; fail+=$5; err+=$7; skip+=$9} END{print \"Tests run:\", run, \"Failures:\", fail, \"Errors:\", err, \"Skipped:\", skip}')",
-      "Bash(echo \"EXIT: $?\")"
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(echo \"exit: $?\")",
+      "Bash(git rev-list *)",
+      "Bash(git merge *)",
+      "Bash(git push *)",
+      "Bash(git fetch *)",
+      "Bash(command -v newman)",
+      "Bash(echo \"newman: $\\(command -v newman || echo 'not installed'\\)\")",
+      "Bash(command -v node)",
+      "Bash(echo \"node: $\\(command -v node || echo 'no'\\)\")",
+      "Bash(curl -s -o /dev/null -w '%{http_code}' --max-time 2 http://localhost:8080/api/v1/actuator/health)",
+      "Bash(echo \"docker: $\\(command -v docker || echo none\\)\")",
+      "Bash(command -v npx)",
+      "Bash(echo \"npx: $\\(command -v npx || echo none\\)\")",
+      "Bash(curl -s -o /dev/null -w '%{http_code}' --max-time 2 http://localhost:8080/api/v1/dev/seed-info)",
+      "Bash(echo \"app health: $\\(curl -s -o /dev/null -w '%{http_code}' --max-time 2 http://localhost:8080/api/v1/dev/seed-info 2>/dev/null || echo down\\)\")",
+      "Bash(PGPASSWORD='avc@2026' psql -h localhost -U platform -d platform -c \"select 1 as ok;\")",
+      "Bash(bc)",
+      "Bash(grep -n '```' docs/UI_INTEGRATION_BACKEND_SPEC.md)"
     ]
   }
 }

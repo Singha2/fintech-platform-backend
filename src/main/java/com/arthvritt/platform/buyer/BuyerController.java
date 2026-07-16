@@ -6,6 +6,7 @@ import com.arthvritt.platform.command.CommandRequest;
 import com.arthvritt.platform.command.CommandResult;
 import com.arthvritt.platform.infrastructure.web.CommandResponse;
 import com.arthvritt.platform.infrastructure.web.CommandResponseAssembler;
+import com.arthvritt.platform.infrastructure.web.ListQuery;
 import com.arthvritt.platform.infrastructure.web.RequestBodies;
 import com.arthvritt.platform.shared.error.NotFoundException;
 import com.arthvritt.platform.shared.error.ValidationException;
@@ -19,10 +20,12 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -170,6 +173,32 @@ public class BuyerController {
             throw new NotFoundException("buyer not found: " + id);
         }
         return row;
+    }
+
+    /**
+     * BE-5 (UI_INTEGRATION_BACKEND_SPEC) — the S4 buyer list. Additive read over {@code buyer_account} with
+     * optional {@code status} / {@code q} (legal-name) filters; capped at {@code LIMIT 500}. Authenticated-only.
+     */
+    @GetMapping
+    public List<Map<String, Object>> list(@AuthenticationPrincipal AuthSession session,
+                                          @RequestParam(name = "status", required = false) String status,
+                                          @RequestParam(name = "q", required = false) String q) {
+        return ListQuery.from(
+                        "SELECT buyer_id, legal_name, sector, status::text AS status, credit_limit_paise, "
+                                + "mca_cin, gstin::text AS gstin FROM buyer_account")
+                .eq("status", "buyer_account_status", status)
+                .ilike("legal_name", q)
+                .query(jdbc, "ORDER BY legal_name", (rs, n) -> {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("buyer_id", rs.getObject("buyer_id", UUID.class).toString());
+                    row.put("legal_name", rs.getString("legal_name"));
+                    row.put("sector", rs.getString("sector"));
+                    row.put("status", rs.getString("status"));
+                    row.put("credit_limit_paise", rs.getObject("credit_limit_paise", Long.class));
+                    row.put("mca_cin", rs.getString("mca_cin"));
+                    row.put("gstin", rs.getString("gstin"));
+                    return row;
+                });
     }
 
     private CommandRequest command(AuthSession session, UUID commandId, UUID buyerId, String name, int version) {

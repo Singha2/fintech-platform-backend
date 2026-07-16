@@ -6,6 +6,7 @@ import com.arthvritt.platform.command.CommandRequest;
 import com.arthvritt.platform.command.CommandResult;
 import com.arthvritt.platform.infrastructure.web.CommandResponse;
 import com.arthvritt.platform.infrastructure.web.CommandResponseAssembler;
+import com.arthvritt.platform.infrastructure.web.ListQuery;
 import com.arthvritt.platform.infrastructure.web.RequestBodies;
 import com.arthvritt.platform.shared.error.NotFoundException;
 import org.springframework.http.HttpStatus;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -95,6 +97,31 @@ public class DistributionController {
             throw new NotFoundException("no distribution instruction for listing: " + listingId);
         }
         return row;
+    }
+
+    /**
+     * BE-8 (UI_INTEGRATION_BACKEND_SPEC) — the S8 per-investor distribution breakdown. Additive read over
+     * {@code tax_tds_deduction} (the same table {@link TaxQueryController} reads FY-wide) filtered to one
+     * listing: each investor's gross/TDS/fee/net split plus the TDS {@code challan_ref}. No maker-checker
+     * columns here — the split rows are written atomically by {@code DistributionService} on approve.
+     */
+    @GetMapping("/listings/{listingId}/distribution/investors")
+    public List<Map<String, Object>> investors(@AuthenticationPrincipal AuthSession session,
+                                               @PathVariable UUID listingId) {
+        return ListQuery.from(
+                        "SELECT investor_id, gross_paise, tds_amount_paise, fee_paise, net_paise, challan_ref "
+                                + "FROM tax_tds_deduction")
+                .eq("listing_id", listingId)
+                .query(jdbc, "ORDER BY investor_id", (rs, n) -> {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("investor_id", rs.getObject("investor_id", UUID.class).toString());
+                    row.put("gross_paise", rs.getLong("gross_paise"));
+                    row.put("tds_amount_paise", rs.getLong("tds_amount_paise"));
+                    row.put("fee_paise", rs.getLong("fee_paise"));
+                    row.put("net_paise", rs.getLong("net_paise"));
+                    row.put("challan_ref", rs.getString("challan_ref"));
+                    return row;
+                });
     }
 
     private CommandRequest command(AuthSession session, UUID commandId, UUID aggregateId, String name) {
