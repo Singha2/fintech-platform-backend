@@ -1,5 +1,7 @@
 # UI Integration — Backend Read-Surface Spec
 
+> 📍 **Status & cross-repo progress live in [`PROJECT_TRACKER.md`](PROJECT_TRACKER.md)** (the single source of truth). This doc is the BE-1…BE-16 *design detail* it links to — **BE-1…BE-12 are shipped**; update status in the tracker, not here.
+
 > **What this is.** The additive backend work the 15-screen frontend (`../fintech-patform-mock`) needs to run
 > against the live API without mock data. It is the concrete output of **ROADMAP Phase B ("UI plugin")**
 > discovering which reads the screens require, expressed as **Phase-D additive endpoints**.

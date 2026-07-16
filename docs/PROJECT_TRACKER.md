@@ -1,0 +1,127 @@
+# PROJECT TRACKER — Backend + UI (single source of truth)
+
+> **This file is the one place to read "where are we and what's next" across *both* repos.**
+> Backend: `fintech-platform-backend` · UI: `../fintech-patform-mock`.
+> Every other plan doc is **subordinate detail** feeding this tracker (see §1). When a status changes,
+> update **here first**, then the detail doc. Do **not** start a new top-level plan — that is what caused
+> the drift this file exists to end.
+>
+> **Last updated:** 2026-07-16 · **Maintained by:** solo dev (Amit).
+
+---
+
+## 0. Current state — the one-glance summary
+
+Three things are each mature on their own; the **bridge between them is not built yet**.
+
+| Half | State | Evidence |
+|---|---|---|
+| **Backend core** | ✅ Complete — full money lifecycle `listed → … → distributed → closed` over HTTP, five controls enforced | 413 tests green (real Postgres) |
+| **Backend read surface (for the UI)** | ✅ **BE-1…BE-12 shipped** (admin reads + dashboard). BE-13/14/15/16 deferred by design | `docs/API_CATALOGUE.md`, `DL-BE-079…083` |
+| **UI (mock)** | ✅ All **15 screens** built and working **offline** on a mock store | `../fintech-patform-mock/src/store/PlatformStore.jsx` |
+| **🔴 Live wiring (the bridge)** | ❌ **Not started** — UI still 100% mock data; no `src/api/` client exists yet (only a `DATA_MODE` flag in `config.js`) | — |
+
+**So the critical path is: wire the UI to the now-complete backend read surface, screen by screen.**
+The backend needs *nothing new* for screens S1–S8, S12, S14 — those endpoints already exist and are tested.
+
+---
+
+## 1. How the docs fit together (drift-killer)
+
+**Rule of thumb:** *status* lives here; *detail* lives in exactly one doc below; *nothing* has two homes.
+
+| Doc | Repo | Role now | Authority |
+|---|---|---|---|
+| **`PROJECT_TRACKER.md`** (this) | backend | **Index + status + next actions** | ⭐ top |
+| `API_CATALOGUE.md` | backend | Endpoint reference (every route + shape) | ✅ live reference |
+| `UI_INTEGRATION_BACKEND_SPEC.md` | backend | BE-1…BE-16 read-surface design detail | ✅ done (reference) |
+| `ROADMAP.md` | backend | Backend **remainder** (non-UI: M14/M15/M17) | ✅ live reference |
+| `spec/Spec_Driven_Build_Plan.md` | backend | Module bible (build order, gates) | ✅ authoritative for modules |
+| `DECISION_LOG.md` (`DL-BE-*`) | backend | Why-we-did-it record | ✅ append-only |
+| **`INTEGRATION_PLAN.md`** | mock | **UI wiring — the executable step-by-step** | ⭐ active execution doc |
+| `API_ALIGNMENT.md` | mock | Per-screen ↔ endpoint shapes + enum corrections | ✅ reference |
+| `HARMONIZATION.md`, `Mock_Build_Plan.md`, `TIER2_SHARED_STORE_PLAN.md`, `STEP*_BLUEPRINT.md` | mock | **Historical** — how the mock was built | 🗄️ archive (don't extend) |
+
+Two docs are "plans you execute from": **INTEGRATION_PLAN** (UI side) and **Spec_Driven_Build_Plan** (backend
+modules). Everything else is reference or history. This tracker links them; it does not replace them.
+
+---
+
+## 2. Master board — 15 screens × (backend · UI mock · live wiring)
+
+Legend: ✅ done · ⚠️ partial · ❌ not done · ⛔ blocked (deferred milestone).
+
+| Screen | Needs (backend) | Backend | UI mock | **Wired live** | Next action | Blocked by |
+|---|---|:---:|:---:|:---:|---|---|
+| **S1** Login + MFA | `auth/login/*`, `GET /auth/session` (BE-1) | ✅ | ✅ | ❌ | **Wire first** — build `src/api` + auth + `DATA_MODE` | — |
+| **S2** Admin dashboard | `/admin/work-queues`, `/admin/stats` (BE-12) | ✅ | ✅ | ❌ | Wire reads | — |
+| **S3** Supplier onboarding | `GET /suppliers` (BE-4), `…/kyc-file` (BE-2), supplier cmds | ✅ | ✅ | ❌ | Wire list+detail reads, then cmds | — |
+| **S4** Buyer mgmt + credit | `GET /buyers`, `…/pricing-bands` (BE-5), buyer/credit cmds | ✅ | ✅ | ❌ | Wire reads + cmds | — |
+| **S5** Invoice checks + listing | `GET /listings`, `…/ops-checks` (BE-6), listing cmds | ✅ | ✅ | ❌ | Wire reads + cmds | — |
+| **S6** Disbursement queue | `/disbursements`, `…/disbursement/detail` (BE-7) | ✅ | ✅ | ❌ | Wire reads + approve cmd | — |
+| **S7** Distribution + recon | `…/distribution/investors`, `/reconciliation` (BE-8) | ✅ | ✅ | ❌ | Wire reads (recon table empty until recon module runs) | — |
+| **S8** Investor invites | `GET /investor-invites` (BE-9) + issue cmd | ✅ | ✅ | ❌ | Wire read + issue cmd | — |
+| **S9** Audit log | `GET /audit/events` (BE-13) | ⛔ | ✅ | ❌ | Await **M17 Auditor** | BE-13 / M17 |
+| **S10** Investor onboarding | investor cmds + `…/kyc-file` (BE-2) | ✅ | ✅ | ❌ | Wire cmds | — |
+| **S11** Listing marketplace | investor-scoped `GET /listings?status=live` (BE-14) | ⛔ | ✅ | ❌ | Await **M10-full** (ownership-scoped reads) | BE-14 / M10-full |
+| **S12** Listing detail | `GET /listings/{id}/detail` (BE-10, admin) | ✅ | ✅ | ❌ | Wire admin detail (investor-gated variant → BE-14) | — |
+| **S13** Investor portfolio | `…/subscriptions` + summary (BE-14) | ⛔ | ✅ | ❌ | Await **M10-full** | BE-14 / M10-full |
+| **S14** Supplier tracker (admin) | `GET /suppliers/{id}/listings` (BE-11) | ✅ | ✅ | ❌ | Wire read | — |
+| **S15** Buyer portal | ack-user OTP login + buyer reads + self-ack (BE-15) | ⛔ | ✅ | ❌ | Await **WS-2** (ack-user login) | BE-15 / WS-2 |
+
+**Wire-able now (backend ready): S1–S8, S10, S12, S14.** Blocked on a milestone: S9, S11, S13, S15.
+
+---
+
+## 3. Backend read surface — BE-1…BE-16 at a glance
+
+| | Endpoints | Status |
+|---|---|:---:|
+| BE-1…BE-12 | session, kyc-file, suppliers, buyers+bands, listings+ops-checks, disbursement, distribution+recon, invites, listing-detail, supplier-tracker, dashboard | ✅ shipped (413 tests) |
+| BE-13 | `GET /audit/events` | ⛔ build in **M17 Auditor** |
+| BE-14 | investor marketplace + portfolio (ownership-scoped) | ⛔ build in **M10-full** |
+| BE-15 | buyer ack-user login + buyer reads + self-ack | ⛔ build in **WS-2** |
+| BE-16 | CORS | prod-only (dev uses Vite proxy) |
+
+Detail: `UI_INTEGRATION_BACKEND_SPEC.md`. All are **additive** — no frozen contract changes.
+
+---
+
+## 4. Backend remainder (non-UI, runs in parallel — does not block wiring)
+
+From `ROADMAP.md` §5. These add capability but the UI wiring above does not wait on them.
+
+| Module | What | Status |
+|---|---|:---:|
+| **M15** Compliance | sanctions/PEP, reg reporting hooks | ⬜ todo |
+| **M14** Collections | delinquency, recovery ladder | ⬜ todo |
+| **M17** Auditor | read-only regulator access → **unblocks BE-13 / S9** | ⬜ todo |
+| Deferred-control sweep | ≥₹10 Cr senior sign-off, suspension, reminders, sensitive-read gating | ⬜ todo |
+
+---
+
+## 5. Next actions — the single ordered to-do
+
+> One list. Do top-down. Backend read surface is done, so the **critical path is UI wiring**.
+
+**Track A — UI live wiring (critical path)** · execute via mock `INTEGRATION_PLAN.md`
+1. **Bridge foundation** — build `src/api/` client (bearer + `X-Command-Id`/`X-Aggregate-Version` envelope), flip `DATA_MODE` live/mock switch, wire **S1 login + OTP + `/auth/session`**. Keep offline mock path working.
+2. **Read-only admin screens** (fast wins, no writes): **S2 → S3 → S4 → S5 → S6 → S7 → S8 → S12 → S14**.
+3. **Command flows** (writes with the envelope): supplier/buyer/listing/investor onboarding cmds on S3/S4/S5/S10.
+4. **Deferred screens** — S9 (after M17), S11 + S13 (after M10-full), S15 (after WS-2).
+
+**Track B — backend remainder (parallel, non-blocking)**
+5. M17 Auditor (also unblocks S9) → then M15, M14, deferred-control sweep.
+
+**Track C — go-live prep (later)**
+6. BE-16 CORS decision, real integration credentials (verification/escrow/e-sign/KYC swap from stubs).
+
+---
+
+## 6. Update protocol (keep it alive, solo-friendly)
+
+- **When you finish wiring a screen:** flip its **Wired live** cell in §2 to ✅ (or ⚠️), update §5 if the next action changed, bump the "Last updated" date. One-line commit.
+- **When you ship a backend item:** update §3/§4 + add a `DL-BE-*` entry; reflect the ✅ here.
+- **One status, one home.** If you catch yourself writing a status into another doc, delete it and link here.
+- **No new top-level plan.** New detail goes into `INTEGRATION_PLAN.md` (UI) or `Spec_Driven_Build_Plan.md` (backend modules) as a step — never a new competing plan.
+- The mock repo carries a 1-line pointer (`../fintech-patform-mock/docs/PROJECT_TRACKER.md`) back to this file so both repos resolve to the same source of truth.
