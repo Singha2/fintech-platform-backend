@@ -104,7 +104,7 @@ From `ROADMAP.md` §5. These add capability but the UI wiring above does not wai
 
 > One list. Do top-down. Backend read surface is done, so the **critical path is UI wiring**.
 
-**Track A — UI live wiring (critical path)** · execute via mock `INTEGRATION_PLAN.md`
+**Track A — UI live wiring (critical path)** · execute via mock `INTEGRATION_PLAN.md`; the **current scoped slice** is the mock's `docs/UI_WORKORDER.md` (built by the mock-side session)
 1. **Bridge foundation** — build `src/api/` client (bearer + `X-Command-Id`/`X-Aggregate-Version` envelope), flip `DATA_MODE` live/mock switch, wire **S1 login + OTP + `/auth/session`**. Keep offline mock path working.
 2. **Read-only admin screens** (fast wins, no writes): **S2 → S3 → S4 → S5 → S6 → S7 → S8 → S12 → S14**.
 3. **Command flows** (writes with the envelope): supplier/buyer/listing/investor onboarding cmds on S3/S4/S5/S10.

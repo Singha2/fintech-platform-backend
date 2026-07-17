@@ -202,7 +202,15 @@
       "Bash(echo \"app health: $\\(curl -s -o /dev/null -w '%{http_code}' --max-time 2 http://localhost:8080/api/v1/dev/seed-info 2>/dev/null || echo down\\)\")",
       "Bash(PGPASSWORD='avc@2026' psql -h localhost -U platform -d platform -c \"select 1 as ok;\")",
       "Bash(bc)",
-      "Bash(grep -n '```' docs/UI_INTEGRATION_BACKEND_SPEC.md)"
+      "Bash(grep -n '```' docs/UI_INTEGRATION_BACKEND_SPEC.md)",
+      "Bash(git --no-pager diff HEAD -- src/)",
+      "Bash(git --no-pager diff --stat HEAD)",
+      "Bash(grep -rniE \"40[0-9] \\(green|tests|passing\\)|tests.{0,3}\\(green|pass\\)|green tests|Tests run: 40\" docs/API_CATALOGUE.md docs/UI_INTEGRATION_BACKEND_SPEC.md docs/DECISION_LOG.md)",
+      "Bash(awk -F'[:,]' '{r+=$2; f+=$4; e+=$6; s+=$8} END{printf \"TOTAL runs=%d failures=%d errors=%d skipped=%d\\\\n\", r,f,e,s}')",
+      "Bash(awk -F'[:,]' '{r+=$2; f+=$4; e+=$6; s+=$8} END{printf \"runs=%d failures=%d errors=%d skipped=%d\\\\n\", r,f,e,s}')",
+      "Bash(grep -nE \"^\\\\s*#+\\\\s*S[0-9]|\\\\bS[0-9]{1,2}\\\\b.*—|\\\\| *S[0-9]\" docs/API_ALIGNMENT.md)",
+      "Bash(grep -noE \"S[0-9]{1,2}[^0-9][^|]{0,45}\" docs/API_ALIGNMENT.md)",
+      "Bash(grep -nE \"^#{1,3} |^## Phase|^### Step|Phase [0-9]|Step [0-9]\" docs/INTEGRATION_PLAN.md)"
     ]
   }
 }
