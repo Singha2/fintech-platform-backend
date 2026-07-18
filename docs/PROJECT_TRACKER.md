@@ -20,8 +20,8 @@ E2E-verified. **14 of 15 screens are wired live;** only **S9** (audit log) remai
 |---|---|---|
 | **Backend core** | ✅ Complete — full money lifecycle `listed → … → distributed → closed` over HTTP, five controls enforced | 413 tests green (real Postgres) |
 | **Backend read surface (for the UI)** | ✅ **BE-1…BE-12 + BE-14 + BE-17 shipped** (admin reads + dashboard + investor read-only portal). BE-13/15/16 deferred by design | `docs/API_CATALOGUE.md`, `DL-BE-079…084` |
-| **UI (mock)** | ✅ All **15 screens** built and working **offline** on a mock store | `../fintech-patform-mock/src/store/PlatformStore.jsx` |
-| **🟢 Live wiring (the bridge)** | ✅ **Auth + reads + admin/deal-flow writes live & E2E-verified** — `src/api/` client + envelope + `ApiError` + full service layer + `AuthContext` + Vite proxy. **S1 login**; **reads** for S2–S8/S11/S12/S13/S14 (S13 investor portfolio, own-scoped); **write chains** onboarding (S3/S4/S8 + **S10 investor**) + deal spine **S5 go-live → S12 subscribe → S6 disburse → S7 mature/distribute** (harnesses `scripts/e2e/*`, DL-BE-086/087 seed helper + two-ops); **investor self-service** — passwordless login + S12 self-commit (BE-18/DL-BE-088); **buyer portal** — ack-user login + reads + self-ack (BE-15/DL-BE-090); **admin IAM** — super-admin provision + role-assignment widget on S2 (`/admin-users/*`). Also: live nav derived from `/auth/session` roles (no persona map). Remaining: **S9** (M17). | mock `docs/UI_WORKORDER.md` |
+| **UI** | ✅ All **15 screens** built and working **offline** on a mock store | `../fintech-patform-mock/src/store/PlatformStore.jsx` |
+| **🟢 Live wiring (the bridge)** | ✅ **Auth + reads + admin/deal-flow writes live & E2E-verified** — `src/api/` client + envelope + `ApiError` + full service layer + `AuthContext` + Vite proxy. **S1 login**; **reads** for S2–S8/S11/S12/S13/S14 (S13 investor portfolio, own-scoped); **write chains** onboarding (S3/S4/S8 + **S10 investor**) + deal spine **S5 go-live → S12 subscribe → S6 disburse → S7 mature/distribute** (harnesses `scripts/e2e/*`, DL-BE-086/087 seed helper + two-ops); **investor self-service** — passwordless login + S12 self-commit (BE-18/DL-BE-088); **buyer portal** — ack-user login + reads + self-ack (BE-15/DL-BE-090); **admin IAM** — super-admin provision + role-assignment widget on S2 (`/admin-users/*`). Also: live nav derived from `/auth/session` roles (no persona map). Remaining: **S9** (M17). | UI `docs/UI_WORKORDER.md` |
 
 **The admin + deal-flow surface, investor onboarding (S10) + portfolio (S13) + self-service (BE-18), and the
 buyer portal (S15/BE-15) are all done and verified.** The only screen not wired live is **S9** (audit log),
@@ -41,21 +41,21 @@ blocked on the **M17 auditor** backend milestone.
 | `ROADMAP.md` | backend | Backend **remainder** (non-UI: M14/M15/M17) | ✅ live reference |
 | `spec/Spec_Driven_Build_Plan.md` | backend | Module bible (build order, gates) | ✅ authoritative for modules |
 | `DECISION_LOG.md` (`DL-BE-*`) | backend | Why-we-did-it record | ✅ append-only |
-| **`INTEGRATION_PLAN.md`** | mock | **UI wiring — the executable step-by-step** | ⭐ active execution doc |
-| `API_ALIGNMENT.md` | mock | Per-screen ↔ endpoint shapes + enum corrections | ✅ reference |
-| **`BACKEND_UI_READINESS.md`** | mock | **Backend→UI hand-off** — what the live API actually ships + corrections to stale plan assumptions | ⭐ read before wiring |
-| `HARMONIZATION.md`, `Mock_Build_Plan.md`, `TIER2_SHARED_STORE_PLAN.md`, `STEP*_BLUEPRINT.md` | mock | **Historical** — how the mock was built | 🗄️ archive (don't extend) |
+| **`INTEGRATION_PLAN.md`** | UI | **UI wiring — the executable step-by-step** | ⭐ active execution doc |
+| `API_ALIGNMENT.md` | UI | Per-screen ↔ endpoint shapes + enum corrections | ✅ reference |
+| **`BACKEND_UI_READINESS.md`** | UI | **Backend→UI hand-off** — what the live API actually ships + corrections to stale plan assumptions | ⭐ read before wiring |
+| `HARMONIZATION.md`, `Mock_Build_Plan.md`, `TIER2_SHARED_STORE_PLAN.md`, `STEP*_BLUEPRINT.md` | UI | **Historical** — how the UI was built | 🗄️ archive (don't extend) |
 
 Two docs are "plans you execute from": **INTEGRATION_PLAN** (UI side) and **Spec_Driven_Build_Plan** (backend
 modules). Everything else is reference or history. This tracker links them; it does not replace them.
 
 ---
 
-## 2. Master board — 15 screens × (backend · UI mock · live wiring)
+## 2. Master board — 15 screens × (backend · UI · live wiring)
 
 Legend: ✅ done · ⚠️ partial · ❌ not done · ⛔ blocked (deferred milestone).
 
-| Screen | Needs (backend) | Backend | UI mock | **Wired live** | Next action | Blocked by |
+| Screen | Needs (backend) | Backend | UI | **Wired live** | Next action | Blocked by |
 |---|---|:---:|:---:|:---:|---|---|
 | **S1** Login + MFA | `auth/login/*`, `GET /auth/session` (BE-1) | ✅ | ✅ | ✅ | **Done** — bridge Phase 0–2 (proxy + `src/api` + `AuthContext`); `/auth/session` wiring lands in Phase 3 | — |
 | **S2** Admin dashboard | `/admin/work-queues`, `/admin/stats` (BE-12); `/admin-users/*` (IAM) | ✅ | ✅ | ✅ | **Stats + queue reads live** (`useHydrate('dashboard')`; queues counts-only per BE-12). **+ Admin & Roles widget (super-admin only)** — provision admins + assign roles live (`POST /admin-users/provision`, `…/{id}/roles`); SoD soft-pair → override_reason; non-super → 403. E2E-verified `scripts/e2e/admin-roles.mjs` (7/7) | — |
@@ -110,12 +110,12 @@ From `ROADMAP.md` §5. These add capability but the UI wiring above does not wai
 
 > One list. Do top-down. Backend read surface is done, so the **critical path is UI wiring**.
 
-**Track A — UI live wiring (critical path)** · execute via mock `INTEGRATION_PLAN.md`; the **current scoped slice** is the mock's `docs/UI_WORKORDER.md` (built by the mock-side session)
+**Track A — UI live wiring (critical path)** · execute via UI `INTEGRATION_PLAN.md`; the **current scoped slice** is the UI's `docs/UI_WORKORDER.md` (built by the UI-side session)
 1. **Bridge foundation** — build `src/api/` client (bearer + `X-Command-Id`/`X-Aggregate-Version` envelope), flip `DATA_MODE` live/mock switch, wire **S1 login + OTP + `/auth/session`**. Keep offline mock path working.
 2. **Read-only admin screens** (fast wins, no writes): **S2 → S3 → S4 → S5 → S6 → S7 → S8 → S12 → S14**.
 3. **Command flows** (writes with the envelope): supplier/buyer/listing/investor onboarding cmds on S3/S4/S5/S10.
-   - ✅ **Money-flow writes are now E2E-testable** (DL-BE-086): the dev helper `POST /dev/seed-listing {stage}` fast-forwards a fresh listing to `live | fully_funded | disbursable | disbursed | matured`, so S12 subscribe, S6 approve, S7 record-maturity/distribution can be driven live without hand-running the ~20-command pipeline. Second ops (`ops2@dev.local`) also seeded so the real DOC.3 two-ops path is drivable. Mock-side flips S5/S6/S7/S12 write cells to ✅ once exercised.
-4. **Investor read-only portal** — **S11 + S13 now backend-ready (M10-D/BE-14/BE-17)**; wire against a real investor bearer (dev password today, Phase B for real login). Details in the mock's `BACKEND_UI_READINESS.md`.
+   - ✅ **Money-flow writes are now E2E-testable** (DL-BE-086): the dev helper `POST /dev/seed-listing {stage}` fast-forwards a fresh listing to `live | fully_funded | disbursable | disbursed | matured`, so S12 subscribe, S6 approve, S7 record-maturity/distribution can be driven live without hand-running the ~20-command pipeline. Second ops (`ops2@dev.local`) also seeded so the real DOC.3 two-ops path is drivable. UI-side flips S5/S6/S7/S12 write cells to ✅ once exercised.
+4. **Investor read-only portal** — **S11 + S13 now backend-ready (M10-D/BE-14/BE-17)**; wire against a real investor bearer (dev password today, Phase B for real login). Details in the UI's `BACKEND_UI_READINESS.md`.
 5. **Deferred screens** — **S9** (after M17) is the only screen left. **S15 is live** (BE-15/DL-BE-090 wired + E2E-verified, `scripts/e2e/buyer-portal.mjs`).
 
 **Track B — backend remainder (parallel, non-blocking)**
@@ -130,9 +130,9 @@ From `ROADMAP.md` §5. These add capability but the UI wiring above does not wai
 |---|---|---|---|
 | **DF-1** | ✅ **DONE (BE-18 / DL-BE-088, 2026-07-18)** — real investors log in passwordless (email+OTP) and self-commit under their own session; `request-otp` rate-limiting deferred to auth-hardening. | = **BE-18** (Track B #7) · `DL-BE-088` · [`modules/M11-B-investor-login-selfcommit.md`](modules/M11-B-investor-login-selfcommit.md) | **Shipped.** (Rate-limiter before a public-scale pilot.) |
 | **DF-2** | **KYC download gate over-permissive for suspended/exited investors** — `InvestorService.isKycApprovedForDownload`'s `… OR kyc_approved_at IS NOT NULL` lets a once-approved but later `suspended`/`exited` investor still download. Latent (Suspend/Exit not built) but a real over-permission. | `InvestorService.isKycApprovedForDownload`, `InvoiceDocumentService.download` · `DL-BE-084` (§findings) | **With the Suspend/Exit module** (M10 §9 post-active lifecycle) — decide there whether a de-activated investor retains document access, then tighten the clause. |
-| **DF-3** | ✅ **DONE (DL-BE-087)** — `DevDataSeeder` now **ensures admins per-email every boot** (`ensureAdmin` via `email::citext`), so late-added seed accounts (e.g. `ops2@dev.local`) materialize on a pre-existing dev DB; counterparties guarded on `sup_account` emptiness → seed once. Idempotent (adopts a manual `ops2`, no dups); test `DevSeederAdminEnsureTest` covers the non-empty-table case the old guard missed. | `DevDataSeeder.run` / `ensureAdmin` (backend) | **Shipped** — brief: [`DF3_SEEDER_UPSERT_BRIEF.md`](DF3_SEEDER_UPSERT_BRIEF.md); `DL-BE-087`. Mock side can drop the manual `ops2` insert (plain dev boot yields all seven admins). |
-| **DF-4** | ~~S5 has no invoice-document upload UI~~ | mock `S5.jsx` + `src/api/services/documents.js` | ✅ **Fixed (mock).** S5 invoice detail now has an **Upload Invoice PDF** control → `documents.initiate/uploadContent/finalize` → `listings.attachInvoiceDoc`; `document_completeness` then recorded by a second Ops (DOC.3). Build green; endpoints covered by `scripts/e2e/s5golive.mjs`. |
-| **DF-5** | ✅ **DONE (DL-BE-089)** — `POST /auth/logout` revokes the caller's session server-side; the bearer then 401s (`bearer_expired`) on any later request. Idempotent; admin + investor. UI already wired best-effort, so it activated on ship (no FE change). | `SessionController` (backend) · mock `auth.logoutSession` + `AuthContext.logout` | **Shipped** — brief: [`LOGOUT_ENDPOINT_BRIEF.md`](LOGOUT_ENDPOINT_BRIEF.md); `DL-BE-089`. Verified E2E `../fintech-patform-mock/scripts/e2e/logout.mjs` (9/9). |
+| **DF-3** | ✅ **DONE (DL-BE-087)** — `DevDataSeeder` now **ensures admins per-email every boot** (`ensureAdmin` via `email::citext`), so late-added seed accounts (e.g. `ops2@dev.local`) materialize on a pre-existing dev DB; counterparties guarded on `sup_account` emptiness → seed once. Idempotent (adopts a manual `ops2`, no dups); test `DevSeederAdminEnsureTest` covers the non-empty-table case the old guard missed. | `DevDataSeeder.run` / `ensureAdmin` (backend) | **Shipped** — brief: [`DF3_SEEDER_UPSERT_BRIEF.md`](DF3_SEEDER_UPSERT_BRIEF.md); `DL-BE-087`. UI side can drop the manual `ops2` insert (plain dev boot yields all seven admins). |
+| **DF-4** | ~~S5 has no invoice-document upload UI~~ | UI `S5.jsx` + `src/api/services/documents.js` | ✅ **Fixed (UI).** S5 invoice detail now has an **Upload Invoice PDF** control → `documents.initiate/uploadContent/finalize` → `listings.attachInvoiceDoc`; `document_completeness` then recorded by a second Ops (DOC.3). Build green; endpoints covered by `scripts/e2e/s5golive.mjs`. |
+| **DF-5** | ✅ **DONE (DL-BE-089)** — `POST /auth/logout` revokes the caller's session server-side; the bearer then 401s (`bearer_expired`) on any later request. Idempotent; admin + investor. UI already wired best-effort, so it activated on ship (no FE change). | `SessionController` (backend) · UI `auth.logoutSession` + `AuthContext.logout` | **Shipped** — brief: [`LOGOUT_ENDPOINT_BRIEF.md`](LOGOUT_ENDPOINT_BRIEF.md); `DL-BE-089`. Verified E2E `../fintech-patform-mock/scripts/e2e/logout.mjs` (9/9). |
 
 ---
 
@@ -142,4 +142,4 @@ From `ROADMAP.md` §5. These add capability but the UI wiring above does not wai
 - **When you ship a backend item:** update §3/§4 + add a `DL-BE-*` entry; reflect the ✅ here.
 - **One status, one home.** If you catch yourself writing a status into another doc, delete it and link here.
 - **No new top-level plan.** New detail goes into `INTEGRATION_PLAN.md` (UI) or `Spec_Driven_Build_Plan.md` (backend modules) as a step — never a new competing plan.
-- The mock repo carries a 1-line pointer (`../fintech-patform-mock/docs/PROJECT_TRACKER.md`) back to this file so both repos resolve to the same source of truth.
+- The UI repo carries a 1-line pointer (`../fintech-patform-mock/docs/PROJECT_TRACKER.md`) back to this file so both repos resolve to the same source of truth.
