@@ -24,6 +24,17 @@ public class ForbiddenException extends PlatformException {
                 "caller may only read its own investor-owned " + resource);
     }
 
+    /**
+     * BE-15 (M11-C, DL-BE-090): an ack-user bearer read/actioned another buyer's owned resource
+     * (ack-invoices, payment instruction, or a self-ack) — the ack-user analogue of
+     * {@link #crossInvestorRead}. {@code error_code} matches the same {@code cross_tenant_read}
+     * catalogue entry.
+     */
+    public static ForbiddenException crossBuyerRead(String resource) {
+        return new ForbiddenException("cross_tenant_read",
+                "caller may only read/action its own buyer-owned " + resource);
+    }
+
     /** M10-D KYC-1: the caller is tied to an investor account that has not yet reached KYC-approved. */
     public static ForbiddenException kycNotApproved() {
         return new ForbiddenException("kyc_not_approved",

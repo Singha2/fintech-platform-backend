@@ -2,12 +2,14 @@ package com.arthvritt.platform.listing;
 
 import com.arthvritt.platform.auth.ActionSensitivity;
 import com.arthvritt.platform.auth.AuthSession;
+import com.arthvritt.platform.buyer.port.AckUserQueryPort;
 import com.arthvritt.platform.command.CommandRequest;
 import com.arthvritt.platform.command.CommandResult;
 import com.arthvritt.platform.infrastructure.web.CommandResponse;
 import com.arthvritt.platform.infrastructure.web.CommandResponseAssembler;
 import com.arthvritt.platform.infrastructure.web.ListQuery;
 import com.arthvritt.platform.infrastructure.web.RequestBodies;
+import com.arthvritt.platform.shared.error.ForbiddenException;
 import com.arthvritt.platform.shared.error.NotFoundException;
 import com.arthvritt.platform.shared.error.ValidationException;
 import org.springframework.http.HttpStatus;
@@ -45,11 +47,14 @@ public class ListingController {
     private final ListingService listings;
     private final CommandResponseAssembler responses;
     private final JdbcTemplate jdbc;
+    private final AckUserQueryPort ackUsers;
 
-    public ListingController(ListingService listings, CommandResponseAssembler responses, JdbcTemplate jdbc) {
+    public ListingController(ListingService listings, CommandResponseAssembler responses, JdbcTemplate jdbc,
+                             AckUserQueryPort ackUsers) {
         this.listings = listings;
         this.responses = responses;
         this.jdbc = jdbc;
+        this.ackUsers = ackUsers;
     }
 
     @PostMapping
@@ -111,6 +116,12 @@ public class ListingController {
         return responses.from(listings.requestBuyerAck(request, slaHours));
     }
 
+    /**
+     * BE-15 Part 3 (M11-C): the actor-kind branch. An ack-user bearer (resolved server-side via
+     * {@link AckUserQueryPort}, mirroring {@code SubscriptionController.commit}'s OWN-1 shape) self-acks a
+     * listing of its <b>own</b> buyer — a listing owned by another buyer is a clean 403
+     * ({@code cross_tenant_read}). An admin bearer keeps the existing ops-on-behalf path (DL-019), unchanged.
+     */
     @PostMapping("/{id}/record-buyer-ack")
     public CommandResponse recordBuyerAck(@AuthenticationPrincipal AuthSession session, @PathVariable UUID id,
                                           @RequestHeader("X-Command-Id") UUID commandId,
@@ -119,7 +130,22 @@ public class ListingController {
         String outcome = RequestBodies.requiredString(body, "outcome");
         String method = optionalString(body, "method");
         String evidenceRef = optionalString(body, "evidence_ref");
-        CommandRequest request = command(session, commandId, id, ".Listing.RecordBuyerAck", version);
+        UUID callerBuyerId = ackUsers.buyerIdForIdentity(session.identityId()).orElse(null);
+        CommandRequest request;
+        if (callerBuyerId != null) { // ack-user self-ack
+            UUID listingBuyer = jdbc.query("SELECT buyer_id FROM deal_listing WHERE listing_id = ?",
+                    rs -> rs.next() ? rs.getObject(1, UUID.class) : null, id);
+            if (listingBuyer == null) {
+                throw new NotFoundException("listing not found: " + id);
+            }
+            if (!callerBuyerId.equals(listingBuyer)) {
+                throw ForbiddenException.crossBuyerRead("acknowledgment");
+            }
+            request = new CommandRequest(session, commandId, CONTEXT, CONTEXT + ".Listing.RecordBuyerAck",
+                    AGGREGATE_TYPE, id, version, "acknowledgment_user", ActionSensitivity.SENSITIVE);
+        } else { // admin ops-on-behalf (unchanged)
+            request = command(session, commandId, id, ".Listing.RecordBuyerAck", version);
+        }
         return responses.from(listings.recordBuyerAck(request, outcome, method, evidenceRef));
     }
 

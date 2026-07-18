@@ -215,6 +215,86 @@ public abstract class AbstractEdgeHttpTest extends AbstractIntegrationTest {
     protected record InvestorLogin(UUID investorId, Seeded login) {
     }
 
+    /**
+     * BE-15 T1 — an active, OTP-only {@code acknowledgment_user} of an active buyer (no password, per AU.1). Seeds
+     * a throwaway admin (buyer {@code nominated_by} + ack {@code designated_by} FKs), a buyer, an
+     * {@code auth_identity} (kind {@code acknowledgment_user}), and a {@code buyer_ack_user}. Overloads let a test
+     * make the identity/ack/buyer ineligible for the enumeration-safety cases.
+     */
+    protected AckUserLogin seedActiveAckUserWithLogin() {
+        return seedActiveAckUserWithLogin("active", true, "active");
+    }
+
+    protected AckUserLogin seedActiveAckUserWithLogin(String identityStatus, boolean ackActive, String buyerStatus) {
+        UUID admin = seedAdminWithRoles().adminUserId();
+        UUID buyerId = Ids.newId();
+        jdbc.update("INSERT INTO buyer_account (buyer_id, legal_name, status, credit_limit_paise, nominated_by) "
+                        + "VALUES (?, ?, ?::buyer_account_status, ?, ?)",
+                buyerId, "Buyer " + buyerId, buyerStatus, 5_00_00_000_00L, admin);
+        UUID identityId = Ids.newId();
+        String email = "ack-" + UUID.randomUUID() + "@arthvritt.test";
+        String phone = phone();
+        jdbc.update("INSERT INTO auth_identity (identity_id, kind, email, phone_e164, display_name, status) "
+                        + "VALUES (?, 'acknowledgment_user'::identity_kind_enum, ?, ?, 'Ack User', "
+                        + "?::identity_status_enum)", identityId, email, phone, identityStatus);
+        UUID ackUserId = Ids.newId();
+        // buyer_ack_user CHECK: active ⇒ deactivated_at NULL; inactive ⇒ deactivated_at NOT NULL.
+        jdbc.update("INSERT INTO buyer_ack_user (ack_user_id, buyer_id, identity_id, display_name, email, phone, "
+                        + "is_active, deactivated_at, designated_by) VALUES (?, ?, ?, 'Ack User', ?, ?, ?, ?, ?)",
+                ackUserId, buyerId, identityId, email, phone, ackActive, ackActive ? null : java.time.OffsetDateTime.now(),
+                admin);
+        return new AckUserLogin(buyerId, ackUserId, identityId, email);
+    }
+
+    /** A session bearer for an ack-user via the passwordless entry (BE-15): {@code ack-user/request-otp} → OTP → verify. */
+    protected String bearerForAckUserPasswordless(AckUserLogin ackUser) {
+        try {
+            MvcResult req = mvc.perform(post("/auth/login/ack-user/request-otp")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(json.writeValueAsString(Map.of("email", ackUser.email()))))
+                    .andExpect(status().isOk()).andReturn();
+            String challengeId = node(req).get("challenge_id").asText();
+            String code = notifier.lastCodeFor(ackUser.identityId())
+                    .orElseThrow(() -> new IllegalStateException("no OTP sent to " + ackUser.email()));
+            MvcResult otp = mvc.perform(post("/auth/login/verify-otp")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(json.writeValueAsString(Map.of("challenge_id", challengeId, "code", code))))
+                    .andExpect(status().isOk()).andReturn();
+            return node(otp).get("bearer").asText();
+        } catch (Exception e) {
+            throw new IllegalStateException("ack-user passwordless login failed for " + ackUser.email(), e);
+        }
+    }
+
+    /** A seeded active ack-user: its buyer, ack_user_id, identity, and email (bearer via passwordless login). */
+    protected record AckUserLogin(UUID buyerId, UUID ackUserId, UUID identityId, String email) {
+    }
+
+    /**
+     * BE-15 T1 — a listing at {@code awaiting_acknowledgment} for {@code buyerId} (real supplier so the
+     * ack-invoices read's {@code supplier_name} join resolves), optionally with an outstanding
+     * {@code buyer_ack.status='requested'} entry on the invoice (what ops's {@code request-buyer-ack} writes).
+     */
+    protected UUID seedAwaitingAckListing(UUID buyerId, boolean requested) {
+        UUID supplierId = Ids.newId();
+        jdbc.update("INSERT INTO sup_account (supplier_id, legal_name, constitution_type, pan, status) "
+                        + "VALUES (?, ?, 'private_limited', 'AAAAA1111A', 'active'::sup_account_status)",
+                supplierId, "Supplier " + supplierId);
+        UUID invoiceId = Ids.newId();
+        String checkOutcomes = requested
+                ? "{\"buyer_ack\":{\"status\":\"requested\",\"sla_hours\":48,\"requested_at\":\"2026-07-18T00:00:00Z\"}}"
+                : "{}";
+        jdbc.update("INSERT INTO deal_invoice (invoice_id, supplier_id, buyer_id, invoice_number, face_value, "
+                        + "invoice_date, tenor_days, due_date, status, check_outcomes) "
+                        + "VALUES (?, ?, ?, ?, ?, '2026-06-01', 60, '2026-07-31', 'listed', ?::jsonb)",
+                invoiceId, supplierId, buyerId, "INV-" + invoiceId, 100_000_000L, checkOutcomes);
+        UUID listingId = Ids.newId();
+        jdbc.update("INSERT INTO deal_listing (listing_id, invoice_id, supplier_id, buyer_id, status) "
+                        + "VALUES (?, ?, ?, ?, 'awaiting_acknowledgment'::deal_listing_status)",
+                listingId, invoiceId, supplierId, buyerId);
+        return listingId;
+    }
+
     /** A seeded listing over real supplier/buyer counterparties (M10-D T1) — names available for join assertions. */
     protected record ListingFixture(UUID listingId, UUID invoiceId, UUID supplierId, UUID buyerId,
                                     String supplierName, String buyerName) {

@@ -2,6 +2,7 @@ package com.arthvritt.platform.buyer;
 
 import com.arthvritt.platform.adminiam.AdminRole;
 import com.arthvritt.platform.adminiam.RoleResolver;
+import com.arthvritt.platform.buyer.port.AckUserQueryPort;
 import com.arthvritt.platform.command.CommandEvent;
 import com.arthvritt.platform.command.CommandGateway;
 import com.arthvritt.platform.command.CommandOutcome;
@@ -21,6 +22,7 @@ import org.springframework.stereotype.Service;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -34,7 +36,7 @@ import java.util.UUID;
  * {@code SupplierService}; native SQL onto the V2 tables.
  */
 @Service
-public class BuyerService {
+public class BuyerService implements AckUserQueryPort {
 
     private static final String CONTEXT = "buyer";
     private static final Set<String> OPS = Set.of(AdminRole.OPS_EXECUTIVE.wire());
@@ -194,6 +196,16 @@ public class BuyerService {
                     payload, Map.of(), Map.of(), false);
             return new CommandOutcome<>(null, event);
         });
+    }
+
+    // --- AckUserQueryPort (BE-15, M11-C — the identity_id -> buyer_id resolver) --------------------
+
+    @Override
+    public Optional<UUID> buyerIdForIdentity(UUID identityId) {
+        UUID buyerId = jdbc.query(
+                "SELECT buyer_id FROM buyer_ack_user WHERE identity_id = ? AND is_active = TRUE",
+                rs -> rs.next() ? rs.getObject(1, UUID.class) : null, identityId);
+        return Optional.ofNullable(buyerId);
     }
 
     // --- shared command-handler helpers ------------------------------------------------------------

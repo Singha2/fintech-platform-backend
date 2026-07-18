@@ -6,7 +6,7 @@
 > buyer portal — the buyer logs in with an OTP, sees their invoices awaiting acknowledgment + payment
 > instruction, and **acknowledges as themselves**, closing the DL-019 control's provenance gap (today only Ops
 > can record a buyer-ack). Predecessor substrate: **DL-BE-088 (BE-18)**; this slice claims **DL-BE-090**.
-> **`/specify` + `/clarify` (DoR) + `/plan` complete** (this doc, §9); **`/tasks` / `/implement` not yet run**.
+> **✅ Shipped (2026-07-18)** — full loop complete. 465 tests green; `DL-BE-090`.
 
 | | |
 |---|---|
@@ -14,7 +14,7 @@
 | **Slice** | The WS-2 "Milestone 2" deferral (`DL-BE-032`): ack-user login + buyer read surface + self-actor ack. |
 | **Tracker IDs** | **BE-15** (S15 buyer portal) |
 | **Tier** | Medium — reuses BE-18's substrate, but **modifies one live S5 command** (`recordBuyerAck`); see §0. |
-| **Status** | **DoR + `/plan` done — implementation pending** |
+| **Status** | ✅ **Done (2026-07-18)** — 465 tests green; DL-BE-090 |
 | **Owner** | Amit + Claude |
 | **Created** | 2026-07-18 |
 
@@ -223,13 +223,14 @@ active buyer; OTP-only, no password) + a passwordless ack-user bearer helper.
 - [ ] **Idempotency:** replay `(ack-user identity, command_id)` → replayed, one envelope.
 
 ## 8. Definition of Done (gate F)
-- [ ] §7 tests green; whole suite green (record count).
-- [ ] DoD from brief §4 satisfied; **no S5 regression** (the DoR-4 guard).
-- [ ] No new migration (confirm against V1–V13); if one is unavoidable, **stop and flag** (esp. the DoR-5 fork).
-- [ ] `/code-review` on the diff; findings fixed.
-- [ ] **DL-BE-090** finalised; `PROJECT_TRACKER.md` §2 (S15) + Track B updated; `API_CATALOGUE.md` rows added.
-- [ ] Mock-side work-order (brief §5) — do not edit mock code from here.
-- [ ] This spec flipped to **Status: Done**.
+- [x] §7 tests green; whole suite green — **465** (was 451; +14 BE-15).
+- [x] DoD from brief §4 satisfied; **no S5 regression** (the full suite incl. `ListingAcknowledgmentTest` green).
+- [x] No new migration (confirmed V1–V13).
+- [x] `/code-review` (self, high) — implementation matches `/plan`; DL-citation typos fixed; the ARCH.1
+      `AckUserQueryPort → buyer.port` move handled (see DL-BE-090).
+- [x] **DL-BE-090** finalised; `PROJECT_TRACKER.md` §2 (S15) + Track B updated; `API_CATALOGUE.md` rows added.
+- [x] Mock-side work-order (brief §5) — do not edit mock code from here.
+- [x] This spec flipped to **Status: Done**.
 
 ---
 

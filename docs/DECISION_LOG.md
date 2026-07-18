@@ -3445,3 +3445,20 @@ fields/download deferred — *the one place BE-15 can't fully match mock S15 fro
 
 **Carry into `/tasks`.** Keep the OPS path byte-identical behind the actor-kind branch; resolve `buyer_id` from the
 session (never body); verify the cross-BC `AckUserQueryPort` dependency passes `BoundedContextRulesTest`.
+
+**Implementation (green, 2026-07-18).** Shipped per `/plan` §9 — **no migration**. Seven edits:
+`AuthService.requestAckUserOtp` (P1); `AuthController POST /auth/login/ack-user/request-otp` (P2);
+`AckUserQueryPort` + `BuyerService` impl + `SessionController` `buyer_id` (P3); new `BuyerPortalController`
+(`/buyers/{id}/ack-invoices` + `/payment-instruction`, own-scoped + `buyer.CrossTenantReadDenied`) (P4/P5);
+`ForbiddenException.crossBuyerRead`; `ListingController.recordBuyerAck` actor-kind branch (P6);
+`ListingService.recordBuyerAck` role-set + `captured_by`/`captured_by_kind` + ACK-B2/B3/B4 guards (P7). Tests:
+`AckUserPasswordlessLoginTest` (4), `BuyerPortalReadTest` (4), `BuyerSelfAckTest` (6).
+- **ARCH.1 lesson (the one thing `/plan` under-specified):** `AckUserQueryPort` must live in
+  **`com.arthvritt.platform.buyer.port`** (beside `BuyerQueryPort`), not `buyer` — `BoundedContextRulesTest`
+  (DL-BE-039) forbids the `listing` BC importing `buyer` classes outside `..buyer.port..`. The implementer flagged
+  it rather than moving the ArchUnit test; the port was moved into `buyer.port` and all four importers updated.
+- **`captured_by` for an ack-user = the identity id** (`request.actorId()`, unique per `buyer_ack_user`) — so no
+  resolver in `ListingService`, no `adminUserId` throw. `captured_by_kind` (`'ops'`|`'buyer_ack_user'`) records
+  real buyer provenance (the module's point).
+- **ACK-B4 tightens the OPS path too** (reject re-record when already `acknowledged`/`failed`) — a safe
+  hardening; the full suite confirms no S5 regression.

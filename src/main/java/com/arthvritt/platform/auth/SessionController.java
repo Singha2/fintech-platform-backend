@@ -1,6 +1,7 @@
 package com.arthvritt.platform.auth;
 
 import com.arthvritt.platform.adminiam.RoleResolver;
+import com.arthvritt.platform.buyer.port.AckUserQueryPort;
 import com.arthvritt.platform.investor.InvestorQueryPort;
 import com.arthvritt.platform.shared.error.NotFoundException;
 import org.springframework.http.HttpStatus;
@@ -37,13 +38,15 @@ public class SessionController {
     private final RoleResolver roles;
     private final SessionService sessions;
     private final InvestorQueryPort investors;
+    private final AckUserQueryPort ackUsers;
 
     public SessionController(JdbcTemplate jdbc, RoleResolver roles, SessionService sessions,
-                             InvestorQueryPort investors) {
+                             InvestorQueryPort investors, AckUserQueryPort ackUsers) {
         this.jdbc = jdbc;
         this.roles = roles;
         this.sessions = sessions;
         this.investors = investors;
+        this.ackUsers = ackUsers;
     }
 
     @GetMapping("/auth/session")
@@ -65,6 +68,9 @@ public class SessionController {
         // Nullable — non-null only for kind='investor' (M10-D SES-1); server-resolved, never client-supplied.
         UUID investorId = investors.investorIdForIdentity(identityId).orElse(null);
 
+        // Nullable — non-null only for kind='acknowledgment_user' (BE-15, M11-C); server-resolved.
+        UUID buyerId = ackUsers.buyerIdForIdentity(identityId).orElse(null);
+
         List<String> activeRoles = new ArrayList<>(new TreeSet<>(roles.activeRoles(identityId)));
 
         Map<String, Object> body = new LinkedHashMap<>();
@@ -74,6 +80,7 @@ public class SessionController {
         body.put("roles", activeRoles);
         body.put("admin_user_id", adminUserId == null ? null : adminUserId.toString());
         body.put("investor_id", investorId == null ? null : investorId.toString());
+        body.put("buyer_id", buyerId == null ? null : buyerId.toString());
         body.put("mfa_fresh", sessions.isMfaFresh(session, ActionSensitivity.SENSITIVE));
         body.put("idle_expires_at", session.idleExpiresAt() == null ? null : session.idleExpiresAt().toString());
         body.put("absolute_expires_at",

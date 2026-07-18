@@ -179,6 +179,29 @@ public class AuthService {
     }
 
     /**
+     * BE-15 Part 1 (M11-C, DL-BE-090): passwordless ack-user login entry, {@code request-otp}. Mirrors
+     * {@link #requestInvestorOtp} (DL-BE-088): eligibility is a <i>current</i>-status gate —
+     * {@code kind='acknowledgment_user'}, {@code auth_identity.status='active'}, {@code buyer_ack_user.is_active
+     * = TRUE} AND the owning {@code buyer_account.status='active'} — run unconditionally so an eligible and an
+     * ineligible email share the same code path (enumeration-safety): an eligible email gets a real OTP via
+     * {@link #issueLoginOtp}; an ineligible one gets a synthetic, unpersisted challenge id.
+     */
+    @Transactional
+    public UUID requestAckUserOtp(String email) {
+        UUID identityId = jdbc.query(
+                "SELECT i.identity_id FROM auth_identity i "
+                        + "JOIN buyer_ack_user u ON u.identity_id = i.identity_id "
+                        + "JOIN buyer_account b ON b.buyer_id = u.buyer_id "
+                        + "WHERE i.email = ? AND i.kind::text = 'acknowledgment_user' AND i.status::text = 'active' "
+                        + "AND u.is_active = TRUE AND b.status::text = 'active'",
+                rs -> rs.next() ? rs.getObject(1, UUID.class) : null, email);
+        if (identityId != null) {
+            return issueLoginOtp(identityId);
+        }
+        return Ids.newId(); // synthetic — enumeration-safe, no OTP sent
+    }
+
+    /**
      * Verifies an OTP. The challenge row is locked {@code FOR UPDATE} so concurrent verifies serialize
      * — preventing a double-consume (two assertions) or an attempt-cap bypass. A failed attempt is
      * normal flow: it returns {@code OtpResult.failed(...)} and commits its side effects (attempts++,

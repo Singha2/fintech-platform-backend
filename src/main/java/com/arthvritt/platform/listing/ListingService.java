@@ -365,27 +365,49 @@ public class ListingService {
     }
 
     /**
-     * Records the buyer's acknowledgment, captured by Ops on the buyer's behalf (DL-019). {@code
-     * acknowledged} stamps {@code check_outcomes.buyer_ack} and keeps the listing in
-     * {@code awaiting_acknowledgment} (non-transition); {@code failed} transitions the listing to the
-     * terminal {@code acknowledgment_failed}.
+     * Records the buyer's acknowledgment — either captured by Ops on the buyer's behalf (DL-019) or, since
+     * BE-15 (M11-C), self-recorded by the buyer's own {@code acknowledgment_user} bearer. {@code acknowledged}
+     * stamps {@code check_outcomes.buyer_ack} and keeps the listing in {@code awaiting_acknowledgment}
+     * (non-transition); {@code failed} transitions the listing to the terminal {@code acknowledgment_failed}
+     * (ops-only — ACK-B2). An ack-user self-ack additionally requires an outstanding ops request (ACK-B3);
+     * both paths reject a double-ack (ACK-B4).
      */
     public CommandResult<Void> recordBuyerAck(CommandRequest request, String outcome, String method,
                                               String evidenceRef) {
-        return gateway.execute(request, OPS, () -> {
+        boolean ackUserActor = "acknowledgment_user".equals(request.actorType());
+        Set<String> required = ackUserActor ? Set.of() : OPS;
+        return gateway.execute(request, required, () -> {
             UUID listingId = request.aggregateId();
             Listing listing = load(listingId);
             requireStatus(listing, "awaiting_acknowledgment", listingId);
             InvoiceRow invoice = loadInvoice(listingId);
+
+            String currentAck = buyerAckStatus(invoice);
+            if ("acknowledged".equals(currentAck) || "failed".equals(currentAck)) { // ACK-B4 no double-ack (both paths)
+                throw new ValidationException("buyer acknowledgment already recorded for listing: " + listingId);
+            }
+            String ackMethod = method;
+            if (ackUserActor) {
+                if (!"acknowledged".equals(outcome)) { // ACK-B2 self-ack is acknowledged-only
+                    throw new ValidationException("a buyer self-ack must be 'acknowledged'");
+                }
+                if (!"requested".equals(currentAck)) { // ACK-B3 requires an outstanding ops request
+                    throw new ValidationException("no outstanding acknowledgment request for listing: " + listingId);
+                }
+                if (ackMethod == null) {
+                    ackMethod = "buyer_self_portal";
+                }
+            }
 
             if (!"acknowledged".equals(outcome) && !"failed".equals(outcome)) {
                 throw new ValidationException("outcome must be 'acknowledged' or 'failed'");
             }
             Map<String, Object> entry = new LinkedHashMap<>();
             entry.put("status", outcome);
-            entry.put("method", method);
+            entry.put("method", ackMethod);
             entry.put("evidence_ref", evidenceRef);
-            entry.put("captured_by", roles.adminUserId(request.actorId()).toString());
+            entry.put("captured_by", ackUserActor ? request.actorId().toString() : roles.adminUserId(request.actorId()).toString());
+            entry.put("captured_by_kind", ackUserActor ? "buyer_ack_user" : "ops");
             entry.put("recorded_at", nowIso());
             mergeBuyerAck(invoice.invoiceId(), entry);
 

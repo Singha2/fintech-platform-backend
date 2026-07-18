@@ -48,6 +48,15 @@ public class AuthController {
         return Map.of("challenge_id", challengeId.toString());
     }
 
+    /**
+     * BE-15 Part 1 (M11-C, DL-BE-090): passwordless ack-user login entry — open like {@code /investor/request-otp},
+     * enumeration-safe. {@code verify-otp} below is reused unchanged to establish the session.
+     */
+    @PostMapping("/ack-user/request-otp")
+    public Map<String, String> ackUserRequestOtp(@RequestBody(required = false) Map<String, String> body) {
+        return Map.of("challenge_id", auth.requestAckUserOtp(required(body, "email")).toString());
+    }
+
     @PostMapping("/verify-otp")
     public Map<String, String> verifyOtp(@RequestBody(required = false) Map<String, String> body) {
         OtpResult result = auth.verifyOtp(uuid(required(body, "challenge_id"), "challenge_id"),

@@ -35,6 +35,7 @@ Non-admin-actor commands skip the MFA gate. **UI consequence:** treat *all* admi
 |---|---|---|
 | `POST /auth/login/password` | Step 1 of login: verify email+password, issue an SMS-OTP → returns `challenge_id` | 🔓 open |
 | `POST /auth/login/investor/request-otp` | **Passwordless investor login** (BE-18): `{email}` → OTP for an `active` investor → returns `challenge_id`. Enumeration-safe (indistinguishable response; no OTP to a non-eligible email). Then use `verify-otp` | 🔓 open |
+| `POST /auth/login/ack-user/request-otp` | **Passwordless buyer ack-user login** (BE-15): `{email}` → OTP for an active `acknowledgment_user` of an active buyer → `challenge_id`. Enumeration-safe. Then `verify-otp`; session `kind='acknowledgment_user'` carries `buyer_id` | 🔓 open |
 | `POST /auth/login/verify-otp` | Step 2: verify OTP → establishes a session, returns the **bearer** (the token) | 🔓 open |
 | `GET /auth/session` | **Who am I** (BE-1): current `{identity_id, kind, email, roles[], admin_user_id, mfa_fresh, idle/absolute_expires_at}` — drives UI role-nav + MFA gating. `roles` empty for non-admin kinds | 🪪 bearer |
 | `POST /auth/logout` | **Server-side logout** (DL-BE-089): revokes the caller's session → the bearer 401s immediately. No body; **204**; idempotent. Works for admin + investor | 🪪 bearer |
@@ -94,6 +95,8 @@ Non-admin-actor commands skip the MFA gate. **UI consequence:** treat *all* admi
 | `GET /buyers` | **List** (BE-5): `?status=&q=` filters → `[{buyer_id, legal_name, sector, status, credit_limit_paise, mca_cin, gstin}]`, `LIMIT 500` | 🪪 bearer |
 | `GET /buyers/{id}` | Read buyer status + version | 🪪 bearer |
 | `GET /buyers/{id}/kyb-verification` | Read `kyb_verified` + verified_by/at + optional `kyb_document_id` | 🪪 bearer |
+| `GET /buyers/{id}/ack-invoices` | **Buyer portal** (BE-15): the buyer's listings awaiting acknowledgment → `[{listing_id, invoice_number, supplier_name, face_value_paise, invoice_date, due_date, ack_status, sla_hours, requested_at, acknowledged_at, aggregate_version}]`. Own-scoped for an ack-user (mismatch → 403 `cross_tenant_read`, audited); admin reads any | 🪪 ack-user (self) · admin |
+| `GET /buyers/{id}/payment-instruction` | **Buyer portal** (BE-15): current instruction metadata `{present, effective_from, confirmed_at}` (bank details not yet captured — confirm-PI stores a placeholder). Own-scoped | 🪪 ack-user (self) · admin |
 
 ## Investor onboarding (BC7) — `/investors`, `/investor-invites`
 | Method · Path | Functionality | Auth |
@@ -153,7 +156,7 @@ is a runtime-editable *suggested* set (buyer KYB is separate — see the Buyer s
 | `POST /listings/{id}/record-ops-check` | Record one ops check (IRN, e-way, exposure, …) | 👤 ops_executive |
 | `POST /listings/{id}/complete-ops-checks` | Close ops checks → `awaiting_acknowledgment` | 👤 ops_executive |
 | `POST /listings/{id}/request-buyer-ack` | Request buyer acknowledgement (SLA) | 👤 ops_executive |
-| `POST /listings/{id}/record-buyer-ack` | Record buyer ack outcome | 👤 ops_executive |
+| `POST /listings/{id}/record-buyer-ack` | Record buyer ack outcome. **Buyer self-ack** (BE-15): an `acknowledgment_user` acks its **own** buyer's listing (`{outcome:'acknowledged'}` only; requires an outstanding request; provenance `captured_by_kind='buyer_ack_user'`; cross-buyer → 403) **or** ops-on-behalf (both outcomes) | 🪪 ack-user (self) · 👤 ops_executive |
 | `POST /listings/{id}/snapshot-and-ready` | Price it (rate bps) + snapshot → `ready_for_review`, funding target | 👤 ops_executive |
 | `POST /listings/{id}/approve-go-live` | Second-person approval → `live` + virtual account | 👤 treasury_and_settlement |
 | `POST /listings/{id}/declare-funding-shortfall` | Declare a funding shortfall | 👤 ops_executive |
