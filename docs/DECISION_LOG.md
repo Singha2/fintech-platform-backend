@@ -3397,3 +3397,51 @@ so it becomes a real server revoke the moment this ships.
   a `5xx` — verified by test.
 - The bearer **is** the `auth_session.session_id`, so `revokeSession(session.sessionId())` targets exactly the
   caller's own session. Works for admin and investor kinds alike (kind-agnostic session path).
+
+---
+
+## DL-BE-090 — BE-15 buyer portal (ack-user login + reads + self-ack): DoR decisions, design/DoR
+
+**Status.** DoR + `/plan` done (spec §9), **implementation pending**. Spec: `docs/modules/M11-C-buyer-portal-ack.md`.
+Brief: `docs/BE15_BUYER_PORTAL_BRIEF.md`. Predecessor substrate: **DL-BE-088 (BE-18)**.
+
+**Verdict (assessment).** **Mostly BE-18 again for the `acknowledgment_user` kind — one non-additive edit + one
+contract fork.** The login/own-scoping/denied-read/non-admin-actor substrate is reused wholesale; login is
+mandatorily OTP-only (`AU.1`: ack-user identities have zero `auth_credential` rows); **no new tables**.
+- **The one non-additive edit (the risk):** unlike BE-18's `subscribe`, the ack command
+  `ListingService.recordBuyerAck` **is admin-coupled** — `gateway.execute(request, OPS, …)` (`:375`) and
+  `roles.adminUserId(request.actorId())` for `captured_by` (`:388`, which **throws** for a non-admin identity). So
+  BE-15 **modifies a live S5 deal-flow control command** to branch on actor kind (role set + `captured_by`), and
+  must not regress ops-on-behalf — mandatory regression test.
+- **The contract fork:** `buyer_payment_rule` stores bank coordinates in a **document** (`instruction_doc_hash`),
+  not columns, so `GET /buyer/payment-instruction` can only return metadata `{effective_from, confirmed_at,
+  present}`; structured fields / a gated doc download are deferred (would need a migration or a download-gate
+  investigation).
+
+**DoR decisions (full text in the spec).** (1) enumeration-safe `ack-user/request-otp` (reuse BE-18);
+(2) eligibility = active ack-user of an active buyer, current state; (3) reuse `issueLoginOtp` (channel stub-cosmetic);
+(4) **`recordBuyerAck` actor-kind-aware** — no-role gate + `captured_by = ack_user_id` + new `captured_by_kind`
+(`'ops'`|`'buyer_ack_user'`) closing the provenance gap; own-scoped (mismatch → `cross_tenant_read`); `acknowledged`-only;
+controller diverges from the shared `command()` helper; (5) **payment-instruction metadata-only now** (bank
+fields/download deferred — *the one place BE-15 can't fully match mock S15 from the schema; confirm/revise*);
+(6) ops-on-behalf retained (no S5 regression); (7) `AckUserQueryPort.buyerIdForIdentity`; (8) denied reads →
+`buyer.CrossTenantReadDenied`; (9) `/auth/session` +`buyer_id` (mirror investor_id).
+
+**Risk sweep + edges resolved (before `/plan`).** A code sweep de-risked the main concern and settled three edges:
+- **Verified:** `recordBuyerAck`'s only admin coupling is `:388`; `new Actor(...)` appears nowhere in
+  `ListingService` (envelope actor = `request.actorType()`); no `check_outcomes` CHECK. The DoR-4 edit is a one-line
+  `captured_by` branch + role-set — no hidden second coupling.
+- **E1 (payment instruction) — corrected:** `confirmPaymentInstruction` (`BuyerService.java:149-152`) stores a
+  **synthetic** `instruction_doc_hash = sha256("payment:"+buyerId)` — **no real doc, no bank fields captured**. So
+  metadata-only isn't a shortcut, it's the maximum the data holds; real surfacing is **blocked upstream** on a
+  `confirm-PI` enhancement (separate follow-up). `captured_by` for an ack-user = the **identity id** (`actorId`,
+  unique per `buyer_ack_user`) — so **no resolver in `ListingService`, no throw**.
+- **E2 (DoR-10):** self-ack now requires an outstanding ops request (`buyer_ack.status='requested'`) — a buyer acks
+  only what was asked; ops path ungated (no S5 regression).
+- **E3 (DoR-11):** reject a `record-buyer-ack` when already `acknowledged`/`failed` (both paths) — first-writer-wins;
+  the concurrency guard the non-transition `acknowledged` merge lacked.
+- **Endpoint shape:** `/buyers/{id}/ack-invoices` + `/buyers/{id}/payment-instruction` (explicit id → a real
+  cross-tenant surface + admin-reads-any, mirroring BE-18's `/investors/{id}/subscriptions`).
+
+**Carry into `/tasks`.** Keep the OPS path byte-identical behind the actor-kind branch; resolve `buyer_id` from the
+session (never body); verify the cross-BC `AckUserQueryPort` dependency passes `BoundedContextRulesTest`.
