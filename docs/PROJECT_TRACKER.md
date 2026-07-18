@@ -6,7 +6,7 @@
 > update **here first**, then the detail doc. Do **not** start a new top-level plan — that is what caused
 > the drift this file exists to end.
 >
-> **Last updated:** 2026-07-16 · **Maintained by:** solo dev (Amit).
+> **Last updated:** 2026-07-18 · **Maintained by:** solo dev (Amit).
 
 ---
 
@@ -40,6 +40,7 @@ The backend needs *nothing new* for screens S1–S8, S12, S14 — those endpoint
 | `DECISION_LOG.md` (`DL-BE-*`) | backend | Why-we-did-it record | ✅ append-only |
 | **`INTEGRATION_PLAN.md`** | mock | **UI wiring — the executable step-by-step** | ⭐ active execution doc |
 | `API_ALIGNMENT.md` | mock | Per-screen ↔ endpoint shapes + enum corrections | ✅ reference |
+| **`BACKEND_UI_READINESS.md`** | mock | **Backend→UI hand-off** — what the live API actually ships + corrections to stale plan assumptions | ⭐ read before wiring |
 | `HARMONIZATION.md`, `Mock_Build_Plan.md`, `TIER2_SHARED_STORE_PLAN.md`, `STEP*_BLUEPRINT.md` | mock | **Historical** — how the mock was built | 🗄️ archive (don't extend) |
 
 Two docs are "plans you execute from": **INTEGRATION_PLAN** (UI side) and **Spec_Driven_Build_Plan** (backend
@@ -110,14 +111,21 @@ From `ROADMAP.md` §5. These add capability but the UI wiring above does not wai
 1. **Bridge foundation** — build `src/api/` client (bearer + `X-Command-Id`/`X-Aggregate-Version` envelope), flip `DATA_MODE` live/mock switch, wire **S1 login + OTP + `/auth/session`**. Keep offline mock path working.
 2. **Read-only admin screens** (fast wins, no writes): **S2 → S3 → S4 → S5 → S6 → S7 → S8 → S12 → S14**.
 3. **Command flows** (writes with the envelope): supplier/buyer/listing/investor onboarding cmds on S3/S4/S5/S10.
-4. **Investor read-only portal** — **S11 + S13 now backend-ready (M10-D/BE-14/BE-17)**; wire against a real investor bearer (dev password today, Phase B for real login). See mock work-order below.
+4. **Investor read-only portal** — **S11 + S13 now backend-ready (M10-D/BE-14/BE-17)**; wire against a real investor bearer (dev password today, Phase B for real login). Details in the mock's `BACKEND_UI_READINESS.md`.
 5. **Deferred screens** — S9 (after M17), S15 (after WS-2).
 
 **Track B — backend remainder (parallel, non-blocking)**
-5. M17 Auditor (also unblocks S9) → then M15, M14, deferred-control sweep.
+6. M17 Auditor (also unblocks S9) → then M15, M14, deferred-control sweep.
+7. **BE-18 · Phase B investor login + self-commit** — passwordless invite→email+OTP investor login **+** investor self-commit (the `CommandGateway` non-admin-actor authz change). Unblocks **real** investor login (M10-D shipped dev-password-only) and investor-initiated payments. Slot after M10-D; spec as a new M11-x slice. Rationale + shape in `DL-BE-084` (§Phase B).
 
 **Track C — go-live prep (later)**
-6. BE-16 CORS decision, real integration credentials (verification/escrow/e-sign/KYC swap from stubs).
+8. BE-16 CORS decision, real integration credentials (verification/escrow/e-sign/KYC swap from stubs).
+
+### Deferred fixes — known gaps, fix eventually (don't lose these)
+| # | Item | Where it lives | Trigger to fix |
+|---|---|---|---|
+| **DF-1** | **Real investor login + self-commit** (passwordless). M10-D ships **dev-password login only**; real investors can't self-login/pay yet. | = **BE-18** above (Track B #7) · `DL-BE-084`, `M10-D §DoR-1` | Before any pilot with real investors logging in / paying. |
+| **DF-2** | **KYC download gate over-permissive for suspended/exited investors** — `InvestorService.isKycApprovedForDownload`'s `… OR kyc_approved_at IS NOT NULL` lets a once-approved but later `suspended`/`exited` investor still download. Latent (Suspend/Exit not built) but a real over-permission. | `InvestorService.isKycApprovedForDownload`, `InvoiceDocumentService.download` · `DL-BE-084` (§findings) | **With the Suspend/Exit module** (M10 §9 post-active lifecycle) — decide there whether a de-activated investor retains document access, then tighten the clause. |
 
 ---
 

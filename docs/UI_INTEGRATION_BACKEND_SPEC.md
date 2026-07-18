@@ -1,6 +1,18 @@
 # UI Integration — Backend Read-Surface Spec
 
-> 📍 **Status & cross-repo progress live in [`PROJECT_TRACKER.md`](PROJECT_TRACKER.md)** (the single source of truth). This doc is the BE-1…BE-16 *design detail* it links to — **BE-1…BE-12 are shipped**; update status in the tracker, not here.
+> 📍 **Status & cross-repo progress live in [`PROJECT_TRACKER.md`](PROJECT_TRACKER.md)** (the single source of truth). This doc is the BE-1…BE-17 *design detail* it links to — **BE-1…BE-12 + BE-14 + BE-17 are shipped**; update status in the tracker, not here.
+
+> 🎯 **Scope boundary — this doc is UI integration ONLY. Do not conflate it with vendor integration.**
+> "Integration" is two *separate* journeys:
+> - **UI integration** (this doc's world) — wire the 15-screen frontend to the live backend API. Exactly **two**
+>   owning docs: **this** (backend read surface, BE-1…BE-17) + the mock's `INTEGRATION_PLAN.md` (UI wiring, Phase
+>   0–7). Backend→UI readiness/hand-off: the mock's `BACKEND_UI_READINESS.md`.
+> - **Vendor/service integration** (NOT here) — swapping the ACL **stubs → real** vendors (BC15 verification /
+>   BC17 banking-escrow / BC18 e-sign / BC19 notifications / KYC). Owned by **ROADMAP go-live / `PROJECT_TRACKER.md`
+>   Track C**, done at the Production gate.
+>
+> Rule of thumb: a *screen* reading/writing the API → **here**. A *vendor credential/sandbox* → **Track C**, out
+> of scope for UI integration.
 
 > **What this is.** The additive backend work the 15-screen frontend (`../fintech-patform-mock`) needs to run
 > against the live API without mock data. It is the concrete output of **ROADMAP Phase B ("UI plugin")**
@@ -67,13 +79,21 @@ mis-specified.
 
 ## 1. Priority tiers & module mapping
 
-| Tier | Items | Why | Milestone/owner |
-|---|---|---|---|
-| **P0** — unblock a coherent live *admin* UI | BE-1 session/`me`, BE-2 kyc-file resolver, BE-3 MFA answer (no code) | tiny, zero-risk, needed by almost every screen | new additive |
-| **P1** — additive admin read/list surface | BE-4…BE-12 (suppliers, buyers+bands, listings+ops-checks, disbursement queue, distribution investors, invites, supplier tracker, dashboard, listing-detail) | removes the bulk of the UI mock-flags (G2–G12) | new additive read surface (suggest grouping as an "Admin Read" work item; module code owner-assigned) |
-| **P1 (planned module)** | BE-13 audit list | already a roadmap module | **M17 Auditor** |
-| **P2** — deferred portals | BE-14 investor reads, BE-15 buyer reads + ack login + self-ack | require ownership scoping + deferred login flows | **M10-full**, **WS-2** |
-| **P2** — infra | BE-16 CORS | prod cross-origin only | infra/deploy |
+> ✅ **Completion snapshot (verified 2026-07-18).** **14 of 17 items shipped.** Every P0 + P1 admin item (BE-1…BE-12)
+> is live and tested, and both investor-portal items (BE-14, BE-17) shipped with M10-D. The only open items are
+> milestone-gated by design: **BE-13** (audit → M17), **BE-15** (buyer ack-login → WS-2), **BE-16** (CORS → prod).
+> → The UI's entire **admin spine + investor read-only portal** is backend-ready; nothing here blocks UI wiring.
+>
+> **Shipped ✅:** BE-1, BE-2, BE-3, BE-4, BE-5, BE-6, BE-7, BE-8, BE-9, BE-10, BE-11, BE-12, BE-14, BE-17
+> **Not built ⛔ (milestone-gated):** BE-13 (M17) · BE-15 (WS-2) · BE-16 (prod CORS)
+
+| Tier | Items | Why | Milestone/owner | Status |
+|---|---|---|---|---|
+| **P0** — unblock a coherent live *admin* UI | BE-1 session, BE-2 kyc-file resolver, BE-3 MFA answer (no code) | tiny, zero-risk, needed by almost every screen | new additive | ✅ **all shipped** |
+| **P1** — additive admin read/list surface | BE-4…BE-12 (suppliers, buyers+bands, listings+ops-checks, disbursement queue, distribution investors, invites, supplier tracker, dashboard, listing-detail) | removes the bulk of the UI mock-flags (G2–G12) | new additive read surface | ✅ **all shipped** |
+| **P1 (planned module)** | BE-13 audit list | already a roadmap module | **M17 Auditor** | ⛔ deferred (M17) |
+| **P2** — portals | BE-14 investor reads, **BE-17 investor login**, BE-15 buyer reads + ack login + self-ack | require ownership scoping + deferred login flows | **M10-D** (14/17), **WS-2** (15) | ⚠️ BE-14 + BE-17 ✅ shipped; BE-15 ⛔ deferred |
+| **P2** — infra | BE-16 CORS | prod cross-origin only | infra/deploy | ⛔ deferred (prod) |
 
 **Sequencing:** P0 first (unblocks role display + KYC docs + tells the UI how to gate MFA), then P1 admin
 reads (each removes one mock-flag, in the ROADMAP §4 lifecycle order: onboarding → listing → funding →
@@ -85,7 +105,7 @@ settlement → consoles), then P2 with their milestones. All P0/P1 items are ind
 
 Each item: **Unblocks · Design-fit · Route/Auth · Params · Response (PROPOSAL) · Source · Migration · Acceptance · Effort.**
 
-### BE-1 — `GET /auth/session` (current identity + roles) · P0
+### BE-1 — `GET /auth/session` (current identity + roles) · P0 · ✅ SHIPPED (`SessionController`)
 - **Unblocks:** UI role discovery (Part B B2/Step 6.5); removes the "advisory persona" workaround. Screens: all.
 - **Design-fit:** every internal piece already exists — only the HTTP surface is missing. Reuse the request
   principal `AuthSession` (id + expiries + `mfa_assertion_id`), `auth_identity.kind`, and
@@ -108,7 +128,7 @@ Each item: **Unblocks · Design-fit · Route/Auth · Params · Response (PROPOSA
   `investor@dev.local` → `roles:[]`, `kind:"investor"`.
 - **Effort:** S.
 
-### BE-2 — KYC-file-id resolver · P0
+### BE-2 — KYC-file-id resolver · P0 · ✅ SHIPPED (`KycFileController`)
 - **Unblocks:** the KYC-doc UI (Part B B4/Step 4.3). Today **no** endpoint returns a `kyc_file_id` given a
   supplier/investor id, so `POST /kyc/{kycFileId}/documents` is unreachable from the UI.
 - **Design-fit:** `comp_kyc_file` has a **UNIQUE (subject_id, subject_type)** — exactly one row per subject
@@ -122,7 +142,7 @@ Each item: **Unblocks · Design-fit · Route/Auth · Params · Response (PROPOSA
   never-submitted subject → 404 (UI hides the KYC-doc panel until KYC is submitted).
 - **Effort:** S.
 
-### BE-3 — MFA-freshness contract for the UI (no code) · P0
+### BE-3 — MFA-freshness contract for the UI (no code) · P0 · ✅ DONE (documented in `API_CATALOGUE.md`)
 - **Answer to record (in `API_CATALOGUE.md`):** *every* admin-actor command requires MFA freshness; today all
   are `ActionSensitivity.SENSITIVE` (5-minute window) — there is no per-command allowlist and `NORMAL` is
   unused. Non-admin-actor commands skip the MFA gate.
@@ -131,63 +151,63 @@ Each item: **Unblocks · Design-fit · Route/Auth · Params · Response (PROPOSA
   backend change — just make this explicit in the catalogue so the UI gates correctly.
 - **Effort:** doc only.
 
-### BE-4 — `GET /suppliers` (list) · P1 · unblocks G2 / S3
+### BE-4 — `GET /suppliers` (list) · P1 · unblocks G2 / S3 · ✅ SHIPPED (`SupplierController`)
 - **Route/Auth:** `GET /suppliers?status=&q=` — any bearer.
 - **Response (PROPOSAL, per row):** `{ supplier_id, legal_name, constitution_type, pan, gstin, status, activated_at }` — **source exact columns from `sup_account`** (mirror the by-id `GET /suppliers/{id}` field set, plus display columns).
 - **Source/Migration:** `SELECT … FROM sup_account [WHERE status=?::sup_account_status] [AND legal_name ILIKE ?] ORDER BY … LIMIT 500`. None.
 - **Acceptance:** returns the seeded supplier; `?status=active` filters.
 - **Effort:** S.
 
-### BE-5 — `GET /buyers` + pricing bands · P1 · unblocks G3 / S4
+### BE-5 — `GET /buyers` + pricing bands · P1 · unblocks G3 / S4 · ✅ SHIPPED (`BuyerController`, `CreditController`)
 - **Routes:** `GET /buyers?status=&q=` → rows `{ buyer_id, legal_name, sector, status, credit_limit_paise, mca_cin, gstin }` from `buyer_account`; and `GET /credit/buyers/{id}/pricing-bands` → `[{ tenor_bucket, rate_range_min_bps, rate_range_max_bps, fee_bps, effective_from, status }]` from `risk_pricing_policy`.
 - **Migration:** none. **Effort:** S–M.
 - **Note:** pricing-band **re-pricing/supersession** stays deferred (DL-BE-060). These are read-only.
 
-### BE-6 — `GET /listings` + ops-checks read · P1 · unblocks G4 / S5
+### BE-6 — `GET /listings` + ops-checks read · P1 · unblocks G4 / S5 · ✅ SHIPPED (`ListingController`)
 - **Routes:** `GET /listings?status=&supplier_id=&buyer_id=` → rows `{ listing_id, invoice_number, supplier_id, buyer_id, face_value_paise, tenor_days, status, funding_target, rate_bps }` from `deal_listing`; and `GET /listings/{id}/ops-checks` → `[{ check_name, outcome, checked_by, checked_at }]` from the ops-check table (source table name from `record-ops-check`'s writer).
 - **Supplier/buyer names:** if `deal_listing` stores only ids, the UI can join client-side via BE-4/BE-5, **or**
   the backend may add `supplier_legal_name`/`buyer_legal_name` to the row via a JOIN (owner's choice — a JOIN
   read is native, see `DisbursementController`).
 - **Migration:** none. **Effort:** M.
 
-### BE-7 — Disbursement queue + detail · P1 · unblocks G5 / S6
+### BE-7 — Disbursement queue + detail · P1 · unblocks G5 / S6 · ✅ SHIPPED (`DisbursementController`: `/disbursements` + `/listings/{id}/disbursement/detail`)
 - **Routes:** `GET /disbursements?status=` (or `GET /listings?status=fully_funded,disbursed`) → queue rows; and
   a **new** `GET /listings/{id}/disbursement/detail` exposing `{ payout_instruction_id, status, gross_amount, net_amount, maker, checker, utr, funding_completed_at, listing_status }` — **do not widen** the existing
   `GET /listings/{id}/disbursement` (frozen); add the richer read alongside.
 - **Source:** `cash_payout_instruction` (+ JOIN `deal_listing`), `kind='disbursement'`. **Migration:** none.
 - **Effort:** M.
 
-### BE-8 — `GET /listings/{id}/distribution/investors` + reconciliation read · P1 · unblocks G6 / S7
+### BE-8 — `GET /listings/{id}/distribution/investors` + reconciliation read · P1 · unblocks G6 / S7 · ✅ SHIPPED (`DistributionController`, `ReconciliationController` — recon at `/reconciliation`, a documented deviation)
 - **Routes:** `GET /listings/{id}/distribution/investors` → `[{ investor_id, gross_paise, tds_amount_paise, fee_paise, net_paise, utr }]` (the per-investor breakdown frozen at distribution draft); and, if a reconciliation
   ledger is exposed, `GET /listings/{id}/reconciliation` → the `cash_recon_ledger` view.
 - **Source:** the per-investor distribution rows (source table from `distribution/draft`'s writer),
   `cash_recon_ledger`. **Migration:** none. **Effort:** M.
 
-### BE-9 — `GET /investor-invites` (list) · P1 · unblocks G7 / S8
+### BE-9 — `GET /investor-invites` (list) · P1 · unblocks G7 / S8 · ✅ SHIPPED (`InvestorController.invites`)
 - **Route:** `GET /investor-invites?status=` → `[{ invite_id, status, issued_by, expiry_at, consumed_at }]` from `inv_invite`.
 - **Note:** emails/phones are stored **hashed** (`email_hash`/`phone_hash`) — the list can't return plaintext
   email; return the hash/last-4 or omit, per the backend's PII rule. The UI's `email_display`/`justification`
   are UI-only and must not be expected from this endpoint. **Migration:** none. **Effort:** S.
 
-### BE-10 — `GET /listings/{id}/detail` (rich display) · P1 · unblocks G10 / S12
+### BE-10 — `GET /listings/{id}/detail` (rich display) · P1 · unblocks G10 / S12 · ✅ SHIPPED (`ListingController.detail`, admin variant)
 - **Route:** a **new** detail read (do not widen the frozen `GET /listings/{id}`): `{ listing_id, status, funding_target, committed_total, va_id, va_number, va_ifsc, pricing_snapshot:{rate_bps,fee_bps,snapshot_at}, invoice:{invoice_number,face_value_paise,tenor_days,invoice_date,due_date,irn}, buyer:{…}, supplier:{…} }`.
 - **Source:** JOIN `deal_listing` + snapshot columns + `cash_virtual_account` + counterparty tables.
 - **Scoping caveat:** when this feeds the **investor** S12, ownership + KYC'd-investor gating apply — that
   variant belongs to **BE-14 / M10-full**. The admin-facing detail is fine now. **Migration:** none. **Effort:** M.
 
-### BE-11 — `GET /suppliers/{id}/listings` (tracker) · P1 · unblocks G12 / S14 (admin view)
+### BE-11 — `GET /suppliers/{id}/listings` (tracker) · P1 · unblocks G12 / S14 (admin view) · ✅ SHIPPED (`SupplierController`)
 - **Route:** `GET /suppliers/{id}/listings` → per-supplier invoice/listing rows for the tracker.
 - **Source:** `SELECT … FROM deal_listing WHERE supplier_id=?`. **Migration:** none. **Effort:** S.
 - **Note:** the *supplier-facing* (supplier-login) version is **not in scope** — suppliers have no login
   (V3 schema; USE_CASES §"No self-service"). This endpoint is the **admin** view of a supplier's listings.
 
-### BE-12 — Dashboard: work-queues + stats · P1 · unblocks G1 / S2
+### BE-12 — Dashboard: work-queues + stats · P1 · unblocks G1 / S2 · ✅ SHIPPED (`AdminDashboardController`)
 - **Routes:** `GET /admin/work-queues?role=` → per-role pending items (composed from the aggregates' statuses);
   `GET /admin/stats` → `{ active_listings, total_deployed_paise, investors_active, suppliers_active, pending_disbursements }`.
 - **Design-fit:** compute from write tables now (COUNT/status filters); the queue is *"a projection"*
   eventually (DECISION_LOG) — do **not** build a projection table for pilot. **Migration:** none. **Effort:** M.
 
-### BE-13 — Audit list · P1 · **M17 Auditor (BC13)**
+### BE-13 — Audit list · P1 · **M17 Auditor (BC13)** · ⛔ NOT BUILT (deferred to M17)
 - **Route:** `GET /audit/events?entity_type=&from=&to=&sensitivity=` → the S9 log, from `sys_audit_event`.
 - **Design-fit:** this is the already-planned **M17** module (ROADMAP §5). Build it there, in M17's read-only,
   regulator-access scope; the audit-as-projection optimization is noted for later. **Migration:** none (reads
@@ -214,7 +234,7 @@ Each item: **Unblocks · Design-fit · Route/Auth · Params · Response (PROPOSA
   are Phase B (BE-18)** — passwordless invite→email+OTP, because `inv_invite` has no token and there is no
   session-less command substrate (DL-BE-084). No new command, no migration.
 
-### BE-15 — Buyer portal + ack-user login + self-ack · P2 · **WS-2**
+### BE-15 — Buyer portal + ack-user login + self-ack · P2 · **WS-2** · ⛔ NOT BUILT (deferred to WS-2)
 - **Scope:** the **passwordless email+OTP** ack-user login (DL-021 — a *new* auth path, not
   `/auth/login/password`); buyer-ack-user-scoped reads `GET /buyer/invoices`, `GET /buyer/payment-instruction`,
   `GET /listings/{id}/noa`; and a buyer **self-ack** command `POST /listings/{id}/buyer-ack` (ack-user bearer),
@@ -223,7 +243,7 @@ Each item: **Unblocks · Design-fit · Route/Auth · Params · Response (PROPOSA
   per-invoice ack "needs the buyer ack-user login flow, itself deferred WS-2"). This is real auth surface, not
   a read — build it with WS-2. **Effort:** L (with WS-2).
 
-### BE-16 — CORS (prod only) · P2 · infra
+### BE-16 — CORS (prod only) · P2 · infra · ⛔ NOT BUILT (prod-time decision; dev uses Vite proxy)
 - **Dev:** no change — the UI uses a Vite dev proxy, so the browser stays same-origin; `SecurityConfig` keeps
   `.cors()` disabled.
 - **Prod:** if the UI is served cross-origin, either front both with one reverse proxy (no CORS) **or** enable
@@ -246,24 +266,25 @@ Each item: **Unblocks · Design-fit · Route/Auth · Params · Response (PROPOSA
 
 ## 4. Cross-reference — backend item ↔ UI
 
-| BE | Endpoint(s) | UI gap | Screen | UI Part B item | Milestone |
-|---|---|---|---|---|---|
-| BE-1 | `GET /auth/session` | (role discovery) | all | B2 / Step 6.5 | additive |
-| BE-2 | `GET /{suppliers,investors}/{id}/kyc-file` | (A7.1) | S3/S10 | B4 / Step 4.3 | additive |
-| BE-3 | (doc: MFA-fresh = all admin cmds) | (A7.2) | all | Step 6.4 | — |
-| BE-4 | `GET /suppliers` | G2 | S3 | B5.2 | additive |
-| BE-5 | `GET /buyers`, `…/pricing-bands` | G3 | S4 | B5.3 | additive |
-| BE-6 | `GET /listings`, `…/ops-checks` | G4 | S5 | B5.4 | additive |
-| BE-7 | disbursement queue + `…/disbursement/detail` | G5 | S6 | B5.5 | additive |
-| BE-8 | `…/distribution/investors`, `…/reconciliation` | G6 | S7 | B5.6 | additive |
-| BE-9 | `GET /investor-invites` | G7 | S8 | B5.7 | additive |
-| BE-10 | `GET /listings/{id}/detail` | G10 | S12 | B5.9 | additive (investor variant → M10-full) |
-| BE-11 | `GET /suppliers/{id}/listings` | G12 | S14 | B5.11 | additive (admin view) |
-| BE-12 | `GET /admin/work-queues`, `/admin/stats` | G1 | S2 | (S2) | additive |
-| BE-13 | `GET /audit/events` | G8 | S9 | (S9) | **M17** |
-| BE-14 | investor marketplace + portfolio reads | G9/G11 | S11/S13 | B5.9/B5.10 | **M10-full** |
-| BE-15 | ack login + buyer reads + self-ack | G13 | S15 | B5.12 | **WS-2** |
-| BE-16 | CORS | — | (prod) | B0 (proxy in dev) | infra |
+| BE | Endpoint(s) | UI gap | Screen | UI Part B item | Milestone | Status |
+|---|---|---|---|---|---|---|
+| BE-1 | `GET /auth/session` | (role discovery) | all | B2 / Step 6.5 | additive | ✅ shipped |
+| BE-2 | `GET /{suppliers,investors}/{id}/kyc-file` | (A7.1) | S3/S10 | B4 / Step 4.3 | additive | ✅ shipped |
+| BE-3 | (doc: MFA-fresh = all admin cmds) | (A7.2) | all | Step 6.4 | — | ✅ done (doc) |
+| BE-4 | `GET /suppliers` | G2 | S3 | B5.2 | additive | ✅ shipped |
+| BE-5 | `GET /buyers`, `…/pricing-bands` | G3 | S4 | B5.3 | additive | ✅ shipped |
+| BE-6 | `GET /listings`, `…/ops-checks` | G4 | S5 | B5.4 | additive | ✅ shipped |
+| BE-7 | disbursement queue + `…/disbursement/detail` | G5 | S6 | B5.5 | additive | ✅ shipped |
+| BE-8 | `…/distribution/investors`, `…/reconciliation` | G6 | S7 | B5.6 | additive | ✅ shipped |
+| BE-9 | `GET /investor-invites` | G7 | S8 | B5.7 | additive | ✅ shipped |
+| BE-10 | `GET /listings/{id}/detail` | G10 | S12 | B5.9 | additive (investor variant → M10-full) | ✅ shipped (admin) |
+| BE-11 | `GET /suppliers/{id}/listings` | G12 | S14 | B5.11 | additive (admin view) | ✅ shipped |
+| BE-12 | `GET /admin/work-queues`, `/admin/stats` | G1 | S2 | (S2) | additive | ✅ shipped |
+| BE-13 | `GET /audit/events` | G8 | S9 | (S9) | **M17** | ⛔ not built |
+| BE-14 | investor marketplace + portfolio reads | G9/G11 | S11/S13 | B5.9/B5.10 | **M10-D** | ✅ shipped |
+| BE-17 | `/auth/session` +`investor_id` + investor read-only login (scoping, KYC gate) | (investor persona) | S11/S13 | — | **M10-D** | ✅ shipped (dev login; real login → BE-18) |
+| BE-15 | ack login + buyer reads + self-ack | G13 | S15 | B5.12 | **WS-2** | ⛔ not built |
+| BE-16 | CORS | — | (prod) | B0 (proxy in dev) | infra | ⛔ not built (prod) |
 
 ---
 
