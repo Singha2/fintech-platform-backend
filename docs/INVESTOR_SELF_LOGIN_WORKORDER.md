@@ -213,7 +213,7 @@ Build A so B is additive:
 ---
 
 ## 7. Handoff to the front-end
-The mock (`../fintech-patform-mock`) will add an investor login entry + read-only presentation **after** Phase A
+The mock (`../fintech-patform-ui`) will add an investor login entry + read-only presentation **after** Phase A
 is green (founder's sequence: backend first). The UI persona mapping for this is already documented in the mock's
 `docs/API_ALIGNMENT.md §1.4` (the `investor` persona is intentionally *not* live-mapped until this lands). When
 Phase A is done, notify the mock side to start its investor-login increment against the real bearer.

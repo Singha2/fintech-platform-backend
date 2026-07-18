@@ -84,7 +84,7 @@ A matured deal **pays every investor** (principal + return), **withholds TDS on 
 - Each distribution/deduction → one envelope; each statement issuance → envelope; FY close → envelope. (All chained `sys_audit_event`.)
 
 ### ☐ Frontend contract
-- ⚠️ Confirm consuming mock screen(s) in `../fintech-patform-mock` (investor statements / settlement console) and agree request/response shapes.
+- ⚠️ Confirm consuming mock screen(s) in `../fintech-patform-ui` (investor statements / settlement console) and agree request/response shapes.
 
 ### ☐ Test scenarios
 - Happy multi-investor distribution with TDS → all paid, deal `distributed/closed`.

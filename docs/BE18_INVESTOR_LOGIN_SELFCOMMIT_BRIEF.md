@@ -120,7 +120,7 @@ state transition.
 
 ---
 
-## 5. Handoff to the front-end (mock repo `../fintech-patform-mock`)
+## 5. Handoff to the front-end (mock repo `../fintech-patform-ui`)
 Once shipped, the mock swaps its three interim investor shims for the real thing — all already isolated:
 - **Investor login** — add a passwordless path in `AuthContext` (email → `request-otp` → `verify-otp`), i.e. skip
   the password step for the investor entry. Today investors log in via the dev password (`login('investor@…')`).

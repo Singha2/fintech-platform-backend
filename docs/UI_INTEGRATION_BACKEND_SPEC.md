@@ -14,7 +14,7 @@
 > Rule of thumb: a *screen* reading/writing the API → **here**. A *vendor credential/sandbox* → **Track C**, out
 > of scope for UI integration.
 
-> **What this is.** The additive backend work the 15-screen frontend (`../fintech-patform-mock`) needs to run
+> **What this is.** The additive backend work the 15-screen frontend (`../fintech-patform-ui`) needs to run
 > against the live API without mock data. It is the concrete output of **ROADMAP Phase B ("UI plugin")**
 > discovering which reads the screens require, expressed as **Phase-D additive endpoints**.
 >
@@ -26,7 +26,7 @@
 >
 > **Source of truth.** The backend owns the final shapes. Every response below is a **PROPOSAL**; source the
 > exact columns from the underlying write table + the matching existing by-id read, and the UI will adhere to
-> whatever ships. UI-side counterparts: `../fintech-patform-mock/docs/API_ALIGNMENT.md` (gap register G1–G13),
+> whatever ships. UI-side counterparts: `../fintech-patform-ui/docs/API_ALIGNMENT.md` (gap register G1–G13),
 > `INTEGRATION_PLAN.md` (UI steps), `HARMONIZATION.md` (the integration overview / readiness map / index).
 
 ---

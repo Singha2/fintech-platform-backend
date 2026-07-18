@@ -6,7 +6,7 @@ for every module (see `docs/spec/Spec_Driven_Build_Plan.md` §F).
 
 **Scope of this log:** backend implementation only. Distinct from:
 - `DL-0xx` — domain/product decisions, defined inline in the `docs/spec/` corpus (frozen inputs).
-- `DL-MOCK-xxx` — frontend/mock decisions, in the `fintech-patform-mock` repo.
+- `DL-MOCK-xxx` — frontend/mock decisions, in the `fintech-patform-ui` repo.
 
 **Prefix:** `DL-BE-`. Number sequentially. Reference related `DL-0xx` / `C1–C28` / `G…` from the
 spec corpus where a decision is constrained by one.

@@ -82,7 +82,7 @@ and triaged. **This freezes the (now-larger) API contract for Phase B.**
 
 ## 4. Phases B & C — summary (start after A sign-off)
 
-**B · UI plugin** — the frontend is the contract (`../fintech-patform-mock`, 15 screens). Wire **one module at
+**B · UI plugin** — the frontend is the contract (`../fintech-patform-ui`, 15 screens). Wire **one module at
 a time**, screen → its backend endpoints, reusing the dev-profile login. Deliverable per module: the screen
 drives the real API (no mock data). Order mirrors the deal lifecycle: onboarding screens → listing → funding →
 assignment → settlement → admin/ops consoles.

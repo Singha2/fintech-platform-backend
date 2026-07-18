@@ -101,7 +101,7 @@ New, own-scoped to the session's `buyer_id` (resolve `identity_id → buyer_id` 
 
 ---
 
-## 5. Handoff to the front-end (mock repo `../fintech-patform-mock`)
+## 5. Handoff to the front-end (mock repo `../fintech-patform-ui`)
 S15 is today a **fully self-contained mock** (its own OTP screen + `Log out`, `acknowledgeInvoice` on the store).
 Once shipped, wire it like the investor portal:
 - **Ack-user login** — reuse the `AuthContext` passwordless pattern (`beginInvestorLogin` → a `beginAckUserLogin`

@@ -20,7 +20,7 @@
 > whether the repo is already in the target state.
 >
 > **Repos:**
-> - `MOCK = /Users/amitsingh/IdeaProjects/fintech-patform-mock` (frontend / mock — this repo)
+> - `MOCK = /Users/amitsingh/IdeaProjects/fintech-patform-ui` (frontend / mock — this repo)
 > - `BACKEND = /Users/amitsingh/IdeaProjects/fintech-platform-backend` (Java + Spring + JPA + Docker + PostgreSQL)
 
 ### 0.1 Single-source-of-truth rule
@@ -51,7 +51,7 @@ how the Gap Log / Constraints silently diverge. Disposition options:
 ```bash
 set -e
 BACKEND=/Users/amitsingh/IdeaProjects/fintech-platform-backend
-MOCK=/Users/amitsingh/IdeaProjects/fintech-patform-mock
+MOCK=/Users/amitsingh/IdeaProjects/fintech-patform-ui
 mkdir -p "$BACKEND/docs/spec" "$BACKEND/docs/sql"
 cd "$MOCK/docs"
 
@@ -83,7 +83,7 @@ find "$MOCK/docs" -name .DS_Store -delete
 ### 0.4 Verify (the repo is correctly housekept when all pass)
 ```bash
 BACKEND=/Users/amitsingh/IdeaProjects/fintech-platform-backend
-MOCK=/Users/amitsingh/IdeaProjects/fintech-patform-mock
+MOCK=/Users/amitsingh/IdeaProjects/fintech-patform-ui
 echo "backend/docs/spec count (expect 15): $(ls "$BACKEND/docs/spec" | wc -l)"  # 11 moved + 3 blueprints + this plan
 echo "backend/docs/sql  count (expect 5):  $(ls "$BACKEND/docs/sql"  | wc -l)"
 echo "stale SQL gone (expect: missing):    $(ls "$MOCK/docs/SQL" 2>&1 | head -1)"
@@ -123,7 +123,7 @@ seeded (0.5). **Both met — housekeeping is done.** Next: **Phase 0** (Section 
 
 ## B. Target Architecture & Repos
 
-- **`fintech-patform-mock` (this repo) → the Frontend.** Stays as-is now; evolves into the production React + TypeScript app. The 15 mock screens are the *frontend contract* — each backend module must satisfy the screen(s) that consume it.
+- **`fintech-patform-ui` (this repo) → the Frontend.** Stays as-is now; evolves into the production React + TypeScript app. The 15 mock screens are the *frontend contract* — each backend module must satisfy the screen(s) that consume it.
 - **`fintech-platform-backend` (new repo) → the Backend.** Java + Spring Boot monolith, PostgreSQL, Flyway. **Spec Kit is initialised here.** Bounded contexts enforced in-code with **ArchUnit** (no cross-BC table joins; coordinate via in-process events + identity references).
 - **Domain docs travel with the backend** (executed in Section 0; this is the corpus now in `BACKEND/docs/`):
   - `Bounded_Contexts_Reference.md` (the 19 BCs) + `domain_entity_responsibility.md` (the data dictionary)

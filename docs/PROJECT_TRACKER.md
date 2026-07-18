@@ -1,7 +1,7 @@
 # PROJECT TRACKER — Backend + UI (single source of truth)
 
 > **This file is the one place to read "where are we and what's next" across *both* repos.**
-> Backend: `fintech-platform-backend` · UI: `../fintech-patform-mock`.
+> Backend: `fintech-platform-backend` · UI: `../fintech-patform-ui`.
 > Every other plan doc is **subordinate detail** feeding this tracker (see §1). When a status changes,
 > update **here first**, then the detail doc. Do **not** start a new top-level plan — that is what caused
 > the drift this file exists to end.
@@ -20,7 +20,7 @@ E2E-verified. **14 of 15 screens are wired live;** only **S9** (audit log) remai
 |---|---|---|
 | **Backend core** | ✅ Complete — full money lifecycle `listed → … → distributed → closed` over HTTP, five controls enforced | 413 tests green (real Postgres) |
 | **Backend read surface (for the UI)** | ✅ **BE-1…BE-12 + BE-14 + BE-17 shipped** (admin reads + dashboard + investor read-only portal). BE-13/15/16 deferred by design | `docs/API_CATALOGUE.md`, `DL-BE-079…084` |
-| **UI** | ✅ All **15 screens** built and working **offline** on a mock store | `../fintech-patform-mock/src/store/PlatformStore.jsx` |
+| **UI** | ✅ All **15 screens** built and working **offline** on a mock store | `../fintech-patform-ui/src/store/PlatformStore.jsx` |
 | **🟢 Live wiring (the bridge)** | ✅ **Auth + reads + admin/deal-flow writes live & E2E-verified** — `src/api/` client + envelope + `ApiError` + full service layer + `AuthContext` + Vite proxy. **S1 login**; **reads** for S2–S8/S11/S12/S13/S14 (S13 investor portfolio, own-scoped); **write chains** onboarding (S3/S4/S8 + **S10 investor**) + deal spine **S5 go-live → S12 subscribe → S6 disburse → S7 mature/distribute** (harnesses `scripts/e2e/*`, DL-BE-086/087 seed helper + two-ops); **investor self-service** — passwordless login + S12 self-commit (BE-18/DL-BE-088); **buyer portal** — ack-user login + reads + self-ack (BE-15/DL-BE-090); **admin IAM** — super-admin provision + role-assignment widget on S2 (`/admin-users/*`). Also: live nav derived from `/auth/session` roles (no persona map). Remaining: **S9** (M17). | UI `docs/UI_WORKORDER.md` |
 
 **The admin + deal-flow surface, investor onboarding (S10) + portfolio (S13) + self-service (BE-18), and the
@@ -132,7 +132,7 @@ From `ROADMAP.md` §5. These add capability but the UI wiring above does not wai
 | **DF-2** | **KYC download gate over-permissive for suspended/exited investors** — `InvestorService.isKycApprovedForDownload`'s `… OR kyc_approved_at IS NOT NULL` lets a once-approved but later `suspended`/`exited` investor still download. Latent (Suspend/Exit not built) but a real over-permission. | `InvestorService.isKycApprovedForDownload`, `InvoiceDocumentService.download` · `DL-BE-084` (§findings) | **With the Suspend/Exit module** (M10 §9 post-active lifecycle) — decide there whether a de-activated investor retains document access, then tighten the clause. |
 | **DF-3** | ✅ **DONE (DL-BE-087)** — `DevDataSeeder` now **ensures admins per-email every boot** (`ensureAdmin` via `email::citext`), so late-added seed accounts (e.g. `ops2@dev.local`) materialize on a pre-existing dev DB; counterparties guarded on `sup_account` emptiness → seed once. Idempotent (adopts a manual `ops2`, no dups); test `DevSeederAdminEnsureTest` covers the non-empty-table case the old guard missed. | `DevDataSeeder.run` / `ensureAdmin` (backend) | **Shipped** — brief: [`DF3_SEEDER_UPSERT_BRIEF.md`](DF3_SEEDER_UPSERT_BRIEF.md); `DL-BE-087`. UI side can drop the manual `ops2` insert (plain dev boot yields all seven admins). |
 | **DF-4** | ~~S5 has no invoice-document upload UI~~ | UI `S5.jsx` + `src/api/services/documents.js` | ✅ **Fixed (UI).** S5 invoice detail now has an **Upload Invoice PDF** control → `documents.initiate/uploadContent/finalize` → `listings.attachInvoiceDoc`; `document_completeness` then recorded by a second Ops (DOC.3). Build green; endpoints covered by `scripts/e2e/s5golive.mjs`. |
-| **DF-5** | ✅ **DONE (DL-BE-089)** — `POST /auth/logout` revokes the caller's session server-side; the bearer then 401s (`bearer_expired`) on any later request. Idempotent; admin + investor. UI already wired best-effort, so it activated on ship (no FE change). | `SessionController` (backend) · UI `auth.logoutSession` + `AuthContext.logout` | **Shipped** — brief: [`LOGOUT_ENDPOINT_BRIEF.md`](LOGOUT_ENDPOINT_BRIEF.md); `DL-BE-089`. Verified E2E `../fintech-patform-mock/scripts/e2e/logout.mjs` (9/9). |
+| **DF-5** | ✅ **DONE (DL-BE-089)** — `POST /auth/logout` revokes the caller's session server-side; the bearer then 401s (`bearer_expired`) on any later request. Idempotent; admin + investor. UI already wired best-effort, so it activated on ship (no FE change). | `SessionController` (backend) · UI `auth.logoutSession` + `AuthContext.logout` | **Shipped** — brief: [`LOGOUT_ENDPOINT_BRIEF.md`](LOGOUT_ENDPOINT_BRIEF.md); `DL-BE-089`. Verified E2E `../fintech-patform-ui/scripts/e2e/logout.mjs` (9/9). |
 
 ---
 
@@ -142,4 +142,4 @@ From `ROADMAP.md` §5. These add capability but the UI wiring above does not wai
 - **When you ship a backend item:** update §3/§4 + add a `DL-BE-*` entry; reflect the ✅ here.
 - **One status, one home.** If you catch yourself writing a status into another doc, delete it and link here.
 - **No new top-level plan.** New detail goes into `INTEGRATION_PLAN.md` (UI) or `Spec_Driven_Build_Plan.md` (backend modules) as a step — never a new competing plan.
-- The UI repo carries a 1-line pointer (`../fintech-patform-mock/docs/PROJECT_TRACKER.md`) back to this file so both repos resolve to the same source of truth.
+- The UI repo carries a 1-line pointer (`../fintech-patform-ui/docs/PROJECT_TRACKER.md`) back to this file so both repos resolve to the same source of truth.

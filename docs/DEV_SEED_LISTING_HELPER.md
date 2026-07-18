@@ -129,7 +129,7 @@ subset (the implementing session fills the full NOT-NULL set from the DDL):
 ---
 
 ## 6. Handoff to the front-end (mock repo)
-Once shipped, the mock side (`../fintech-patform-mock`) verifies the money-flow writes exactly like the
+Once shipped, the mock side (`../fintech-patform-ui`) verifies the money-flow writes exactly like the
 onboarding chains: call `/dev/seed-listing` for the stage, then drive the UI write (S6 approve / S7 / S12) and
 assert the persisted transition. The mock's `docs/UI_WORKORDER.md` (Increment 4) already lists S6 approve wired
 but **E2E-pending a disbursable listing** — this helper is what unblocks that verification.

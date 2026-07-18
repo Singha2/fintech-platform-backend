@@ -178,7 +178,7 @@ an `inv_account` but no password. Seed **two** active-with-login investors for t
 - [x] `DL-BE-084` umbrella written (OQ-1 defer-to-Phase-B, `InvestorQueryPort`, the 403 model, findings).
 - [x] `PROJECT_TRACKER.md`: BE-17 registered, BE-14 flipped, S11/S13 cells + next-actions updated;
       `UI_INTEGRATION_BACKEND_SPEC.md`: BE-14 marked shipped + BE-17 registered.
-- [x] Mock-side work-order written (`../fintech-patform-mock/docs/UI_WORKORDER.md`) — do not edit mock code from here.
+- [x] Mock-side work-order written (`../fintech-patform-ui/docs/UI_WORKORDER.md`) — do not edit mock code from here.
 - [x] This spec flipped to **Status: Done**.
 
 ---

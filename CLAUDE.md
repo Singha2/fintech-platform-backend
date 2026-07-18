@@ -5,7 +5,7 @@ The **backend** for a regulated invoice-discounting platform (Phase 1 = full pro
 real counterparties, real money, real audit/compliance obligations). Java + Spring Boot
 monolith over PostgreSQL, built **spec-first** with GitHub Spec Kit.
 
-The frontend is a separate repo (`../fintech-patform-mock`): 15 React screens that are the
+The frontend is a separate repo (`../fintech-patform-ui`): 15 React screens that are the
 **frontend contract** — each backend module must satisfy the screen(s) that consume it.
 
 > **The authoritative plan is `docs/spec/Spec_Driven_Build_Plan.md`.** Read it before any work.
