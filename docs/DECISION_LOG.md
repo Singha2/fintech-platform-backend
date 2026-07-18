@@ -3315,3 +3315,43 @@ one-time counterparty seed.
 - **`?::citext` needs the `citext` extension** (installed in `V1`); `admin_user.email` is plain `TEXT`, so the
   cast on the *parameter* is what makes the match case-insensitive.
 - Still **dev-profile only** — no prod path (`/dev/**` 404s with no bean).
+
+---
+
+## DL-BE-088 — BE-18 Phase B (investor passwordless login + self-commit): DoR decisions, design/DoR
+
+**Status.** DoR gate (spec written, **implementation pending**). Spec: `docs/modules/M11-B-investor-login-selfcommit.md`.
+Brief: `docs/BE18_INVESTOR_LOGIN_SELFCOMMIT_BRIEF.md`. Umbrella predecessor: **DL-BE-084 (§Phase B)**. This entry
+records the `/clarify` resolutions; implementation notes + findings are appended here at DoD.
+
+**Verdict (assessment).** **Mostly additive — no architectural break.** The command, session, and audit
+substrates were built kind-agnostic and already anticipate a non-admin actor; Phase B *activates* those paths.
+Verified against code: the gateway already branches on actor type and skips the MFA/role gates for non-admins
+(`CommandGateway.java:61,66,79,84`); `sys_audit_event.actor` has only a key-presence CHECK with the admin-MFA
+CHECK deliberately removed, so `actor_type='investor'` validates (`V4__generic_acl.sql:821-826`);
+`sys_command_log.actor_id` is a bare UUID, no FK (`:791-800`); and login (`issueLoginOtp`/`verifyOtp`/
+`establishSession`) is kind-agnostic. **No new tables / no migration expected.**
+
+**The five ambiguities, resolved (DoR-1…5) + three surfaced (DoR-6…8).** Full text in the spec's *DoR decisions*.
+1. **Enumeration-safety** — `request-otp` always returns a `{challenge_id}`-shaped 200; eligible → real OTP,
+   ineligible → synthetic id, no send; verify fails identically. Constant-ish timing.
+2. **Eligibility gate** = `inv_account.status='active'` **only** (login and self-commit share the predicate;
+   `active` already implies KYC-approved + MIA-signed).
+3. **Fail-closed on *current* status** — do **not** reuse `isKycApprovedForDownload`'s `… OR kyc_approved_at IS
+   NOT NULL` clause (that is the DF-2 over-permission); a suspended/exited investor must not log in or commit.
+4. **Investor-self authz is controller-routed, gateway-open** — `SubscriptionController` branches on session kind
+   (investor → own-id from session + `actorType='investor'` + no-role gateway overload; admin → existing OPS
+   ops-on-behalf). No new gateway authz mode now (a first-class `AllowedActor` predicate is a flagged follow-up).
+5. **`request-otp` abuse** — enumeration-safety + the existing one-active-challenge supersession are in scope;
+   a dedicated rate-limiter is **deferred** to a platform-wide auth-hardening follow-up (applies equally to the
+   already-open admin password step; no throttle infra to reuse; notifier still a stub).
+6. **Ops-on-behalf retained** (no S12 regression) · 7. **Fix the hard-coded `Actor("admin_user", …)`** in
+   `SubscriptionService.actor()` (`:303-306`) → `request.actorType()` · 8. **Denied cross-tenant reads audited**
+   via a direct non-command `AuditLog.append` (`auth.CrossTenantReadDenied`) at `InvestorController.subscriptions`
+   `:234/:237` — denials only; successful reads stay unaudited.
+
+**What to watch for (carry into `/plan`).**
+- Confirm `AuthService.verifyOtp` treats a **missing** challenge indistinguishably from a wrong code (DoR-1).
+- Nothing on the commit handler path may call `RoleResolver.adminUserId(actorId)` for the investor actor (it would
+  throw — the investor identity is not an admin). `SubscriptionService.commit` today does not; keep it that way.
+- Keep the eligibility predicate on **current** `status='active'` in both the login lookup and the commit gate.
