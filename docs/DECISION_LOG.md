@@ -3320,7 +3320,7 @@ one-time counterparty seed.
 
 ## DL-BE-088 — BE-18 Phase B (investor passwordless login + self-commit): DoR decisions, design/DoR
 
-**Status.** DoR gate (spec written, **implementation pending**). Spec: `docs/modules/M11-B-investor-login-selfcommit.md`.
+**Status.** DoR + `/plan` done (spec §9), **implementation pending**. Spec: `docs/modules/M11-B-investor-login-selfcommit.md`.
 Brief: `docs/BE18_INVESTOR_LOGIN_SELFCOMMIT_BRIEF.md`. Umbrella predecessor: **DL-BE-084 (§Phase B)**. This entry
 records the `/clarify` resolutions; implementation notes + findings are appended here at DoD.
 

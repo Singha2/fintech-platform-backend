@@ -6,8 +6,8 @@
 > **log in passwordless (email+OTP)** and **place their own subscription**. This turns the read-only façade into
 > a genuinely self-service investor portal and removes ops from the money-in path.
 > Umbrella predecessor decision: **DL-BE-084 (§Phase B)**; this slice claims **DL-BE-088**.
-> **This doc is DoR-stage** — `/specify` + `/clarify` are complete; **`/plan` / `/tasks` / `/implement` are not
-> yet run** (next gate). Spec before code; invariant test before rule.
+> **`/specify` + `/clarify` (DoR) + `/plan` are complete** (this doc, §9); **`/tasks` / `/implement` are not yet
+> run** (next gate). Spec before code; invariant test before rule.
 
 | | |
 |---|---|
@@ -232,9 +232,77 @@ in-process `StubNotifier`). Reuse `seedActiveInvestorWithLogin()` (M10-D T1) and
 
 ---
 
-## 9. Next gate — `/plan` (not yet run)
-`/specify` + `/clarify` (DoR) are complete (this doc). **`/plan` is the next step:** anchor each part to exact
-files/lines (`AuthController` + a new `investorRequestOtp` service method; `SubscriptionController`/`Service`
-branch; the two `InvestorController` append sites), confirm the no-migration assumption, confirm `verifyOtp`
-handles a missing challenge indistinguishably (DoR-1), and order the red-test-first tasks. Do **not** start
-`/implement` before `/plan` + a green DoR sign-off.
+## 9. Plan (`/plan` — code-anchored, verified 2026-07-18)
+
+**Two `/plan`-time confirmations that de-risk the slice:**
+- **DoR-1 needs no verify-path change.** `AuthService.verifyOtp` already returns `OtpResult.failed("not_found")`
+  for a missing challenge (`AuthService.java:176-178`), which `AuthController.verifyOtp` (`:41-47`) turns into the
+  **same** generic `LoginFailedException` as a wrong code. So a **synthetic `challenge_id` with no row** verifies
+  identically to a real-but-wrong code — enumeration-safety falls out for free.
+- **No migration.** All three parts use existing tables (`auth_otp_challenge`, `auth_session`, `sub_subscription`,
+  `sys_command_log`, `sys_audit_event`), all already accepting an investor actor (§0). Confirmed against V1–V13.
+  If `/tasks`/`/implement` surfaces an unavoidable migration, **stop and flag**.
+
+Build order — each feature step: red test → green → `/code-review` → DL note. All touchpoints use the canonical
+`@AuthenticationPrincipal AuthSession session` + `JdbcTemplate` idiom (no JPA).
+
+**Part 1 — passwordless login**
+- **P1 · `AuthService.requestInvestorOtp(String email) → UUID` (new `@Transactional`).** Eligibility lookup
+  (DoR-2/3, fail-closed on *current* status):
+  `SELECT i.identity_id FROM auth_identity i JOIN inv_account a ON a.identity_id = i.identity_id
+   WHERE i.email = ? AND i.kind = 'investor' AND i.status = 'active' AND a.status = 'active'`.
+  Eligible → `return issueLoginOtp(identityId)` (reused verbatim, `:129-155` — real OTP, one-active-challenge
+  supersession). Not eligible → `return Ids.newId()` (**synthetic** id, **no** `auth_otp_challenge` row, **no**
+  send). Run the lookup unconditionally (no early return) so the two paths share latency as far as practical (DoR-1;
+  the residual timing delta — issuing vs. not — is a best-effort note, §residual). Do **not** reuse
+  `isKycApprovedForDownload` (DoR-3).
+- **P2 · `AuthController` `POST /auth/login/investor/request-otp` (open).** `{email}` → `requestInvestorOtp` →
+  `{ challenge_id }`. `SecurityConfig` already `permitAll`s `/auth/login/**` (`:41`), so the route is open with no
+  security change. `verify-otp` (`:41-53`) is reused unchanged — it establishes the `kind='investor'` session
+  (`SessionService.establishSession` is kind-agnostic). `/auth/session` already returns `investor_id` (M10-D).
+
+**Part 2 — investor self-commit**
+- **P3 · `SubscriptionController.commit` — kind branch (`SubscriptionController.java:49-63`).** Inject
+  `InvestorQueryPort` (the M10-D shared resolver). Resolve `callerInvestorId =
+  investors.investorIdForIdentity(session.identityId())`:
+  - **investor caller** (`callerInvestorId != null`): use `callerInvestorId` as the commit id; if the body carries
+    an `investor_id` that isn't it → reject fail-closed (SELF-1); `actorType = "investor"`; derive
+    `subscriptionId` from `(commandId, listing:callerInvestorId)`.
+  - **else** (admin/other): the existing path unchanged — `investor_id` from the body, `actorType = "admin_user"`.
+    A non-investor non-OPS caller still hits the OPS role gate downstream (fail-closed).
+- **P4 · `SubscriptionService.commit` — actor-kind authorization + actor fix (`SubscriptionService.java:57-112`).**
+  Choose the gateway gate by actor kind: `Set<String> required = "investor".equals(request.actorType()) ? Set.of()
+  : OPS;` then `gateway.execute(request, required, …)`. The investor path rides the no-role overload; eligibility
+  is already enforced by `requireActiveInvestor(investorId)` (`:265-274`, checks `inv_account.status='active'` =
+  DoR-2) — no extra KYC sub-check. **Fix (DoR-7):** `actor(request)` (`:303-306`) must use `request.actorType()`
+  instead of the hard-coded `"admin_user"` so the `Listing.FullyFunded` envelope labels an investor self-commit
+  correctly. No path here calls `RoleResolver.adminUserId(actorId)` (which would throw for an investor) — keep it so.
+
+**Part 3 — audit denied cross-tenant reads**
+- **P5 · `InvestorController.subscriptions` (`InvestorController.java:229-238`).** Inject `AuditLog`. Before each
+  throw (`:234` `crossInvestorRead`, `:237` `notAuthorisedForPortfolio`) append a lightweight event via
+  `AuditEnvelopes.seed("investor", "InvestorAccount", attemptedId).eventType("investor.CrossTenantReadDenied")
+  .actor(new Actor(<kind>, session.identityId().toString(), session.sessionId().toString(), null, null))
+  .payload({attempted_investor_id, endpoint, caller_investor_id?}).build()` → `auditLog.append(...)`
+  (non-state-transition, **no `command_id`** — the `confirmFromInflow` append shape). Denials only; successful
+  reads stay unaudited. Update the `ForbiddenException.crossInvestorRead` Javadoc + the M10-D §5 note that these
+  denials are now audited (was "reads emit no audit envelope").
+
+**Tests (detailed in `/tasks`)** — `investor/InvestorPasswordlessLoginTest` + `subscription/InvestorSelfCommitTest`,
+both `extends AbstractEdgeHttpTest`; add a passwordless-login bearer helper (`request-otp → verify-otp`, OTP from
+`StubNotifier`). Cover the §7 scenarios.
+
+### Residual `/plan` notes & flags
+- **Timing side-channel (DoR-1):** the response *shape* is identical, but issuing a real OTP is heavier than
+  returning a synthetic id — a timing oracle could in principle distinguish. Acceptable at pilot; a constant-time
+  refinement (e.g. always run a dummy `encoder.encode`) is a noted follow-up, not built now.
+- **Rate-limiting** deferred (DoR-5) — `request-otp` is open; the one-active-challenge supersession is the only
+  throttle. Platform-wide auth-hardening follow-up.
+- **Audit context/type name** (`investor.CrossTenantReadDenied`) — confirm the context shard at `/implement`
+  (must match an existing audit-chain context or add one; prefer reusing `"investor"`).
+- **No migration overall** — if `/implement` hits an unavoidable one, stop and flag.
+
+## 10. Next gate — `/tasks` (not yet run)
+`/plan` is complete (§9). **`/tasks`** breaks P1–P5 into red-test-first units with the two new test classes and the
+harness helper, in dependency order (P1→P2 login; P3→P4 self-commit; P5 independent). Do **not** start `/implement`
+before `/tasks` + your DoR/plan sign-off.
