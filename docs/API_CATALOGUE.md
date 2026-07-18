@@ -37,6 +37,7 @@ Non-admin-actor commands skip the MFA gate. **UI consequence:** treat *all* admi
 | `POST /auth/login/investor/request-otp` | **Passwordless investor login** (BE-18): `{email}` → OTP for an `active` investor → returns `challenge_id`. Enumeration-safe (indistinguishable response; no OTP to a non-eligible email). Then use `verify-otp` | 🔓 open |
 | `POST /auth/login/verify-otp` | Step 2: verify OTP → establishes a session, returns the **bearer** (the token) | 🔓 open |
 | `GET /auth/session` | **Who am I** (BE-1): current `{identity_id, kind, email, roles[], admin_user_id, mfa_fresh, idle/absolute_expires_at}` — drives UI role-nav + MFA gating. `roles` empty for non-admin kinds | 🪪 bearer |
+| `POST /auth/logout` | **Server-side logout** (DL-BE-089): revokes the caller's session → the bearer 401s immediately. No body; **204**; idempotent. Works for admin + investor | 🪪 bearer |
 
 ## Bootstrap & dev helpers
 | Method · Path | Functionality | Auth |

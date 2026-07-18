@@ -3,9 +3,12 @@ package com.arthvritt.platform.auth;
 import com.arthvritt.platform.adminiam.RoleResolver;
 import com.arthvritt.platform.investor.InvestorQueryPort;
 import com.arthvritt.platform.shared.error.NotFoundException;
+import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.ArrayList;
@@ -76,5 +79,18 @@ public class SessionController {
         body.put("absolute_expires_at",
                 session.absoluteExpiresAt() == null ? null : session.absoluteExpiresAt().toString());
         return body;
+    }
+
+    /**
+     * DL-BE-089 — server-side logout. Terminates the caller's own session so the bearer stops working
+     * immediately (not just a client-side token clear). Authenticated-only (deliberately outside the
+     * {@code /auth/login/**} open group). A session-lifecycle action, not a {@code CommandGateway} command —
+     * no body, no envelope (it mirrors {@code GET /auth/session}). {@link SessionService#revokeSession} is
+     * idempotent (a no-op on an already-terminal session) and audits {@code auth.Session.Revoked}.
+     */
+    @PostMapping("/auth/logout")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void logout(@AuthenticationPrincipal AuthSession session) {
+        sessions.revokeSession(session.sessionId());
     }
 }

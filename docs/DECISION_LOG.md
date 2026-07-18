@@ -3371,3 +3371,29 @@ role set keyed on `actorType` + the `actor()` hard-coded-`admin_user` fix (P4); 
   follow-up. (2) Auditing every *denied* read is intentional tenant-isolation telemetry but is a minor write-
   amplification vector under a probing attacker — the mitigation lever is the deferred `request-otp`/read rate
   limiter (DoR-5). (3) The `cross_tenant_read` error code is reused for the write-side self-commit reject (brief §2).
+
+---
+
+## DL-BE-089 — `POST /auth/logout`: server-side session revoke (thin endpoint over existing logic)
+
+**Status.** Shipped (green). Brief: `docs/LOGOUT_ENDPOINT_BRIEF.md`. One production edit (`SessionController`),
+one test (`LogoutTest`, 3). **No migration, no new domain logic.**
+
+**Decision.** Expose `POST /auth/logout` on `SessionController` — a ~6-line adapter over the already-present
+`SessionService.revokeSession(sessionId)` (flips `auth_session.status='revoked'`, audits `auth.Session.Revoked`;
+`resolve()` already returns `terminated("revoked")` so a revoked bearer 401s on the next request). Authenticated-
+only (deliberately **not** under the `permitAll("/auth/login/**")` group, so `anyRequest().authenticated()`
+applies); `204 No Content`; no body, no `CommandGateway` envelope — a session-lifecycle action, mirroring
+`GET /auth/session`.
+
+**Why.** The UI's "Log out" only cleared the bearer client-side; the token stayed valid server-side until
+idle/absolute expiry — a real hazard on shared QA/demo machines and for pilot users. The domain already supported
+revoke; only the controller was missing. The mock is pre-wired best-effort (`logoutSession` + `AuthContext.logout`),
+so it becomes a real server revoke the moment this ships.
+
+**What to watch for.**
+- **Idempotent by construction:** `revokeSession` is a no-op on a missing/already-terminal session. A second logout
+  with the (now revoked) bearer is rejected by the **security filter before the handler** → `401` (not `204`), never
+  a `5xx` — verified by test.
+- The bearer **is** the `auth_session.session_id`, so `revokeSession(session.sessionId())` targets exactly the
+  caller's own session. Works for admin and investor kinds alike (kind-agnostic session path).
