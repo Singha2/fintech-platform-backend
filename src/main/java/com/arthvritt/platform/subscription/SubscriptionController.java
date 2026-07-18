@@ -7,6 +7,8 @@ import com.arthvritt.platform.command.CommandResult;
 import com.arthvritt.platform.infrastructure.web.CommandResponse;
 import com.arthvritt.platform.infrastructure.web.CommandResponseAssembler;
 import com.arthvritt.platform.infrastructure.web.RequestBodies;
+import com.arthvritt.platform.investor.InvestorQueryPort;
+import com.arthvritt.platform.shared.error.ForbiddenException;
 import com.arthvritt.platform.shared.error.NotFoundException;
 import com.arthvritt.platform.shared.error.ValidationException;
 import org.springframework.http.HttpStatus;
@@ -38,25 +40,47 @@ public class SubscriptionController {
     private final SubscriptionService subscriptions;
     private final CommandResponseAssembler responses;
     private final JdbcTemplate jdbc;
+    private final InvestorQueryPort investors;
 
     public SubscriptionController(SubscriptionService subscriptions, CommandResponseAssembler responses,
-                                 JdbcTemplate jdbc) {
+                                 JdbcTemplate jdbc, InvestorQueryPort investors) {
         this.subscriptions = subscriptions;
         this.responses = responses;
         this.jdbc = jdbc;
+        this.investors = investors;
     }
 
+    /**
+     * BE-18 Part 2 (M11-B): the actor-kind branch. An investor bearer (resolved server-side via
+     * {@link InvestorQueryPort}, mirroring {@code InvestorController} OWN-1) commits to its <b>own</b>
+     * account — the {@code investor_id} is taken from the session, and a body {@code investor_id} that isn't
+     * its own is rejected fail-closed (SELF-1). An admin bearer keeps the existing ops-on-behalf path
+     * (SELF-3 / DoR-6), unchanged.
+     */
     @PostMapping("/listings/{listingId}/subscriptions/commit")
     public ResponseEntity<CommandResponse> commit(@AuthenticationPrincipal AuthSession session,
                                                   @PathVariable UUID listingId,
                                                   @RequestHeader("X-Command-Id") UUID commandId,
                                                   @RequestBody(required = false) Map<String, Object> body) {
-        UUID investorId = uuid(RequestBodies.requiredString(body, "investor_id"));
+        UUID callerInvestorId = investors.investorIdForIdentity(session.identityId()).orElse(null);
+        UUID investorId;
+        String actorType;
+        if (callerInvestorId != null) { // investor self-commit
+            String bodyInvestor = body == null ? null : (String) body.get("investor_id");
+            if (bodyInvestor != null && !callerInvestorId.equals(uuid(bodyInvestor))) {
+                throw ForbiddenException.crossInvestorRead("subscription");
+            }
+            investorId = callerInvestorId;
+            actorType = "investor";
+        } else { // admin ops-on-behalf (unchanged)
+            investorId = uuid(RequestBodies.requiredString(body, "investor_id"));
+            actorType = "admin_user";
+        }
         long amount = RequestBodies.requiredPositivePaise(body, "amount_paise");
         UUID subscriptionId = RequestBodies.deriveAggregateId("subscription", commandId,
                 listingId + ":" + investorId);
         CommandRequest request = new CommandRequest(session, commandId, CONTEXT, CONTEXT + ".Subscription.Commit",
-                "Subscription", subscriptionId, 0, "admin_user", ActionSensitivity.SENSITIVE);
+                "Subscription", subscriptionId, 0, actorType, ActionSensitivity.SENSITIVE);
         CommandResult<UUID> result = subscriptions.commit(request, listingId, investorId, amount);
         return ResponseEntity.status(result.replayed() ? HttpStatus.OK : HttpStatus.CREATED)
                 .body(responses.from(result));

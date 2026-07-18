@@ -1,5 +1,8 @@
 package com.arthvritt.platform.investor;
 
+import com.arthvritt.platform.audit.Actor;
+import com.arthvritt.platform.audit.AuditEnvelopes;
+import com.arthvritt.platform.audit.AuditLog;
 import com.arthvritt.platform.auth.ActionSensitivity;
 import com.arthvritt.platform.auth.AuthSession;
 import com.arthvritt.platform.command.CommandRequest;
@@ -43,11 +46,14 @@ public class InvestorController {
     private final InvestorService investors;
     private final CommandResponseAssembler responses;
     private final JdbcTemplate jdbc;
+    private final AuditLog auditLog;
 
-    public InvestorController(InvestorService investors, CommandResponseAssembler responses, JdbcTemplate jdbc) {
+    public InvestorController(InvestorService investors, CommandResponseAssembler responses, JdbcTemplate jdbc,
+                              AuditLog auditLog) {
         this.investors = investors;
         this.responses = responses;
         this.jdbc = jdbc;
+        this.auditLog = auditLog;
     }
 
     @PostMapping("/investor-invites/issue")
@@ -231,9 +237,11 @@ public class InvestorController {
         UUID callerInvestorId = investors.investorIdForIdentity(session.identityId()).orElse(null);
         if (callerInvestorId != null) {
             if (!callerInvestorId.equals(id)) {
+                auditCrossTenantDenied(session, id, "investor");
                 throw ForbiddenException.crossInvestorRead("portfolio");
             }
         } else if (!isAdmin(session.identityId())) {
+            auditCrossTenantDenied(session, id, "unknown");
             throw ForbiddenException.notAuthorisedForPortfolio();
         }
 
@@ -289,6 +297,22 @@ public class InvestorController {
         body.put("rows", rows);
         body.put("summary", summary);
         return body;
+    }
+
+    /**
+     * BE-18 Part 3 (M11-B, DoR-8): audits a denied cross-tenant portfolio read — a direct, non-command
+     * {@link AuditLog#append} (no {@code command_id}, the same "append outside the gateway" shape
+     * {@code SubscriptionService.confirmFromInflow} uses). Denials only; a successful own read stays
+     * unaudited (M10-D DoR #3).
+     */
+    private void auditCrossTenantDenied(AuthSession session, UUID attemptedId, String actorKind) {
+        auditLog.append(AuditEnvelopes.seed("investor", "InvestorAccount", attemptedId)
+                .eventType("investor.CrossTenantReadDenied")
+                .actor(new Actor(actorKind, session.identityId().toString(),
+                        session.sessionId().toString(), null, null))
+                .payload(Map.of("attempted_investor_id", attemptedId.toString(),
+                        "endpoint", "GET /investors/{id}/subscriptions"))
+                .build());
     }
 
     /** A positive "is this identity an admin" check (mirrors {@code SessionController}'s {@code admin_user_id} read). */

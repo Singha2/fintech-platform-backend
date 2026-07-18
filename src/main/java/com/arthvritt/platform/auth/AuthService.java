@@ -155,6 +155,30 @@ public class AuthService {
     }
 
     /**
+     * BE-18 Part 1 (M11-B): passwordless investor login entry, {@code request-otp}. Eligibility is a
+     * <i>current</i>-status gate (DoR-2/3) — {@code kind='investor'}, {@code auth_identity.status='active'}
+     * AND {@code inv_account.status='active'} — deliberately narrower than
+     * {@link InvestorService#isKycApprovedForDownload}'s laxer "once KYC-approved" clause, since login must
+     * key off the live lifecycle state, not a historical one. The lookup runs unconditionally (no early
+     * return) so an eligible and an ineligible email share the same code path as far as practical
+     * (DoR-1, enumeration-safety): an eligible email gets a real OTP via {@link #issueLoginOtp}; an
+     * ineligible one gets a synthetic, unpersisted challenge id — no {@code auth_otp_challenge} row, no
+     * OTP sent — so a subsequent {@code verify-otp} fails through the same generic path as a wrong code.
+     */
+    @Transactional
+    public UUID requestInvestorOtp(String email) {
+        UUID identityId = jdbc.query(
+                "SELECT i.identity_id FROM auth_identity i JOIN inv_account a ON a.identity_id = i.identity_id "
+                        + "WHERE i.email = ? AND i.kind::text = 'investor' AND i.status::text = 'active' "
+                        + "AND a.status::text = 'active'",
+                rs -> rs.next() ? rs.getObject(1, UUID.class) : null, email);
+        if (identityId != null) {
+            return issueLoginOtp(identityId);   // existing method — real OTP
+        }
+        return Ids.newId();   // synthetic id: no challenge row, no OTP sent (enumeration-safe)
+    }
+
+    /**
      * Verifies an OTP. The challenge row is locked {@code FOR UPDATE} so concurrent verifies serialize
      * — preventing a double-consume (two assertions) or an attempt-cap bypass. A failed attempt is
      * normal flow: it returns {@code OtpResult.failed(...)} and commits its side effects (attempts++,

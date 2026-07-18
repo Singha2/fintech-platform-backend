@@ -34,6 +34,7 @@ Non-admin-actor commands skip the MFA gate. **UI consequence:** treat *all* admi
 | Method · Path | Functionality | Auth |
 |---|---|---|
 | `POST /auth/login/password` | Step 1 of login: verify email+password, issue an SMS-OTP → returns `challenge_id` | 🔓 open |
+| `POST /auth/login/investor/request-otp` | **Passwordless investor login** (BE-18): `{email}` → OTP for an `active` investor → returns `challenge_id`. Enumeration-safe (indistinguishable response; no OTP to a non-eligible email). Then use `verify-otp` | 🔓 open |
 | `POST /auth/login/verify-otp` | Step 2: verify OTP → establishes a session, returns the **bearer** (the token) | 🔓 open |
 | `GET /auth/session` | **Who am I** (BE-1): current `{identity_id, kind, email, roles[], admin_user_id, mfa_fresh, idle/absolute_expires_at}` — drives UI role-nav + MFA gating. `roles` empty for non-admin kinds | 🪪 bearer |
 
@@ -171,7 +172,7 @@ The invoice PDF investors review before funding (M19). Ops uploads it via `/docu
 ## Subscription / funding (BC2)
 | Method · Path | Functionality | Auth |
 |---|---|---|
-| `POST /listings/{id}/subscriptions/commit` | Investor commits an amount → `fully_funded` when met | 👤 ops_executive |
+| `POST /listings/{id}/subscriptions/commit` | Commit an amount → `fully_funded` when met. **Investor** self-commits (own `investor_id` from session, body `{amount_paise}`; BE-18) **or** ops-on-behalf (`{investor_id, amount_paise}`) | 🪪 investor (self) · 👤 ops_executive |
 | `POST /subscriptions/{id}/cancel` | Cancel a subscription | 👤 ops_executive |
 | `POST /subscriptions/{id}/record-refund` | Record a refund | 👤 treasury_and_settlement |
 | `GET /listings/{id}/subscriptions/{subId}` | Read a subscription | 🪪 bearer |

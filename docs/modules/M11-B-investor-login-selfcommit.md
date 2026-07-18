@@ -6,8 +6,8 @@
 > **log in passwordless (email+OTP)** and **place their own subscription**. This turns the read-only façade into
 > a genuinely self-service investor portal and removes ops from the money-in path.
 > Umbrella predecessor decision: **DL-BE-084 (§Phase B)**; this slice claims **DL-BE-088**.
-> **`/specify` + `/clarify` (DoR) + `/plan` are complete** (this doc, §9); **`/tasks` / `/implement` are not yet
-> run** (next gate). Spec before code; invariant test before rule.
+> **✅ Shipped (2026-07-18)** — full loop complete (`/specify → /clarify → DoR → /plan → /tasks → /implement →
+> DoD`). 448 tests green; `DL-BE-088`. Spec before code; invariant test before rule.
 
 | | |
 |---|---|
@@ -15,7 +15,7 @@
 | **Slice** | The Phase-B write cut M10-D deferred — passwordless login **+** self-commit **+** denied-read audit. A narrow slice, **not** the full BC2 subscription module (`M11-subscription-full.md`). |
 | **Tracker IDs** | **BE-18** (Track B #7) |
 | **Tier** | Light-to-medium (adds one command path + one login entry; no new tables — see §0) |
-| **Status** | **DoR-green (spec written) — implementation pending** |
+| **Status** | ✅ **Done (2026-07-18)** — 448 tests green; DL-BE-088 |
 | **Owner** | Amit + Claude |
 | **Created** | 2026-07-18 |
 
@@ -219,16 +219,17 @@ in-process `StubNotifier`). Reuse `seedActiveInvestorWithLogin()` (M10-D T1) and
 - [ ] **Admin no-regression:** admin login + one admin command unchanged (MFA-fresh still enforced for admins).
 
 ## 8. Definition of Done (gate F)
-- [ ] §7 tests green; whole suite green (record count).
-- [ ] DoD from brief §4: passwordless login (enumeration-safe); self-commit own-scoped + cross-tenant reject;
-      ineligible → clean domain errors; ops-on-behalf no regression; denied read audited; idempotency/version/audit
-      hold for the investor actor; admin login + all admin commands unchanged.
-- [ ] No new migration (confirm against V1–V13); if one is unavoidable, **stop and flag**.
-- [ ] `/code-review` on the diff; findings fixed.
-- [ ] **DL-BE-088** finalised (implementation notes + any findings); `PROJECT_TRACKER.md` Track B #7 + DF-1 updated;
-      `API_CATALOGUE.md` rows for the new login route + the commit role-line updated.
-- [ ] Mock-side work-order written (brief §5) — do not edit mock code from here.
-- [ ] This spec flipped to **Status: Done**.
+- [x] §7 tests green; whole suite green — **448** (was 437; +12 BE-18 tests, −1 retired M10-D RO-1 lock).
+- [x] DoD from brief §4: passwordless login (enumeration-safe); self-commit own-scoped + cross-tenant reject;
+      ineligible → clean domain errors; ops-on-behalf no regression; denied read audited; idempotency/audit hold
+      for the investor actor; admin login + all admin commands unchanged.
+- [x] No new migration (confirmed against V1–V13).
+- [x] `/code-review` (self, high) on the diff — implementation matches `/plan`; cosmetic javadoc tidied; the RO-1
+      supersession (M10-D `investor_bearer_cannot_commit`) handled; residuals recorded in DL-BE-088.
+- [x] **DL-BE-088** finalised (implementation notes + residuals); `PROJECT_TRACKER.md` Track B #7 → done + DF-1
+      resolved; `API_CATALOGUE.md` login route + commit role-line updated.
+- [x] Mock-side work-order written (brief §5) — do not edit mock code from here.
+- [x] This spec flipped to **Status: Done**.
 
 ---
 
@@ -302,7 +303,43 @@ both `extends AbstractEdgeHttpTest`; add a passwordless-login bearer helper (`re
   (must match an existing audit-chain context or add one; prefer reusing `"investor"`).
 - **No migration overall** — if `/implement` hits an unavoidable one, stop and flag.
 
-## 10. Next gate — `/tasks` (not yet run)
-`/plan` is complete (§9). **`/tasks`** breaks P1–P5 into red-test-first units with the two new test classes and the
-harness helper, in dependency order (P1→P2 login; P3→P4 self-commit; P5 independent). Do **not** start `/implement`
-before `/tasks` + your DoR/plan sign-off.
+## 10. Tasks (`/tasks` — ordered, red-test-first, 2026-07-18)
+
+Two new test classes, both `extends AbstractEdgeHttpTest` (MockMvc + Testcontainers). Reuse
+`seedActiveInvestorWithLogin(status)` (M10-D T1 — seeds `auth_identity` active + `inv_account` at a given status +
+a password). **Part 2/3 tests get an investor bearer via the existing password flow** (`bearerFor(login())`) so they
+**don't depend on Part 1**; Part 1 tests exercise the new passwordless entry directly.
+
+**T1 · Harness — `bearerForInvestorPasswordless(Seeded)` (enabling; no assertion).** Add to `AbstractEdgeHttpTest`:
+`POST /auth/login/investor/request-otp {email}` → read the code from `StubNotifier.lastCodeFor(identityId)` →
+`POST /auth/login/verify-otp` → bearer.
+
+**T2 · P1+P2 passwordless login — `investor/InvestorPasswordlessLoginTest`.**
+- **RED→GREEN**: `active_investor_logs_in_passwordless` (request-otp → OTP → verify → bearer; `/auth/session` →
+  `kind:"investor"`, `investor_id`, `roles:[]`). `unknown_email_is_enumeration_safe` (→ `200 {challenge_id}`,
+  shape-identical; no identity ⇒ nothing sent). `ineligible_investor_gets_no_otp` (a `kyc_approved` investor →
+  `200 {challenge_id}` but `StubNotifier.lastCodeFor(identity)` is **empty** — no real OTP; DoR-2/3).
+- **GREEN**: `AuthService.requestInvestorOtp` (P1) + `AuthController` route (P2).
+
+**T3 · P3+P4 self-commit — `subscription/InvestorSelfCommitTest`.**
+- **RED→GREEN**: `investor_commits_to_own_account` (investor bearer, body `{amount_paise}` only → 201; `committed_total`
+  moves; `sub_subscription.investor_id` == own). `investor_cannot_commit_for_another` (body `investor_id` = B →
+  **403 `cross_tenant_read`**, no write). `below_min_ticket_rejected` / `over_headroom_rejected` /
+  `non_live_listing_rejected` (clean domain errors). `ops_on_behalf_still_works` (admin OPS + body `investor_id` →
+  201, no regression). `replay_is_idempotent_for_investor_actor` (same `(investor identity, command_id)` → replayed;
+  the envelope's `actor_type='investor'`).
+- **GREEN**: `SubscriptionController` kind branch (P3) + `SubscriptionService` actor-kind gate + actor-type fix (P4).
+
+**T4 · P5 denied-read audit — (in `InvestorSelfCommitTest` or a small `investor/*` test).**
+- **RED→GREEN**: `denied_cross_tenant_read_is_audited` (investor A → `GET /investors/{B}/subscriptions` → 403 **and**
+  exactly one `investor.CrossTenantReadDenied` row for actor A / attempted B). `own_read_writes_no_audit` (A reads
+  own → 200, no such row).
+- **GREEN**: `InvestorController` inject `AuditLog` + append at the two throw sites (P5); update the
+  `ForbiddenException.crossInvestorRead` Javadoc + M10-D §5 note.
+
+**T5 · DoD wrap.** Full suite (record count); `/code-review`, fix findings; finalize `DL-BE-088`; update
+`PROJECT_TRACKER.md` (Track B #7 → done, DF-1), `API_CATALOGUE.md` (new login route + commit role-line); mock-side
+work-order note (do not edit mock code from here); flip this spec to **Status: Done**.
+
+**Order & parallelism:** T1 first (unblocks T2). After T1, **T2 (auth) / T3 (subscription) / T4 (investor)** touch
+different files and are independent. T5 last. One module in flight (M11-B) — parallelism is within it.

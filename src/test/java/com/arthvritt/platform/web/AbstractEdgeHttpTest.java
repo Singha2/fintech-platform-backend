@@ -96,6 +96,30 @@ public abstract class AbstractEdgeHttpTest extends AbstractIntegrationTest {
         return bearerFor(new Seeded(Ids.newId(), identityId, email, password));
     }
 
+    /**
+     * A session bearer for an investor via the <b>passwordless</b> entry (BE-18): {@code request-otp} (email) →
+     * read the OTP from the in-process {@link StubNotifier} → {@code verify-otp}. Mirrors {@link #bearerFor} but
+     * skips the password step — the real Phase-B investor login.
+     */
+    protected String bearerForInvestorPasswordless(Seeded investor) {
+        try {
+            MvcResult req = mvc.perform(post("/auth/login/investor/request-otp")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(json.writeValueAsString(Map.of("email", investor.email()))))
+                    .andExpect(status().isOk()).andReturn();
+            String challengeId = node(req).get("challenge_id").asText();
+            String code = notifier.lastCodeFor(investor.identityId())
+                    .orElseThrow(() -> new IllegalStateException("no OTP sent to " + investor.email()));
+            MvcResult otp = mvc.perform(post("/auth/login/verify-otp")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(json.writeValueAsString(Map.of("challenge_id", challengeId, "code", code))))
+                    .andExpect(status().isOk()).andReturn();
+            return node(otp).get("bearer").asText();
+        } catch (Exception e) {
+            throw new IllegalStateException("passwordless login failed for " + investor.email(), e);
+        }
+    }
+
     protected JsonNode node(MvcResult res) {
         try {
             return json.readTree(res.getResponse().getContentAsString());

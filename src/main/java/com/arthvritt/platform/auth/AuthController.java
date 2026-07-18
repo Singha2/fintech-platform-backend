@@ -38,6 +38,16 @@ public class AuthController {
         return Map.of("challenge_id", challengeId.toString());
     }
 
+    /**
+     * BE-18 Part 1 (M11-B): passwordless investor login entry — open like {@code /password}, enumeration-safe
+     * (DoR-1). {@code verify-otp} below is reused unchanged to establish the session.
+     */
+    @PostMapping("/investor/request-otp")
+    public Map<String, String> investorRequestOtp(@RequestBody(required = false) Map<String, String> body) {
+        UUID challengeId = auth.requestInvestorOtp(required(body, "email"));
+        return Map.of("challenge_id", challengeId.toString());
+    }
+
     @PostMapping("/verify-otp")
     public Map<String, String> verifyOtp(@RequestBody(required = false) Map<String, String> body) {
         OtpResult result = auth.verifyOtp(uuid(required(body, "challenge_id"), "challenge_id"),

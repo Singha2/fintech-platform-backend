@@ -3355,3 +3355,19 @@ CHECK deliberately removed, so `actor_type='investor'` validates (`V4__generic_a
 - Nothing on the commit handler path may call `RoleResolver.adminUserId(actorId)` for the investor actor (it would
   throw — the investor identity is not an admin). `SubscriptionService.commit` today does not; keep it that way.
 - Keep the eligibility predicate on **current** `status='active'` in both the login lookup and the commit gate.
+
+**Implementation (green, 2026-07-18).** Shipped exactly as `/plan` §9 — **no migration**, five production edits:
+`AuthService.requestInvestorOtp` (P1); `AuthController POST /auth/login/investor/request-otp` (P2);
+`SubscriptionController.commit` actor-kind branch + injected `InvestorQueryPort` (P3); `SubscriptionService.commit`
+role set keyed on `actorType` + the `actor()` hard-coded-`admin_user` fix (P4); `InvestorController` injected
+`AuditLog` + `investor.CrossTenantReadDenied` append at both denial sites (P5). Tests: `InvestorPasswordlessLoginTest`
+(3), `InvestorSelfCommitTest` (7), `CrossTenantReadAuditTest` (2).
+- **RO-1 (M10-D) narrowed, on record.** BE-18 makes self-commit the *one* permitted investor write, so M10-D's
+  `investor_bearer_cannot_commit` lock (which asserted investors can't commit *at all*) was retired;
+  `investor_bearer_cannot_run_onboarding_command` remains RO-1's residual proof (every *other* write still
+  `role_not_held`). `InvestorSelfLoginTest`'s class javadoc updated to state the carve-out.
+- **Residual (accepted, revisit at Production gate):** (1) `request-otp` timing is best-effort — the response *shape*
+  is identical (DoR-1), but issuing a real OTP is heavier than the synthetic path; a constant-time refinement is a
+  follow-up. (2) Auditing every *denied* read is intentional tenant-isolation telemetry but is a minor write-
+  amplification vector under a probing attacker — the mitigation lever is the deferred `request-otp`/read rate
+  limiter (DoR-5). (3) The `cross_tenant_read` error code is reused for the write-side self-commit reject (brief §2).

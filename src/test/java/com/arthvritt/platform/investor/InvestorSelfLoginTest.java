@@ -23,6 +23,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * read-only portal: {@code /auth/session} carries its {@code investor_id} (SES-1), the marketplace is
  * forced to live-only (OWN-2), its own portfolio is readable but a sibling investor's is not (OWN-1), and
  * every write command it attempts is rejected {@code role_not_held} (RO-1) — it holds no admin role.
+ *
+ * <p><b>BE-18 (M11-B) narrows RO-1:</b> an investor may now run exactly one write — its own
+ * {@code subscriptions/commit} self-commit (covered by {@code subscription/InvestorSelfCommitTest}). Every
+ * <i>other</i> write still rejects {@code role_not_held}, as {@link #investor_bearer_cannot_run_onboarding_command}
+ * locks. The old "investor cannot commit at all" case was retired when self-commit shipped.
  */
 class InvestorSelfLoginTest extends AbstractEdgeHttpTest {
 
@@ -170,27 +175,9 @@ class InvestorSelfLoginTest extends AbstractEdgeHttpTest {
                 .andExpect(status().isForbidden());
     }
 
-    @Test
-    void investor_bearer_cannot_commit() throws Exception {
-        InvestorLogin investor = seedActiveInvestorWithLogin();
-        String bearer = bearerFor(investor.login());
-        UUID listingId = seedLiveListing();
-        Integer before = jdbc.queryForObject("SELECT count(*) FROM sys_command_log WHERE actor_id = ?",
-                Integer.class, investor.login().identityId());
-
-        mvc.perform(post("/listings/{listingId}/subscriptions/commit", listingId)
-                        .header("Authorization", "Bearer " + bearer)
-                        .header("X-Command-Id", UUID.randomUUID().toString())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(json.writeValueAsString(Map.of(
-                                "investor_id", investor.investorId().toString(), "amount_paise", 20_00_000_00L))))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.error_code").value("role_not_held"));
-
-        Integer after = jdbc.queryForObject("SELECT count(*) FROM sys_command_log WHERE actor_id = ?",
-                Integer.class, investor.login().identityId());
-        assertThat(after).isEqualTo(before);
-    }
+    // RO-1's old "investor cannot commit at all" lock was retired by BE-18 (M11-B): self-commit is now the
+    // one permitted investor write. Its coverage (happy path, cross-tenant reject, eligibility, idempotency)
+    // lives in subscription/InvestorSelfCommitTest. The onboarding-command lock below is RO-1's residual proof.
 
     @Test
     void investor_bearer_cannot_run_onboarding_command() throws Exception {

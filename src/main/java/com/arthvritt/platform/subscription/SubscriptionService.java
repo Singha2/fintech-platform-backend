@@ -58,7 +58,11 @@ public class SubscriptionService {
         if (amountPaise < MIN_TICKET_PAISE) { // S.1
             throw new ValidationException("amount is below the ₹10,000 minimum ticket");
         }
-        return gateway.execute(request, OPS, () -> {
+        // BE-18 (M11-B, DoR-4): an investor actor rides the gateway's no-required-roles overload — it may
+        // commit only for itself (enforced upstream, controller-side, SELF-1) — while an admin/ops caller
+        // stays OPS-gated (SELF-3, no S12 regression).
+        Set<String> required = "investor".equals(request.actorType()) ? Set.of() : OPS;
+        return gateway.execute(request, required, () -> {
             requireActiveInvestor(investorId); // S.4
             ListingFunding lf = loadFunding(listingId);
             if (!"live".equals(lf.status())) { // S.5
@@ -301,7 +305,7 @@ public class SubscriptionService {
     }
 
     private static Actor actor(CommandRequest request) {
-        return new Actor("admin_user", request.actorId().toString(),
+        return new Actor(request.actorType(), request.actorId().toString(),
                 request.session().sessionId().toString(), request.session().mfaAssertionId(), null);
     }
 
