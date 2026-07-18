@@ -3202,3 +3202,32 @@ in M17), BE-14/BE-15 (investor/buyer portals, M10-full/WS-2), BE-16 (CORS, prod)
 
 **Phase B carries forward (BE-18):** passwordless invite→email+OTP investor login + investor self-commit (the
 `CommandGateway` non-admin-actor authz change) + read-path audit of denied cross-tenant reads (deferred here).
+
+---
+
+## DL-BE-085 — API base path = `/api/v1`; product identity lives in the domain/gateway, not the URI path
+
+**Decision.** Keep the single API base path `server.servlet.context-path=/api/v1`. **Do not** add a product-name
+segment (e.g. `/finxfund`) to the path. Ops/actuator stays **off** the versioned prefix — separate management port
+`:8081`, root context (`/actuator/health` never carries the API version).
+
+**Why.**
+- **URL layering — one job per layer.** Host/subdomain = *which product* (`api.finxfund.com` / `finxfund.com`);
+  path prefix = *API namespace + version* (`/api/v1`); the rest = *the resource* (`/listings/{id}`). Product identity
+  belongs in the **host**, not the path — repeating it (`api.finxfund.com/finxfund/api/v1/…`) is redundant noise on
+  every URL, log line, and client config, for zero functional gain on a single product.
+- **It's already the frozen UI-integration contract.** The mock's base path is `/api/v1` and its Vite dev proxy maps
+  `/api` → backend (`BACKEND_UI_READINESS.md`, `INTEGRATION_PLAN.md`). Changing the base path now churns the
+  integration for no benefit.
+- **A product path-segment is only justified in a multi-app shared-gateway topology** (`platform.arthvritt.com/finxfund/…`
+  vs `/otherproduct/…`) as a routing discriminator — and even then it is a **gateway/reverse-proxy** concern that
+  strips the prefix before forwarding, so the backend still serves plain `/api/v1`. Never bake it into this app's
+  context path.
+
+**What to watch for.**
+- `server.servlet.context-path` holds **one** value, so it cannot serve `v1` and `v2` **simultaneously**. When two
+  live API versions are needed, migrate versioning from the servlet context path to an **app-level path prefix**
+  (`WebMvcConfigurer` path-prefix / per-controller), keep the servlet context at root, and record it as a new DL-BE.
+- **Brand/domain is a deploy-time concern** (reverse proxy / DNS) — decide `api.finxfund.com` vs `finxfund.com/api`
+  at deploy, no app code change.
+- Multi-product later → add the `/finxfund` discriminator **at the gateway** (strip-prefix), backend stays `/api/v1`.

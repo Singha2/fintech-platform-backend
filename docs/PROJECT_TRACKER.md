@@ -19,7 +19,7 @@ Three things are each mature on their own; the **bridge between them is not buil
 | **Backend core** | ✅ Complete — full money lifecycle `listed → … → distributed → closed` over HTTP, five controls enforced | 413 tests green (real Postgres) |
 | **Backend read surface (for the UI)** | ✅ **BE-1…BE-12 + BE-14 + BE-17 shipped** (admin reads + dashboard + investor read-only portal). BE-13/15/16 deferred by design | `docs/API_CATALOGUE.md`, `DL-BE-079…084` |
 | **UI (mock)** | ✅ All **15 screens** built and working **offline** on a mock store | `../fintech-patform-mock/src/store/PlatformStore.jsx` |
-| **🔴 Live wiring (the bridge)** | ❌ **Not started** — UI still 100% mock data; no `src/api/` client exists yet (only a `DATA_MODE` flag in `config.js`) | — |
+| **🟡 Live wiring (the bridge)** | ⚠️ **Auth + read-side wired** — `src/api/` client + envelope + `ApiError` + full service layer + `AuthContext` + Vite proxy; **S1 login live**; **reads live for S2–S8, S11, S12, S14** (fetch-into-store on mount; unified-listing→split-invoice/listing mapper). Remaining: **write commands** (still mock), S7 (composed read), S13 (needs investor login). | mock `docs/UI_WORKORDER.md` |
 
 **So the critical path is: wire the UI to the now-complete backend read surface, screen by screen.**
 The backend needs *nothing new* for screens S1–S8, S12, S14 — those endpoints already exist and are tested.
@@ -54,20 +54,20 @@ Legend: ✅ done · ⚠️ partial · ❌ not done · ⛔ blocked (deferred mile
 
 | Screen | Needs (backend) | Backend | UI mock | **Wired live** | Next action | Blocked by |
 |---|---|:---:|:---:|:---:|---|---|
-| **S1** Login + MFA | `auth/login/*`, `GET /auth/session` (BE-1) | ✅ | ✅ | ❌ | **Wire first** — build `src/api` + auth + `DATA_MODE` | — |
-| **S2** Admin dashboard | `/admin/work-queues`, `/admin/stats` (BE-12) | ✅ | ✅ | ❌ | Wire reads | — |
-| **S3** Supplier onboarding | `GET /suppliers` (BE-4), `…/kyc-file` (BE-2), supplier cmds | ✅ | ✅ | ❌ | Wire list+detail reads, then cmds | — |
-| **S4** Buyer mgmt + credit | `GET /buyers`, `…/pricing-bands` (BE-5), buyer/credit cmds | ✅ | ✅ | ❌ | Wire reads + cmds | — |
-| **S5** Invoice checks + listing | `GET /listings`, `…/ops-checks` (BE-6), listing cmds | ✅ | ✅ | ❌ | Wire reads + cmds | — |
-| **S6** Disbursement queue | `/disbursements`, `…/disbursement/detail` (BE-7) | ✅ | ✅ | ❌ | Wire reads + approve cmd | — |
+| **S1** Login + MFA | `auth/login/*`, `GET /auth/session` (BE-1) | ✅ | ✅ | ✅ | **Done** — bridge Phase 0–2 (proxy + `src/api` + `AuthContext`); `/auth/session` wiring lands in Phase 3 | — |
+| **S2** Admin dashboard | `/admin/work-queues`, `/admin/stats` (BE-12) | ✅ | ✅ | ⚠️ | **Stats + queue reads live** (`useHydrate('dashboard')`); queues are counts-only per BE-12 (mode-aware UI) | — |
+| **S3** Supplier onboarding | `GET /suppliers` (BE-4), `…/kyc-file` (BE-2), supplier cmds | ✅ | ✅ | ✅ | **Read + full onboarding chain live** — create → identity → submit-kyc → kyc-approve (COMPLIANCE) → financial + credit-review (CREDIT) → maa → activate. Status-driven wizard; version threaded; SoD roles enforced; no fallback | — |
+| **S4** Buyer mgmt + credit | `GET /buyers`, `…/pricing-bands` (BE-5), buyer/credit cmds | ✅ | ✅ | ✅ | **Read + full onboarding chain live** — nominate → identity-verified → credit-assessment → engagement → (ack-user + confirm-PI + activate). Version threaded per step; SoD roles enforced; no fallback. *(pricing-bands read still mock)* | — |
+| **S5** Invoice checks + listing | `GET /listings`, `…/ops-checks` (BE-6), listing cmds | ✅ | ✅ | ⚠️ | **Reads + all listing writes wired** — record-ops-check (+buyer-ack), promote (`complete-ops-checks`→ack→`snapshot-and-ready`), go-live (`approve-go-live`). record-ops-check verified persists; **go-live E2E blocked by DOC.3** (needs 2 ops accounts) → dev seed helper | — |
+| **S6** Disbursement queue | `/disbursements`, `…/disbursement/detail` (BE-7) | ✅ | ✅ | ⚠️ | **Queue read + approve write wired** (mapped queue shape; `POST …/disbursement/approve`, checker≠maker). E2E not yet verified — needs a **disbursable (fully_funded ∧ all_signed) listing**; suggest a `/dev` helper to seed one | — |
 | **S7** Distribution + recon | `…/distribution/investors`, `/reconciliation` (BE-8) | ✅ | ✅ | ❌ | Wire reads (recon table empty until recon module runs) | — |
-| **S8** Investor invites | `GET /investor-invites` (BE-9) + issue cmd | ✅ | ✅ | ❌ | Wire read + issue cmd | — |
+| **S8** Investor invites | `GET /investor-invites` (BE-9) + issue cmd | ✅ | ✅ | ⚠️ | **List read + Issue write live** (POST /investor-invites/issue → refresh; persists); list omits email/phone PII; revoke has no endpoint (mock) | — |
 | **S9** Audit log | `GET /audit/events` (BE-13) | ⛔ | ✅ | ❌ | Await **M17 Auditor** | BE-13 / M17 |
 | **S10** Investor onboarding | investor cmds + `…/kyc-file` (BE-2) | ✅ | ✅ | ❌ | Wire cmds | — |
-| **S11** Listing marketplace | investor-scoped `GET /listings?status=live` (BE-14) | ✅ | ✅ | ❌ | Backend ready (**M10-D**); investor bearer → live-only. Wire UI | BE-14 / BE-17 |
-| **S12** Listing detail | `GET /listings/{id}/detail` (BE-10, admin) | ✅ | ✅ | ❌ | Wire admin detail (investor-gated variant → BE-14) | — |
+| **S11** Listing marketplace | investor-scoped `GET /listings?status=live` (BE-14) | ✅ | ✅ | ⚠️ | **Marketplace read live** (`useHydrate('marketplace')`, empty until live listings exist); subscribe still mock | BE-14 / BE-17 |
+| **S12** Listing detail | `GET /listings/{id}/detail` (BE-10, admin) | ✅ | ✅ | ⚠️ | **Detail read live** (`useHydrate(['listingDetail',id])` + ops-checks; unified listing→split invoice/listing mapper); subscribe still mock | — |
 | **S13** Investor portfolio | `…/subscriptions` + summary (BE-14) | ✅ | ✅ | ❌ | Backend ready (**M10-D**); own-scoped `{rows,summary}`. Wire UI | BE-14 / BE-17 |
-| **S14** Supplier tracker (admin) | `GET /suppliers/{id}/listings` (BE-11) | ✅ | ✅ | ❌ | Wire read | — |
+| **S14** Supplier tracker (admin) | `GET /suppliers/{id}/listings` (BE-11) | ✅ | ✅ | ⚠️ | **Tracker read live** (`useHydrate(['supplierListings',id])`; buyer_name blank — not in BE-11); submit still mock | — |
 | **S15** Buyer portal | ack-user OTP login + buyer reads + self-ack (BE-15) | ⛔ | ✅ | ❌ | Await **WS-2** (ack-user login) | BE-15 / WS-2 |
 
 **Wire-able now (backend ready): S1–S8, S10, S11, S12, S13, S14.** Blocked on a milestone: S9, S15.
