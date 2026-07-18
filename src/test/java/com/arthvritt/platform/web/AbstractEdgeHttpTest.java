@@ -13,6 +13,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.Random;
 import java.util.UUID;
@@ -96,7 +97,91 @@ public abstract class AbstractEdgeHttpTest extends AbstractIntegrationTest {
         return "+9198" + (10_000_000 + RND.nextInt(89_999_999));
     }
 
+    /**
+     * M10-D T1 — bridges the harness gap: {@link #seedLoginIdentity} gives a bearer but no
+     * {@code inv_account}; a per-test {@code seedActiveInvestor} gives an {@code inv_account} but no
+     * password. This gives both: an {@code auth_identity} (kind {@code investor}, active) with a password
+     * credential, an {@code inv_invite}, and an {@code inv_account} at the given status (default
+     * {@code active}). {@code inv_invite.issued_by} needs a real {@code admin_user} FK, so a throwaway
+     * admin is seeded for that purpose only.
+     */
+    protected InvestorLogin seedActiveInvestorWithLogin() {
+        return seedActiveInvestorWithLogin("active");
+    }
+
+    protected InvestorLogin seedActiveInvestorWithLogin(String invAccountStatus) {
+        UUID issuedBy = seedAdminWithRoles().adminUserId();   // inv_invite.issued_by FK -> admin_user
+        String email = "invsl-" + UUID.randomUUID() + "@arthvritt.test";
+        String password = "Pw-" + UUID.randomUUID();
+        UUID identityId = auth.provisionIdentity("investor", email, phone(), "Investor");
+        UUID inviteId = Ids.newId();
+        UUID investorId = Ids.newId();
+        jdbc.update("INSERT INTO inv_invite (invite_id, email_hash, phone_hash, issued_by, expiry_at, status) "
+                        + "VALUES (?, ?, ?, ?, now() + interval '14 days', 'pending')",
+                inviteId, email.getBytes(StandardCharsets.UTF_8), phone().getBytes(StandardCharsets.UTF_8), issuedBy);
+        jdbc.update("INSERT INTO inv_account (investor_id, identity_id, invite_id, sub_type, status) "
+                        + "VALUES (?, ?, ?, 'resident_individual'::inv_sub_type, ?::inv_account_status)",
+                investorId, identityId, inviteId, invAccountStatus);
+        auth.setPassword(identityId, password);
+        return new InvestorLogin(investorId, new Seeded(Ids.newId(), identityId, email, password));
+    }
+
+    /**
+     * A supplier/buyer-backed listing at the given status — real counterparties (not bare UUIDs), so
+     * {@code buyer_name}/{@code supplier_name} joins resolve (mirrors {@code ListingReadTest}/
+     * {@code ListingDetailTest}'s seeding). M10-D T1.
+     */
+    protected ListingFixture seedListing(String status) {
+        UUID admin = seedAdminWithRoles().adminUserId();   // buyer_account.nominated_by FK -> admin_user
+        UUID supplierId = Ids.newId();
+        String supplierName = "Supplier " + UUID.randomUUID();
+        jdbc.update("INSERT INTO sup_account (supplier_id, legal_name, constitution_type, pan, status) "
+                        + "VALUES (?, ?, 'private_limited'::sup_constitution_type, 'AAAAA1111A', "
+                        + "'active'::sup_account_status)",
+                supplierId, supplierName);
+        UUID buyerId = Ids.newId();
+        String buyerName = "Buyer " + UUID.randomUUID();
+        jdbc.update("INSERT INTO buyer_account (buyer_id, legal_name, status, nominated_by) "
+                        + "VALUES (?, ?, 'active'::buyer_account_status, ?)", buyerId, buyerName, admin);
+        UUID invoiceId = Ids.newId();
+        jdbc.update("INSERT INTO deal_invoice (invoice_id, supplier_id, buyer_id, invoice_number, face_value, "
+                        + "invoice_date, tenor_days, due_date) "
+                        + "VALUES (?, ?, ?, ?, ?, '2026-01-15', 45, '2026-03-01')",
+                invoiceId, supplierId, buyerId, "INV-" + UUID.randomUUID(), 10_00_000_00L);
+        UUID listingId = Ids.newId();
+        jdbc.update("INSERT INTO deal_listing (listing_id, invoice_id, supplier_id, buyer_id, status) "
+                        + "VALUES (?, ?, ?, ?, ?::deal_listing_status)",
+                listingId, invoiceId, supplierId, buyerId, status);
+        return new ListingFixture(listingId, invoiceId, supplierId, buyerId, supplierName, buyerName);
+    }
+
+    /** A {@code live} listing (shorthand over {@link #seedListing(String)} — the common marketplace case). */
+    protected UUID seedLiveListing() {
+        return seedListing("live").listingId();
+    }
+
+    /**
+     * A {@code sub_subscription} row (M10-D T1) — {@code expected_inflow_amount} mirrors {@code amountPaise}
+     * (the S.3 baseline before any inflow reconciliation).
+     */
+    protected UUID seedSubscription(UUID investorId, UUID listingId, long amountPaise, String status) {
+        UUID id = Ids.newId();
+        jdbc.update("INSERT INTO sub_subscription (subscription_id, listing_id, investor_id, amount, status, "
+                        + "expected_inflow_amount) VALUES (?, ?, ?, ?, ?::sub_subscription_status, ?)",
+                id, listingId, investorId, amountPaise, status, amountPaise);
+        return id;
+    }
+
     /** A seeded admin: its admin_user id, auth identity id, and login credentials. */
     protected record Seeded(UUID adminUserId, UUID identityId, String email, String password) {
+    }
+
+    /** An investor with a login (M10-D T1): its resolved {@code investor_id} + the bearer-capable {@link Seeded}. */
+    protected record InvestorLogin(UUID investorId, Seeded login) {
+    }
+
+    /** A seeded listing over real supplier/buyer counterparties (M10-D T1) — names available for join assertions. */
+    protected record ListingFixture(UUID listingId, UUID invoiceId, UUID supplierId, UUID buyerId,
+                                    String supplierName, String buyerName) {
     }
 }

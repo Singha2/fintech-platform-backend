@@ -8,6 +8,7 @@ import com.arthvritt.platform.infrastructure.web.CommandResponse;
 import com.arthvritt.platform.infrastructure.web.CommandResponseAssembler;
 import com.arthvritt.platform.infrastructure.web.ListQuery;
 import com.arthvritt.platform.infrastructure.web.RequestBodies;
+import com.arthvritt.platform.shared.error.ForbiddenException;
 import com.arthvritt.platform.shared.error.NotFoundException;
 import com.arthvritt.platform.shared.error.ValidationException;
 import org.springframework.http.HttpStatus;
@@ -212,6 +213,103 @@ public class InvestorController {
                     row.put("consumed_at", rs.getObject("consumed_at", java.time.OffsetDateTime.class));
                     return row;
                 });
+    }
+
+    /**
+     * BE-14 (S13 portfolio, M10-D A3-ii) — the investor's own subscription list + the 4 summary tiles.
+     * OWN-1: an {@code investor}-kind caller (resolved server-side via {@link InvestorQueryPort}, never a
+     * client-supplied id) may read only its <b>own</b> {@code investor_id} — a cross-investor read is a
+     * clean 403 (DoR #3). Only an <b>admin</b> bearer (positively checked — {@code admin_user}, not
+     * "absence of an inv_account") keeps the un-scoped view; any other authenticated kind that is
+     * neither the owning investor nor an admin is rejected 403 too (fail-closed as new login kinds land).
+     * Native SQL over {@code sub_subscription} joined to {@code deal_listing -> deal_invoice} (+ the
+     * buyer/supplier counterparties, Gap G10, cross-BC so LEFT JOIN — no FK). {@code wallet_attribution}
+     * (Phase 2 dormant) is never surfaced.
+     */
+    @GetMapping("/investors/{id}/subscriptions")
+    public Map<String, Object> subscriptions(@AuthenticationPrincipal AuthSession session, @PathVariable UUID id) {
+        UUID callerInvestorId = investors.investorIdForIdentity(session.identityId()).orElse(null);
+        if (callerInvestorId != null) {
+            if (!callerInvestorId.equals(id)) {
+                throw ForbiddenException.crossInvestorRead("portfolio");
+            }
+        } else if (!isAdmin(session.identityId())) {
+            throw ForbiddenException.notAuthorisedForPortfolio();
+        }
+
+        List<Map<String, Object>> rows = jdbc.query(
+                "SELECT s.subscription_id, s.listing_id, s.amount, s.status::text AS status, "
+                        + "b.legal_name AS buyer_name, sup.legal_name AS supplier_name, i.due_date, "
+                        + "(s.distribution_outcome ->> 'gross')::bigint AS dist_gross, "
+                        + "(s.distribution_outcome ->> 'tds')::bigint AS dist_tds, "
+                        + "(s.distribution_outcome ->> 'fee')::bigint AS dist_fee, "
+                        + "(s.distribution_outcome ->> 'net')::bigint AS dist_net "
+                        + "FROM sub_subscription s "
+                        + "JOIN deal_listing l ON l.listing_id = s.listing_id "
+                        + "JOIN deal_invoice i ON i.invoice_id = l.invoice_id "
+                        + "LEFT JOIN buyer_account b ON b.buyer_id = l.buyer_id "
+                        + "LEFT JOIN sup_account sup ON sup.supplier_id = l.supplier_id "
+                        + "WHERE s.investor_id = ? ORDER BY s.created_at DESC",
+                (rs, n) -> {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("subscription_id", rs.getObject("subscription_id", UUID.class).toString());
+                    row.put("listing_id", rs.getObject("listing_id", UUID.class).toString());
+                    row.put("amount", rs.getLong("amount"));
+                    row.put("status", rs.getString("status"));
+                    row.put("buyer_name", rs.getString("buyer_name"));
+                    row.put("supplier_name", rs.getString("supplier_name"));
+                    row.put("due_date", rs.getObject("due_date", java.time.LocalDate.class));
+                    row.put("distribution_outcome", distributionOutcome(rs));
+                    return row;
+                },
+                id);
+
+        Map<String, Object> summary = jdbc.query(
+                "SELECT COALESCE(SUM(amount) FILTER (WHERE status NOT IN "
+                        + "('closed', 'cancelled_by_investor', 'refunded', 'loss_realised')), 0)::bigint "
+                        + "AS total_deployed_paise, "
+                        + "COALESCE(SUM((distribution_outcome ->> 'net')::bigint), 0)::bigint AS total_returned_paise, "
+                        + "COUNT(*) FILTER (WHERE status NOT IN "
+                        + "('closed', 'cancelled_by_investor', 'refunded', 'loss_realised')) AS active_positions, "
+                        + "COUNT(*) FILTER (WHERE distribution_outcome IS NOT NULL) AS matured_positions "
+                        + "FROM sub_subscription WHERE investor_id = ?",
+                rs -> {
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    if (rs.next()) {
+                        m.put("total_deployed_paise", rs.getLong("total_deployed_paise"));
+                        m.put("total_returned_paise", rs.getLong("total_returned_paise"));
+                        m.put("active_positions", rs.getInt("active_positions"));
+                        m.put("matured_positions", rs.getInt("matured_positions"));
+                    }
+                    return m;
+                },
+                id);
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("rows", rows);
+        body.put("summary", summary);
+        return body;
+    }
+
+    /** A positive "is this identity an admin" check (mirrors {@code SessionController}'s {@code admin_user_id} read). */
+    private boolean isAdmin(UUID identityId) {
+        UUID adminUserId = jdbc.query("SELECT admin_user_id FROM admin_user WHERE identity_id = ?",
+                rs -> rs.next() ? rs.getObject(1, UUID.class) : null, identityId);
+        return adminUserId != null;
+    }
+
+    /** Decomposes the {@code distribution_outcome} JSONB in SQL (no raw-blob pass-through) — null until set. */
+    private static Map<String, Object> distributionOutcome(java.sql.ResultSet rs) throws java.sql.SQLException {
+        Long gross = rs.getObject("dist_gross", Long.class);
+        if (gross == null) {
+            return null;
+        }
+        Map<String, Object> outcome = new LinkedHashMap<>();
+        outcome.put("gross", gross);
+        outcome.put("tds", rs.getObject("dist_tds", Long.class));
+        outcome.put("fee", rs.getObject("dist_fee", Long.class));
+        outcome.put("net", rs.getObject("dist_net", Long.class));
+        return outcome;
     }
 
     private ResponseEntity<CommandResponse> created(CommandResult<UUID> result) {

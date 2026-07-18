@@ -178,18 +178,23 @@ public class ListingController {
      * + {@code deal_invoice} (invoice display fields live on the invoice); optional {@code status} /
      * {@code supplier_id} / {@code buyer_id} filters, {@code LIMIT 500}. {@code rate_bps} is read from the
      * frozen {@code pricing_snapshot} JSONB (null until snapshot). Authenticated-only.
+     *
+     * <p>M10-D OWN-2: an {@code investor}-kind caller is a browse-only marketplace — {@code status} is
+     * forced to {@code live} regardless of the query param (a listing has no investor owner, so this is
+     * scoping by <i>state</i>, not by ownership). Admin/other kinds are unchanged.
      */
     @GetMapping
     public List<Map<String, Object>> list(@AuthenticationPrincipal AuthSession session,
                                           @RequestParam(name = "status", required = false) String status,
                                           @RequestParam(name = "supplier_id", required = false) UUID supplierId,
                                           @RequestParam(name = "buyer_id", required = false) UUID buyerId) {
+        String effectiveStatus = "investor".equals(callerKind(session)) ? "live" : status;
         return ListQuery.from(
                         "SELECT l.listing_id, i.invoice_number, l.supplier_id, l.buyer_id, "
                                 + "i.face_value AS face_value_paise, i.tenor_days, l.status::text AS status, "
                                 + "l.funding_target, (l.pricing_snapshot ->> 'rate_bps')::int AS rate_bps "
                                 + "FROM deal_listing l JOIN deal_invoice i ON i.invoice_id = l.invoice_id")
-                .eq("l.status", "deal_listing_status", status)
+                .eq("l.status", "deal_listing_status", effectiveStatus)
                 .eq("l.supplier_id", supplierId)
                 .eq("l.buyer_id", buyerId)
                 .query(jdbc, "ORDER BY l.created_at DESC", (rs, n) -> {
@@ -336,6 +341,12 @@ public class ListingController {
             throw new NotFoundException("listing not found: " + id);
         }
         return detail;
+    }
+
+    /** M10-D P2: the caller's {@code auth_identity.kind} — the same shape {@code SessionController} reads. */
+    private String callerKind(AuthSession session) {
+        return jdbc.query("SELECT kind::text FROM auth_identity WHERE identity_id = ?",
+                rs -> rs.next() ? rs.getString(1) : null, session.identityId());
     }
 
     private CommandRequest command(AuthSession session, UUID commandId, UUID listingId, String name, int version) {

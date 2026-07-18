@@ -17,7 +17,7 @@ Three things are each mature on their own; the **bridge between them is not buil
 | Half | State | Evidence |
 |---|---|---|
 | **Backend core** | ✅ Complete — full money lifecycle `listed → … → distributed → closed` over HTTP, five controls enforced | 413 tests green (real Postgres) |
-| **Backend read surface (for the UI)** | ✅ **BE-1…BE-12 shipped** (admin reads + dashboard). BE-13/14/15/16 deferred by design | `docs/API_CATALOGUE.md`, `DL-BE-079…083` |
+| **Backend read surface (for the UI)** | ✅ **BE-1…BE-12 + BE-14 + BE-17 shipped** (admin reads + dashboard + investor read-only portal). BE-13/15/16 deferred by design | `docs/API_CATALOGUE.md`, `DL-BE-079…084` |
 | **UI (mock)** | ✅ All **15 screens** built and working **offline** on a mock store | `../fintech-patform-mock/src/store/PlatformStore.jsx` |
 | **🔴 Live wiring (the bridge)** | ❌ **Not started** — UI still 100% mock data; no `src/api/` client exists yet (only a `DATA_MODE` flag in `config.js`) | — |
 
@@ -63,25 +63,27 @@ Legend: ✅ done · ⚠️ partial · ❌ not done · ⛔ blocked (deferred mile
 | **S8** Investor invites | `GET /investor-invites` (BE-9) + issue cmd | ✅ | ✅ | ❌ | Wire read + issue cmd | — |
 | **S9** Audit log | `GET /audit/events` (BE-13) | ⛔ | ✅ | ❌ | Await **M17 Auditor** | BE-13 / M17 |
 | **S10** Investor onboarding | investor cmds + `…/kyc-file` (BE-2) | ✅ | ✅ | ❌ | Wire cmds | — |
-| **S11** Listing marketplace | investor-scoped `GET /listings?status=live` (BE-14) | ⛔ | ✅ | ❌ | Await **M10-full** (ownership-scoped reads) | BE-14 / M10-full |
+| **S11** Listing marketplace | investor-scoped `GET /listings?status=live` (BE-14) | ✅ | ✅ | ❌ | Backend ready (**M10-D**); investor bearer → live-only. Wire UI | BE-14 / BE-17 |
 | **S12** Listing detail | `GET /listings/{id}/detail` (BE-10, admin) | ✅ | ✅ | ❌ | Wire admin detail (investor-gated variant → BE-14) | — |
-| **S13** Investor portfolio | `…/subscriptions` + summary (BE-14) | ⛔ | ✅ | ❌ | Await **M10-full** | BE-14 / M10-full |
+| **S13** Investor portfolio | `…/subscriptions` + summary (BE-14) | ✅ | ✅ | ❌ | Backend ready (**M10-D**); own-scoped `{rows,summary}`. Wire UI | BE-14 / BE-17 |
 | **S14** Supplier tracker (admin) | `GET /suppliers/{id}/listings` (BE-11) | ✅ | ✅ | ❌ | Wire read | — |
 | **S15** Buyer portal | ack-user OTP login + buyer reads + self-ack (BE-15) | ⛔ | ✅ | ❌ | Await **WS-2** (ack-user login) | BE-15 / WS-2 |
 
-**Wire-able now (backend ready): S1–S8, S10, S12, S14.** Blocked on a milestone: S9, S11, S13, S15.
+**Wire-able now (backend ready): S1–S8, S10, S11, S12, S13, S14.** Blocked on a milestone: S9, S15.
+_(S11/S13 unblocked by **M10-D**; investor read-only login uses the dev password today — real investor login is Phase B/BE-18.)_
 
 ---
 
-## 3. Backend read surface — BE-1…BE-16 at a glance
+## 3. Backend read surface — BE-1…BE-17 at a glance
 
 | | Endpoints | Status |
 |---|---|:---:|
 | BE-1…BE-12 | session, kyc-file, suppliers, buyers+bands, listings+ops-checks, disbursement, distribution+recon, invites, listing-detail, supplier-tracker, dashboard | ✅ shipped (413 tests) |
 | BE-13 | `GET /audit/events` | ⛔ build in **M17 Auditor** |
-| BE-14 | investor marketplace + portfolio (ownership-scoped) | ⛔ build in **M10-full** |
+| BE-14 | investor marketplace + portfolio (ownership-scoped) | ✅ shipped (**M10-D**, DL-BE-084) |
 | BE-15 | buyer ack-user login + buyer reads + self-ack | ⛔ build in **WS-2** |
 | BE-16 | CORS | prod-only (dev uses Vite proxy) |
+| BE-17 | investor read-only self-login (`/auth/session` +`investor_id`, ownership scoping, KYC download gate); dev password only — real login is Phase B/BE-18 | ✅ shipped (**M10-D**, DL-BE-084) |
 
 Detail: `UI_INTEGRATION_BACKEND_SPEC.md`. All are **additive** — no frozen contract changes.
 
@@ -108,7 +110,8 @@ From `ROADMAP.md` §5. These add capability but the UI wiring above does not wai
 1. **Bridge foundation** — build `src/api/` client (bearer + `X-Command-Id`/`X-Aggregate-Version` envelope), flip `DATA_MODE` live/mock switch, wire **S1 login + OTP + `/auth/session`**. Keep offline mock path working.
 2. **Read-only admin screens** (fast wins, no writes): **S2 → S3 → S4 → S5 → S6 → S7 → S8 → S12 → S14**.
 3. **Command flows** (writes with the envelope): supplier/buyer/listing/investor onboarding cmds on S3/S4/S5/S10.
-4. **Deferred screens** — S9 (after M17), S11 + S13 (after M10-full), S15 (after WS-2).
+4. **Investor read-only portal** — **S11 + S13 now backend-ready (M10-D/BE-14/BE-17)**; wire against a real investor bearer (dev password today, Phase B for real login). See mock work-order below.
+5. **Deferred screens** — S9 (after M17), S15 (after WS-2).
 
 **Track B — backend remainder (parallel, non-blocking)**
 5. M17 Auditor (also unblocks S9) → then M15, M14, deferred-control sweep.

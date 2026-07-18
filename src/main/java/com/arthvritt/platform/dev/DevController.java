@@ -1,5 +1,6 @@
 package com.arthvritt.platform.dev;
 
+import com.arthvritt.platform.investor.InvestorQueryPort;
 import com.arthvritt.platform.notification.StubNotifier;
 import com.arthvritt.platform.shared.error.NotFoundException;
 import org.springframework.context.annotation.Profile;
@@ -28,10 +29,12 @@ public class DevController {
 
     private final JdbcTemplate jdbc;
     private final StubNotifier notifier;
+    private final InvestorQueryPort investors;
 
-    public DevController(JdbcTemplate jdbc, StubNotifier notifier) {
+    public DevController(JdbcTemplate jdbc, StubNotifier notifier, InvestorQueryPort investors) {
         this.jdbc = jdbc;
         this.notifier = notifier;
+        this.investors = investors;
     }
 
     @GetMapping("/dev/last-otp")
@@ -52,9 +55,12 @@ public class DevController {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("supplier_id", idByQuery("SELECT supplier_id FROM sup_account WHERE legal_name = 'DEV Supplier'"));
         out.put("buyer_id", idByQuery("SELECT buyer_id FROM buyer_account WHERE legal_name = 'DEV Buyer'"));
-        out.put("investor_id", idByQuery(
-                "SELECT i.investor_id FROM inv_account i JOIN auth_identity a ON a.identity_id = i.identity_id "
-                        + "WHERE a.email = 'investor@dev.local'"));
+        // M10-D P0: repoint through the shared identity_id -> investor_id resolver (not an ad-hoc join here).
+        UUID investorIdentityId = jdbc.query(
+                "SELECT identity_id FROM auth_identity WHERE email = 'investor@dev.local'",
+                rs -> rs.next() ? rs.getObject(1, UUID.class) : null);
+        out.put("investor_id", investorIdentityId == null ? null
+                : investors.investorIdForIdentity(investorIdentityId).map(UUID::toString).orElse(null));
         out.put("admins_password", DevDataSeeder.PASSWORD);
         return out;
     }

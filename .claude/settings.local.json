@@ -210,7 +210,12 @@
       "Bash(awk -F'[:,]' '{r+=$2; f+=$4; e+=$6; s+=$8} END{printf \"runs=%d failures=%d errors=%d skipped=%d\\\\n\", r,f,e,s}')",
       "Bash(grep -nE \"^\\\\s*#+\\\\s*S[0-9]|\\\\bS[0-9]{1,2}\\\\b.*—|\\\\| *S[0-9]\" docs/API_ALIGNMENT.md)",
       "Bash(grep -noE \"S[0-9]{1,2}[^0-9][^|]{0,45}\" docs/API_ALIGNMENT.md)",
-      "Bash(grep -nE \"^#{1,3} |^## Phase|^### Step|Phase [0-9]|Step [0-9]\" docs/INTEGRATION_PLAN.md)"
+      "Bash(grep -nE \"^#{1,3} |^## Phase|^### Step|Phase [0-9]|Step [0-9]\" docs/INTEGRATION_PLAN.md)",
+      "Bash(sort -t- -k2 -n)",
+      "Bash(git -C /Users/amitsingh/IdeaProjects/fintech-platform-backend status --short)",
+      "Bash(awk -F'[ ,]+' '{tests+=$3; fail+=$5; err+=$7; skip+=$9} END{print \"Total tests:\",tests,\" Failures:\",fail,\" Errors:\",err,\" Skipped:\",skip}')",
+      "Bash(git --no-pager diff HEAD -- src/main/java)",
+      "Bash(git -C /Users/amitsingh/IdeaProjects/fintech-patform-mock status --short)"
     ]
   }
 }

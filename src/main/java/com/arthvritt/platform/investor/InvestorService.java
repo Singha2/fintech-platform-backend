@@ -23,6 +23,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Arrays;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -34,9 +35,12 @@ import java.util.UUID;
  * KYC approval follows suitability + financial profile). All commands route through {@link CommandGateway}.
  * KYC reuses {@link ComplianceService} (maker-checker). Set-once PII (pan/aadhaar/bank) is written to
  * {@code inv_account} columns but never to an audit payload. Mirrors {@code SupplierService}.
+ *
+ * <p>Also implements {@link InvestorQueryPort} (M10-D) — the {@code identity_id -> investor_id} resolver
+ * + KYC-download eligibility other bounded contexts consult, in-process, without a cross-BC SQL join.
  */
 @Service
-public class InvestorService {
+public class InvestorService implements InvestorQueryPort {
 
     private static final String CONTEXT = "investor";
     private static final Set<String> OPS = Set.of(AdminRole.OPS_EXECUTIVE.wire());
@@ -255,6 +259,25 @@ public class InvestorService {
             return transitionOutcome(request, "mia_signed", "active", CONTEXT + ".InvestorAccount.Activated",
                     "activated_at = now(), kyc_refresh_due_at = now() + interval '12 months'");
         });
+    }
+
+    // --- InvestorQueryPort (M10-D, P0 resolver) ------------------------------------------------------
+
+    @Override
+    public Optional<UUID> investorIdForIdentity(UUID identityId) {
+        UUID investorId = jdbc.query("SELECT investor_id FROM inv_account WHERE identity_id = ?",
+                rs -> rs.next() ? rs.getObject(1, UUID.class) : null, identityId);
+        return Optional.ofNullable(investorId);
+    }
+
+    @Override
+    public boolean isKycApprovedForDownload(UUID identityId) {
+        Boolean eligible = jdbc.query(
+                "SELECT (status::text IN ('kyc_approved', 'mia_signed', 'active')) OR kyc_approved_at IS NOT NULL "
+                        + "FROM inv_account WHERE identity_id = ?",
+                rs -> rs.next() ? rs.getBoolean(1) : Boolean.FALSE,
+                identityId);
+        return Boolean.TRUE.equals(eligible);
     }
 
     // --- BC17 verification (M10-A) -----------------------------------------------------------------

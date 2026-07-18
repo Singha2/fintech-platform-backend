@@ -193,13 +193,26 @@ Each item: **Unblocks · Design-fit · Route/Auth · Params · Response (PROPOSA
   regulator-access scope; the audit-as-projection optimization is noted for later. **Migration:** none (reads
   `sys_audit_event`). **Effort:** M (within M17).
 
-### BE-14 — Investor portal reads · P2 · **M10-full (investor portal)**
+### BE-14 — Investor portal reads · P2 · ✅ **shipped (M10-D, DL-BE-084)**
 - **Scope:** `GET /listings?status=live` (investor-visible marketplace, G9/S11) and
-  `GET /investors/{id}/subscriptions` + summary (G11/S13 portfolio).
-- **Design constraint (why deferred):** these are the first **ownership-scoped** reads — an investor may see
-  only live listings and only *their own* subscriptions — and the invoice-PDF download must enforce the
-  KYC'd-investor gate (API_CATALOGUE §Invoice artifacts). Build **with M10-full**, together with the read
-  scoping/authz that milestone introduces. Do not ship as ungated admin reads. **Effort:** L (with M10-full).
+  `GET /investors/{id}/subscriptions` + summary (G11/S13 portfolio) — shipped as **M10-D A3** with the KYC'd-investor
+  invoice-PDF gate (A5).
+- **As built:** the first **ownership-scoped** reads. Marketplace = investor bearer forced to `status='live'` (OWN-2,
+  browse-all-live — a listing has no investor owner). Portfolio = **own-`investor_id` only**, cross-investor/non-admin
+  → **403** `cross_tenant_read` (OWN-1, fail-closed; only admins keep the un-scoped view). Portfolio response is
+  `{rows, summary}` — rows over `sub_subscription`+`deal_listing`+`deal_invoice` (buyer/supplier `legal_name` + due
+  date, Gap G10); 4 summary tiles (`total_deployed_paise`/`total_returned_paise`/`active_positions`/
+  `matured_positions`). Invoice-PDF download requires the caller be KYC-approved. See M10-D §4 for the exact shape.
+
+### BE-17 — Investor read-only self-login · P2 · ✅ **shipped (M10-D, DL-BE-084)**
+- **Scope:** investor authentication for the read-only portal. `/auth/session` returns a nullable `investor_id`
+  (non-null only for `kind='investor'`, server-resolved via `InvestorQueryPort`); the ownership-scoping resolver
+  reused by BE-14's reads; the read-only regression lock (an investor holds no roles → all commands 403 at
+  `CommandGateway`).
+- **As built:** investors log in via the **existing** `/auth/login/password → verify-otp` flow (kind-agnostic). Phase
+  A ships the **dev password only** (`investor@dev.local`); **real production investor login + investor self-commit
+  are Phase B (BE-18)** — passwordless invite→email+OTP, because `inv_invite` has no token and there is no
+  session-less command substrate (DL-BE-084). No new command, no migration.
 
 ### BE-15 — Buyer portal + ack-user login + self-ack · P2 · **WS-2**
 - **Scope:** the **passwordless email+OTP** ack-user login (DL-021 — a *new* auth path, not

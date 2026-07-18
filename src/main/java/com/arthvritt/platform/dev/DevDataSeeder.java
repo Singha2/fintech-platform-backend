@@ -20,8 +20,9 @@ import java.util.UUID;
  *
  * <p>Seeds: six admins (one per role + a second Treasury for the disbursement maker-checker pair), all with
  * password {@code DevPass123!}; and one active supplier, buyer (+ active acknowledgment user), investor, and
- * a pricing band — so a listing can go live → subscribe → assign → disburse → mature immediately. The seeded
- * counterparty ids are exposed by {@code GET /dev/seed-info}.
+ * a pricing band — so a listing can go live → subscribe → assign → disburse → mature immediately. The investor
+ * ({@code investor@dev.local}) also gets the same dev password (M10-D A1) so it can self-login read-only.
+ * The seeded counterparty ids are exposed by {@code GET /dev/seed-info}.
  */
 @Component
 @Profile("dev")
@@ -133,6 +134,7 @@ public class DevDataSeeder implements ApplicationRunner {
         jdbc.update("INSERT INTO inv_account (investor_id, identity_id, invite_id, sub_type, status) "
                         + "VALUES (?, ?, ?, 'resident_individual'::inv_sub_type, 'active'::inv_account_status)",
                 investorId, identityId, inviteId);
+        auth.setPassword(identityId, PASSWORD); // M10-D A1: investor@dev.local can now log in (dev/pilot only)
         return investorId;
     }
 }

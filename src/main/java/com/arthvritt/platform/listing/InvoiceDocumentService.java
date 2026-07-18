@@ -1,6 +1,7 @@
 package com.arthvritt.platform.listing;
 
 import com.arthvritt.platform.adminiam.AdminRole;
+import com.arthvritt.platform.auth.AuthSession;
 import com.arthvritt.platform.command.CommandEvent;
 import com.arthvritt.platform.command.CommandGateway;
 import com.arthvritt.platform.command.CommandOutcome;
@@ -8,6 +9,8 @@ import com.arthvritt.platform.command.CommandRequest;
 import com.arthvritt.platform.command.CommandResult;
 import com.arthvritt.platform.document.DocMeta;
 import com.arthvritt.platform.document.DocumentPort;
+import com.arthvritt.platform.investor.InvestorQueryPort;
+import com.arthvritt.platform.shared.error.ForbiddenException;
 import com.arthvritt.platform.shared.error.NotFoundException;
 import com.arthvritt.platform.shared.error.ValidationException;
 import org.springframework.dao.DuplicateKeyException;
@@ -27,7 +30,8 @@ import java.util.UUID;
  * SoD, audited); maker-checker is satisfied via the existing {@code document_completeness} ops-check
  * (§0.3, wired in {@link ListingService#recordOpsCheck}), not a per-command checker here. This service
  * never writes {@code sys_document} directly — BC16 is reached only through {@link DocumentPort}
- * (bounded-context isolation, ARCH.1).
+ * (bounded-context isolation, ARCH.1). The investor-KYC download gate (M10-D KYC-1) is filled via
+ * {@link InvestorQueryPort} — another cross-BC reach through a port, never a raw join.
  */
 @Service
 public class InvoiceDocumentService {
@@ -40,18 +44,21 @@ public class InvoiceDocumentService {
     private static final Set<String> ATTACHABLE_LISTING_STATUSES =
             Set.of("draft", "operational_checks_in_progress", "awaiting_acknowledgment");
 
-    /** DOC.6: download eligibility — the listing's live-set (investor-KYC gate deferred, see class docs). */
+    /** DOC.6: download eligibility — the listing's live-set, plus the M10-D KYC-1 investor gate below. */
     private static final Set<String> DOWNLOADABLE_LISTING_STATUSES =
             Set.of("live", "fully_funded", "disbursed", "matured_payment_received", "distributed");
 
     private final JdbcTemplate jdbc;
     private final CommandGateway gateway;
     private final DocumentPort documents;
+    private final InvestorQueryPort investors;
 
-    public InvoiceDocumentService(JdbcTemplate jdbc, CommandGateway gateway, DocumentPort documents) {
+    public InvoiceDocumentService(JdbcTemplate jdbc, CommandGateway gateway, DocumentPort documents,
+                                  InvestorQueryPort investors) {
         this.jdbc = jdbc;
         this.gateway = gateway;
         this.documents = documents;
+        this.investors = investors;
     }
 
     /** Attach — DOC.1 (declarative, one active per invoice) / DOC.4 (freeze) / DOC.5 (must be a stored PDF). */
@@ -132,14 +139,20 @@ public class InvoiceDocumentService {
     }
 
     /**
-     * Download — DOC.6: only when the listing is in the live-set (the KYC'd-investor gate via
-     * {@code InvestorQueryPort} is deferred with the investor portal — see M19 §0.2 / class docs).
+     * Download — DOC.6: the listing must be in the live-set. M10-D KYC-1: when the caller resolves to an
+     * investor (via {@link InvestorQueryPort}), it must additionally be KYC-approved
+     * ({@code inv_account.status ∈ {kyc_approved, mia_signed, active}} or a durable {@code kyc_approved_at})
+     * — else a clean 403. Admin/other-kind callers (no investor account of their own) are unaffected.
      */
-    public byte[] download(UUID listingId, UUID documentId) {
+    public byte[] download(AuthSession session, UUID listingId, UUID documentId) {
         ListingRef listing = loadListingRef(listingId);
         if (!DOWNLOADABLE_LISTING_STATUSES.contains(listing.status())) {
             throw new ValidationException("listing is not eligible for document download: " + listingId
                     + " (is " + listing.status() + ")");
+        }
+        if (investors.investorIdForIdentity(session.identityId()).isPresent()
+                && !investors.isKycApprovedForDownload(session.identityId())) {
+            throw ForbiddenException.kycNotApproved();
         }
         Integer linked = jdbc.queryForObject(
                 "SELECT count(*) FROM deal_invoice_document WHERE invoice_id = ? AND document_id = ?",

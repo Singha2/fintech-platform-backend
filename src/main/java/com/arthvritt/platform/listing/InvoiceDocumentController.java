@@ -72,7 +72,7 @@ public class InvoiceDocumentController {
     @GetMapping("/{documentId}/content")
     public ResponseEntity<byte[]> content(@AuthenticationPrincipal AuthSession session,
                                           @PathVariable UUID listingId, @PathVariable UUID documentId) {
-        byte[] bytes = artifacts.download(listingId, documentId);
+        byte[] bytes = artifacts.download(session, listingId, documentId);
         return ResponseEntity.ok().contentType(MediaType.APPLICATION_PDF).body(bytes);
     }
 

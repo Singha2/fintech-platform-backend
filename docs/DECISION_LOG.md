@@ -3141,3 +3141,64 @@ lifecycle's owning role changes, update the `QUEUES` table with it. (c) BE-10's 
 (ownership + KYC'd-investor gate) is **BE-14 / M10-full**, not this admin read — do not reuse this endpoint for the
 investor portal. (d) P1 admin read surface is now complete; remaining UI-integration items are BE-13 (audit list,
 in M17), BE-14/BE-15 (investor/buyer portals, M10-full/WS-2), BE-16 (CORS, prod).
+
+---
+
+## DL-BE-084 — M10-D · Investor self-login (read-only portal): BE-17 auth + BE-14 reads pulled forward
+
+**Module:** M10-D (`docs/modules/M10-D-investor-self-login.md`) — Phase A of the investor-self-login work order
+(`docs/INVESTOR_SELF_LOGIN_WORKORDER.md`). The "investor self-service login + portal" slice M10-full deferred
+(`M10-investor-full.md` §9). Full spec-driven loop: `/specify → /clarify → DoR → /plan → /tasks → /implement`. Suite
+**427 green** (was 413 at BE-12; +14). **No migration** (the design guardrail held).
+
+**What changed.**
+- **A2 · `/auth/session` +`investor_id`** — nullable, non-null only for `kind='investor'`, resolved server-side via
+  the new `InvestorQueryPort`. Additive (admins/others get `null`).
+- **A3-i · marketplace scoping (S11)** — `ListingController.list` forces `status='live'` for an `investor`-kind
+  caller (OWN-2). It is **not** ownership-filtered — a listing has no investor owner, so an investor browses **all**
+  live listings; admins unchanged.
+- **A3-ii · portfolio (S13, BE-14)** — new `GET /investors/{id}/subscriptions` (`{rows, summary}`) over
+  `sub_subscription` joined `deal_listing → deal_invoice` (+ buyer/supplier `legal_name`, Gap G10). OWN-1 ownership
+  gate (below). `wallet_attribution` (Phase-2 dormant) never surfaced.
+- **A5 · KYC download gate (KYC-1)** — the previously-deferred `InvestorQueryPort` gate in
+  `InvoiceDocumentService.download` is now real: an investor caller must be KYC-approved; admins unaffected.
+- **A1 · dev login** — `DevDataSeeder` sets `investor@dev.local`'s password so it can self-login (dev/pilot only).
+
+**Non-obvious decisions.**
+- **DL: production investor login deferred to Phase B (OQ-1, reconfirmed at `/plan`).** `/clarify` first picked
+  "set-password in onboarding," but `/plan` found no cheap path: `inv_invite` has **no secret token** and there is
+  **no session-less command substrate** (`CommandGateway` needs a session), so an investor-chosen secret needs an
+  OTP-verify step — ~80% of Phase B's passwordless machinery. Phase A therefore ships **only the dev password**;
+  real investors self-login in Phase B (passwordless, BE-18). → Phase A adds **no new command** (RO-1 read-only-pure;
+  five non-negotiables all N/A — reads are unaudited, consistent with the existing read surface).
+- **`InvestorQueryPort` (real interface, `DocumentPort` pattern), implemented by `InvestorService`.** The
+  `identity_id → investor_id` resolver (P0) + KYC-download eligibility, consulted in-process by `SessionController`,
+  `InvestorController`, `InvoiceDocumentService` (and Phase B) — a cross-BC reach through an abstraction, never a
+  raw cross-BC join (ARCH.1). Replaced `DevController`'s ad-hoc join.
+- **Ownership is fail-closed and admin is positively checked (review fix).** The portfolio gate is: owning investor
+  → scoped; **admin (positive `admin_user` check)** → un-scoped; **any other authenticated kind → 403**. An earlier
+  cut let "any caller without an `inv_account`" through un-scoped — a latent leak the moment ack-user (BE-15) /
+  auditor (BE-13) logins land. Now fail-closed. Cross-investor read → **403** `cross_tenant_read` (DoR #3, catalogued
+  B4 §4.2 code); non-investor-non-admin → 403 `cross_tenant_read` via `notAuthorisedForPortfolio()`.
+- **`total_deployed_paise` name is reused across two unrelated reads.** BE-12's admin `/admin/stats` defines it as
+  **disbursement gross** (cash out to suppliers, platform-global). This S13 portfolio summary defines it as **Σ of an
+  investor's active subscription `amount`**. Same JSON key, deliberately context-scoped meaning — do not conflate.
+
+**What to watch for (review findings, dispositioned).**
+- **(latent) KYC download gate is over-permissive for suspended/exited investors.** `isKycApprovedForDownload`'s
+  `... OR kyc_approved_at IS NOT NULL` durable clause means a once-approved but later `suspended`/`exited` investor
+  still passes. Unreachable today (Suspend/Exit are deferred, M10 §9) and the clause is spec-sanctioned (P4/A5).
+  **Whether a de-activated investor retains document access is a product policy the Suspend/Exit module must
+  decide** — revisit `isKycApprovedForDownload` then. Not changed now (no reviewer-inferred security-policy flip).
+- **(accepted) `GET /investors/{id}/subscriptions` returns 200 + empty portfolio for an unknown id** (admin caller);
+  the owning-investor path can never hit a bogus id (server-derived). Empty is a valid portfolio representation;
+  no existence-check query added.
+- **(accepted) download runs two `inv_account` queries** (resolver + KYC); document downloads are not a hot path.
+- **(accepted) caller-classification is inlined three ways** (`isAdmin` / `callerKind` / `investorIdForIdentity`);
+  a shared classifier is a future tidy, not worth coupling the BCs now.
+- **Perf:** `sub_subscription` has no standalone `investor_id` index (only `UNIQUE(listing_id, investor_id)`).
+  Correctness-safe at pilot scale; add `idx_sub_subscription_investor` (a migration) only if the portfolio read
+  measurably slows.
+
+**Phase B carries forward (BE-18):** passwordless invite→email+OTP investor login + investor self-commit (the
+`CommandGateway` non-admin-actor authz change) + read-path audit of denied cross-tenant reads (deferred here).

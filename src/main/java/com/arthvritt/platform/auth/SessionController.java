@@ -1,6 +1,7 @@
 package com.arthvritt.platform.auth;
 
 import com.arthvritt.platform.adminiam.RoleResolver;
+import com.arthvritt.platform.investor.InvestorQueryPort;
 import com.arthvritt.platform.shared.error.NotFoundException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -19,7 +20,8 @@ import java.util.UUID;
  * MFA gating. Purely additive: assembles the request principal ({@link AuthSession}), the identity's
  * {@code auth_identity.kind}/{@code email}, the roles from {@link RoleResolver#activeRoles} (the <i>same</i>
  * resolver {@code CommandGateway} authorises with), and MFA-freshness from {@link SessionService#isMfaFresh}.
- * No new query logic, no authz change.
+ * No new query logic, no authz change. M10-D (SES-1) adds a nullable {@code investor_id}, resolved per-request
+ * via {@link InvestorQueryPort} — non-null only for {@code kind='investor'}.
  *
  * <p>Authenticated-only (any live bearer): {@code /auth/session} is deliberately <b>not</b> under the
  * {@code permitAll("/auth/login/**")} matcher, so the security chain's {@code anyRequest().authenticated()}
@@ -31,11 +33,14 @@ public class SessionController {
     private final JdbcTemplate jdbc;
     private final RoleResolver roles;
     private final SessionService sessions;
+    private final InvestorQueryPort investors;
 
-    public SessionController(JdbcTemplate jdbc, RoleResolver roles, SessionService sessions) {
+    public SessionController(JdbcTemplate jdbc, RoleResolver roles, SessionService sessions,
+                             InvestorQueryPort investors) {
         this.jdbc = jdbc;
         this.roles = roles;
         this.sessions = sessions;
+        this.investors = investors;
     }
 
     @GetMapping("/auth/session")
@@ -54,6 +59,9 @@ public class SessionController {
         UUID adminUserId = jdbc.query("SELECT admin_user_id FROM admin_user WHERE identity_id = ?",
                 rs -> rs.next() ? rs.getObject(1, UUID.class) : null, identityId);
 
+        // Nullable — non-null only for kind='investor' (M10-D SES-1); server-resolved, never client-supplied.
+        UUID investorId = investors.investorIdForIdentity(identityId).orElse(null);
+
         List<String> activeRoles = new ArrayList<>(new TreeSet<>(roles.activeRoles(identityId)));
 
         Map<String, Object> body = new LinkedHashMap<>();
@@ -62,6 +70,7 @@ public class SessionController {
         body.put("email", identity.get("email"));
         body.put("roles", activeRoles);
         body.put("admin_user_id", adminUserId == null ? null : adminUserId.toString());
+        body.put("investor_id", investorId == null ? null : investorId.toString());
         body.put("mfa_fresh", sessions.isMfaFresh(session, ActionSensitivity.SENSITIVE));
         body.put("idle_expires_at", session.idleExpiresAt() == null ? null : session.idleExpiresAt().toString());
         body.put("absolute_expires_at",
