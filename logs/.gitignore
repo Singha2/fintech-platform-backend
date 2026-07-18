@@ -1,0 +1,3 @@
+# Dev run logs — keep the folder, ignore its contents.
+*
+!.gitignore

@@ -30,6 +30,25 @@
         <logger name="org.hibernate.SQL" level="DEBUG"/>
         <logger name="org.hibernate.orm.jdbc.bind" level="TRACE"/>
         -->
+
+        <!-- Dev-only: mirror all logs to a file so a full startup can be inspected/analysed after the fact.
+             logs/ is git-ignored. Rolls at 10MB, keeps 7 days / 200MB. (A custom logback config overrides
+             Spring Boot's logging.file.name, so the file appender must be declared here, not in properties.) -->
+        <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+            <file>logs/backend-dev.log</file>
+            <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+                <fileNamePattern>logs/backend-dev-%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+                <maxFileSize>10MB</maxFileSize>
+                <maxHistory>7</maxHistory>
+                <totalSizeCap>200MB</totalSizeCap>
+            </rollingPolicy>
+            <encoder>
+                <pattern>${LOG_PATTERN}</pattern>
+            </encoder>
+        </appender>
+        <root>
+            <appender-ref ref="FILE"/>
+        </root>
     </springProfile>
 
     <springProfile name="!dev">

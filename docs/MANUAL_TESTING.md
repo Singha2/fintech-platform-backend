@@ -234,5 +234,6 @@ docker exec -it avc-pg psql -U platform -d platform -c 'DROP SCHEMA public CASCA
 docker rm -f avc-pg   # then re-run the docker run from §0
 ```
 
-Build cache: `./mvnw clean` (recompile). The app needs the schema at the **latest** migration (V6) or it
-refuses to start (`ddl-auto=validate`).
+Build cache: `./mvnw clean` (recompile). The app needs the schema at the **latest** migration (currently **V13**) —
+run the standalone `FlywayMigrationRunner` after every schema bump, since Flyway autostart is off. A stale schema
+(e.g. new migrations added but not applied) leaves the DB behind the code; re-run the migrator (§8).

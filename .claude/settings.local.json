@@ -215,7 +215,14 @@
       "Bash(git -C /Users/amitsingh/IdeaProjects/fintech-platform-backend status --short)",
       "Bash(awk -F'[ ,]+' '{tests+=$3; fail+=$5; err+=$7; skip+=$9} END{print \"Total tests:\",tests,\" Failures:\",fail,\" Errors:\",err,\" Skipped:\",skip}')",
       "Bash(git --no-pager diff HEAD -- src/main/java)",
-      "Bash(git -C /Users/amitsingh/IdeaProjects/fintech-patform-mock status --short)"
+      "Bash(git -C /Users/amitsingh/IdeaProjects/fintech-patform-mock status --short)",
+      "Bash(grep -rniE \"revokeSession|\\\\\"/me\\\\\"|GetMapping\\\\\\(\\\\\"/me|PostMapping\\\\\\(\\\\\"/logout|logout|/session\\\\b\" /Users/amitsingh/IdeaProjects/fintech-platform-backend/src/main/java --include-dir=.)",
+      "Bash(grep -rn \"disbursement\" src/main/java --include-dir=.)",
+      "Bash(xargs kill)",
+      "Bash(pkill -f \"spring-boot:run\")",
+      "Bash(curl -s -m 3 http://localhost:8081/actuator/health)",
+      "Bash(curl -s -m 3 http://localhost:8080/api/v1/dev/seed-info)",
+      "Read(//Users/amitsingh/**)"
     ]
   }
 }
