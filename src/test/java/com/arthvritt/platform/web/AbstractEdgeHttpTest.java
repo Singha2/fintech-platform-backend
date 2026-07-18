@@ -85,6 +85,17 @@ public abstract class AbstractEdgeHttpTest extends AbstractIntegrationTest {
         }
     }
 
+    /**
+     * A session bearer for an <i>already-provisioned</i> identity, logging in over the real password → OTP
+     * flow by email + password (resolves the {@code identity_id} itself). Use for accounts seeded elsewhere —
+     * e.g. the {@code dev}-profile {@code DevDataSeeder} admins — rather than a per-test {@link Seeded}.
+     */
+    protected String bearerForCredentials(String email, String password) {
+        UUID identityId = jdbc.queryForObject("SELECT identity_id FROM auth_identity WHERE email = ?",
+                UUID.class, email);
+        return bearerFor(new Seeded(Ids.newId(), identityId, email, password));
+    }
+
     protected JsonNode node(MvcResult res) {
         try {
             return json.readTree(res.getResponse().getContentAsString());

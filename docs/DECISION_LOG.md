@@ -3231,3 +3231,53 @@ segment (e.g. `/finxfund`) to the path. Ops/actuator stays **off** the versioned
 - **Brand/domain is a deploy-time concern** (reverse proxy / DNS) — decide `api.finxfund.com` vs `finxfund.com/api`
   at deploy, no app code change.
 - Multi-product later → add the `/finxfund` discriminator **at the gateway** (strip-prefix), backend stays `/api/v1`.
+
+---
+
+## DL-BE-086 — Dev-only `/dev/seed-listing` helper (+ a second ops account) to unblock UI money-flow write E2E
+
+**Status.** Shipped (green). Brief: `docs/DEV_SEED_LISTING_HELPER.md`. New `DevListingSeeder` bean +
+`POST /dev/seed-listing` on `DevController`; a second `ops2@dev.local` in `DevDataSeeder`. 9 new tests
+(`DevListingSeederTest` × 7, `DevEndpointsAbsentInProdTest` × 2); full suite green.
+
+**Decision.** A **dev-profile-only** helper that fast-forwards a **fresh** listing straight to a requested
+money-flow `stage` (`live | fully_funded | disbursable | disbursed | matured`) via direct `JdbcTemplate`
+inserts, and returns the ids the UI/tester acts on. It exists so the frontend's live write buttons — **S12**
+subscribe, **S6** disbursement approve, **S7** record-maturity + distribution approve — can be verified
+end-to-end **without hand-driving the ~20-command real pipeline + a BC16 document upload** each time. Also
+seed a **second ops** account (`ops2@dev.local`) so DOC.3 / any genuine two-ops maker-checker is drivable via
+*real* commands too (the seed previously had only one `ops_executive`, making the real path to
+`ready_for_review`/`live` unrunnable end-to-end).
+
+**Why direct inserts (bypassing the five controls).** The point is to *land the terminal DB state fast*, not
+re-run the flow — so the helper deliberately sidesteps maker-checker / MFA / ops-checks / document gates. That
+is precisely why it is `@Profile("dev")`-guarded and never a production path (`/dev/**` is `permitAll` in
+`SecurityConfig` but 404s with no bean off the dev profile — proven by `DevEndpointsAbsentInProdTest`). It is
+**purely additive**: it changes no real command, service, read, or migration — it only *inserts state*.
+
+**Correctness — the seeded state is valid, not just present.** Each stage satisfies the DB CHECK constraints
+**and** the invariants the command-under-test reads (traced from the handlers, not assumed):
+- `live` → `deal_listing.status='live'`, `funding_target` set, `committed_total=0`, `va_id` set → `SubscriptionService.commit` (reads status/funding_target, active investor).
+- `fully_funded` / `disbursable` → `status='fully_funded'` ∧ `all_signed=true` ∧ `committed_total=funding_target` + one **confirmed** `sub_subscription`; `disbursable` adds a **drafted** `cash_payout_instruction` (`kind='disbursement'`, `maker_id`=the `maker` arg) so `DisbursementService.approve` (checker ≠ maker) flips `fully_funded → disbursed`.
+- `disbursed` → `status='disbursed'` + an **executed** disbursement (checker ≠ maker) → `MaturityService.recordMaturity` (needs `disbursed` + amount = invoice `face_value`).
+- `matured` → `status='matured_payment_received'` + a **drafted** distribution → `DistributionService.approve` closes the deal (`→ closed`, `terminal_outcome='distributed'`).
+
+**The load-bearing subtlety — the `matured` distribution snapshot.** `DistributionService.approve` **reads a
+frozen `tds_snapshot` from the instruction payload** (it never recomputes) and **bumps a pre-existing
+`tax_year_profile` row** (rowcount-guarded → missing profile = hard fail). So the seeder must reproduce what
+`DistributionService.draft` writes: a consistent immutable payload **and** a stamped `tax_year_profile`. This
+is tractable because the dev dataset has **exactly one investor per listing** (`sub_subscription` is unique on
+`(listing_id, investor_id)`), making the tax split a single leg: `gross = face_value`,
+`interest = face_value − funding_target`, `tds = HALF_EVEN(rate_bps × interest / 10000)` at the FY-default rate
+(`tax_rate_default`, `pan_verified=false` for the no-PAN dev investor), `net = gross − tds`. Multi-investor
+seeding would need the full largest-remainder `TaxEngine` split — deliberately out of scope.
+
+**What to watch for.**
+- **`invoice_number` must be globally unique, not a UUID prefix.** The manual-entry partial unique index
+  `uidx_deal_invoice_manual` is on `(supplier, buyer, invoice_number, face_value, tenor)` — all constant across
+  seeds except the number. UUIDv7 shares a time-ordered high prefix within a run, so a truncated slice
+  **collides** on the second call. The seeder uses the *full* fresh id. (Caught by the repeatability test.)
+- Reuses the `DevDataSeeder` active supplier/buyer/investor; needs the dev dataset present (it fails loud if
+  not). The `matured` stage needs a `tax_rate_default` row for the current FY (seeded by `V8`).
+- If real investor login / multi-investor listings arrive, extend the `matured` split to the full `TaxEngine`
+  rather than the single-leg shortcut.

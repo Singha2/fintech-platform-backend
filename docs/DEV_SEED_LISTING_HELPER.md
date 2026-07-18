@@ -1,5 +1,9 @@
 # BACKEND DEV HELPER — seed a listing at a money-flow stage (dev-profile only)
 
+> **✅ SHIPPED (2026-07-18, DL-BE-086).** `DevListingSeeder` + `POST /dev/seed-listing` (all five stages) and a
+> second ops account `ops2@dev.local` are implemented; 9 tests green (`DevListingSeederTest`,
+> `DevEndpointsAbsentInProdTest`), full suite green. This brief is retained as the design record.
+
 > **What this is.** A small **dev-only** helper that fast-forwards a fresh listing to a requested point in the
 > deal spine, so the UI's **money-flow writes** (S6 approve-disbursement, S7 maturity/distribution, S12 subscribe,
 > S13 portfolio) become testable **without hand-driving ~20 real commands + a document upload** each time.

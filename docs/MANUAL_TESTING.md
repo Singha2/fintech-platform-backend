@@ -41,12 +41,13 @@ either open **`manual-test.http`** in IntelliJ (run requests one by one, breakpo
 `-Dspring-boot.run.profiles=dev` wires two beans that exist in **no other profile**:
 
 - **`DevDataSeeder`** — on startup, if `admin_user` is empty, seeds:
-  - **6 admins**, all with password **`DevPass123!`**:
+  - **7 admins**, all with password **`DevPass123!`**:
 
     | email | role | use for |
     |---|---|---|
     | `super@dev.local` | super_admin | provisioning other admins |
     | `ops@dev.local` | ops_executive | listings, ops-checks, ack, subscribe, assignment, maturity |
+    | `ops2@dev.local` | ops_executive | second ops for **DOC.3** / any two-ops maker-checker (proposer ≠ approver) |
     | `treasury@dev.local` | treasury_and_settlement | go-live checker, disbursement **maker**, refunds |
     | `treasury2@dev.local` | treasury_and_settlement | disbursement **checker** (≠ maker) |
     | `compliance@dev.local` | compliance_reviewer | invites, suitability, KYC approve/reject |
@@ -56,6 +57,12 @@ either open **`manual-test.http`** in IntelliJ (run requests one by one, breakpo
 - **`DevController`**:
   - `GET /dev/last-otp?email=ops@dev.local` → `{ "code": "123456" }` (the SMS-OTP the stub "sent").
   - `GET /dev/seed-info` → `{ supplier_id, buyer_id, investor_id, admins_password }`.
+  - `POST /dev/seed-listing` `{ stage?, rate_bps?, amount_paise?, maker? }` → fast-forwards a **fresh** listing to
+    a money-flow `stage` (`live | fully_funded | disbursable | disbursed | matured`) and returns
+    `{ listing_id, invoice_id, supplier_id, buyer_id, investor_id, subscription_id?, payout_instruction_id?,
+    stage, funding_target, status }` — so S12 subscribe / S6 approve / S7 maturity+distribution can be driven
+    live without hand-running the full pipeline. E.g. `{stage:"disbursable", maker:"treasury@dev.local"}` then
+    approve as `treasury2@dev.local`. Dev-only, direct inserts (bypasses the gates); see `DEV_SEED_LISTING_HELPER.md` / DL-BE-086.
 
 Re-running is safe: the seeder skips if `admin_user` already has rows. To re-seed, reset the DB (§7).
 

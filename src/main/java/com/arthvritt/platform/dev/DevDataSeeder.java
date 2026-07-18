@@ -18,7 +18,8 @@ import java.util.UUID;
  * startup so an operator can log in and drive the API by hand without any SQL. Idempotent: it does nothing
  * if {@code admin_user} already has rows. Never wired in prod (the {@link Profile} guard).
  *
- * <p>Seeds: six admins (one per role + a second Treasury for the disbursement maker-checker pair), all with
+ * <p>Seeds: seven admins (one per role + a second Treasury for the disbursement maker-checker pair + a
+ * second Ops for the DOC.3 / two-ops maker-checker pair), all with
  * password {@code DevPass123!}; and one active supplier, buyer (+ active acknowledgment user), investor, and
  * a pricing band — so a listing can go live → subscribe → assign → disburse → mature immediately. The investor
  * ({@code investor@dev.local}) also gets the same dev password (M10-D A1) so it can self-login read-only.
@@ -56,6 +57,9 @@ public class DevDataSeeder implements ApplicationRunner {
 
         UUID superAdmin = seedAdmin("super@dev.local", "Dev Super", "super_admin");
         seedAdmin("ops@dev.local", "Dev Ops", "ops_executive");
+        // A second Ops so the DOC.3 (document-completeness) maker-checker — and any two-ops flow — is drivable
+        // via real commands (proposer ≠ approver needs two ops_executive principals).
+        seedAdmin("ops2@dev.local", "Dev Ops 2", "ops_executive");
         seedAdmin("treasury@dev.local", "Dev Treasury", "treasury_and_settlement");
         seedAdmin("treasury2@dev.local", "Dev Treasury 2", "treasury_and_settlement");
         seedAdmin("compliance@dev.local", "Dev Compliance", "compliance_reviewer");

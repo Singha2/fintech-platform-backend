@@ -222,7 +222,8 @@
       "Bash(pkill -f \"spring-boot:run\")",
       "Bash(curl -s -m 3 http://localhost:8081/actuator/health)",
       "Bash(curl -s -m 3 http://localhost:8080/api/v1/dev/seed-info)",
-      "Read(//Users/amitsingh/**)"
+      "Read(//Users/amitsingh/**)",
+      "Bash(xargs ls)"
     ]
   }
 }
