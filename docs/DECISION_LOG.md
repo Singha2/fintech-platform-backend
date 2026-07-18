@@ -3281,3 +3281,37 @@ seeding would need the full largest-remainder `TaxEngine` split — deliberately
   not). The `matured` stage needs a `tax_rate_default` row for the current FY (seeded by `V8`).
 - If real investor login / multi-investor listings arrive, extend the `matured` split to the full `TaxEngine`
   rather than the single-leg shortcut.
+
+---
+
+## DL-BE-087 — Dev seed: admins **ensured per-email** every boot (DF-3); counterparties still seed once
+
+**Status.** Shipped (green). Brief: `docs/DF3_SEEDER_UPSERT_BRIEF.md`. Changes only `DevDataSeeder` (dev-profile
+bean). One new test (`DevSeederAdminEnsureTest`); full suite green.
+
+**Decision.** Replace `DevDataSeeder`'s **all-or-nothing empty-guard** (skip everything if `admin_user` has any
+row) with **ensure-missing per email**: each of the seven seed admins is created only if a row with that email
+is absent, on **every** dev boot. The **counterparty** block moves behind its own guard — counterparty
+emptiness (`count(sup_account)`) rather than admin count — so suppliers/buyers/investors still seed **exactly
+once**. Net: *admins ensured every boot; counterparties seeded once*.
+
+**Why.** DL-BE-086 added `ops2@dev.local` (for the DOC.3 two-ops maker-checker) and its tests pass — **on a
+fresh schema**. But any dev/CI DB seeded before that already had six admins, so the old empty-guard skipped the
+whole seed and `ops2` **never appeared** — silently, a false-green hole that left the go-live and disbursement
+maker-checker paths undrivable there. The only prior workarounds were wiping the dev DB (losing all onboarded
+state) or hand-inserting into the auth tables (fragile — what unblocked S5 verification manually). Per-email
+ensure retires both and future-proofs seed evolution: any account added to the list later lands automatically.
+
+**How.** `ensureAdmin(email, displayName, role)` looks up `admin_user WHERE email = ?::citext` (case-insensitive
+to match the CITEXT `auth_identity.email`) and returns the existing id if present, else falls through to the
+unchanged `seedAdmin(...)`. A manually pre-inserted `ops2` is therefore **adopted, not duplicated** — no
+duplicate `admin_user` / `auth_identity` / `auth_credential` / `admin_role_assignment` rows; the unique
+constraints hold. `super@dev.local`'s ensured id is captured for `assigned_by` / `nominated_by` on the
+one-time counterparty seed.
+
+**What to watch for.**
+- **The guard column matters.** Guarding the counterparty block on *admin* count would re-seed counterparties
+  whenever an admin was added; it is deliberately guarded on `sup_account` emptiness instead.
+- **`?::citext` needs the `citext` extension** (installed in `V1`); `admin_user.email` is plain `TEXT`, so the
+  cast on the *parameter* is what makes the match case-insensitive.
+- Still **dev-profile only** — no prod path (`/dev/**` 404s with no bean).

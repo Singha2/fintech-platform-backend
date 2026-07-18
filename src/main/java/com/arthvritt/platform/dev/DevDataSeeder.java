@@ -11,12 +11,19 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
  * <b>Dev profile only</b> ({@code --spring.profiles.active=dev}) — seeds a ready-to-use local dataset on
- * startup so an operator can log in and drive the API by hand without any SQL. Idempotent: it does nothing
- * if {@code admin_user} already has rows. Never wired in prod (the {@link Profile} guard).
+ * startup so an operator can log in and drive the API by hand without any SQL. Never wired in prod (the
+ * {@link Profile} guard).
+ *
+ * <p><b>Admins are ensured per-email on every boot</b> (DF-3, DL-BE-087): each of the seven accounts is
+ * created only if missing, so an account added to the seed list later (e.g. {@code ops2@dev.local}, DL-BE-086)
+ * materialises on a pre-existing dev DB without a destructive wipe — and a manually-inserted account is
+ * adopted, not duplicated. The <b>counterparty</b> block is guarded on counterparty emptiness, so it still
+ * seeds exactly once (rebooting never re-seeds suppliers/buyers/investors).
  *
  * <p>Seeds: seven admins (one per role + a second Treasury for the disbursement maker-checker pair + a
  * second Ops for the DOC.3 / two-ops maker-checker pair), all with
@@ -44,26 +51,30 @@ public class DevDataSeeder implements ApplicationRunner {
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
-        // Exclude the reserved SYSTEM principal (seeded by migration V7 to author the genesis SoD policy,
-        // DL-BE-064) — it is always present, so counting it would make this guard permanently skip the seed.
-        Integer admins = jdbc.queryForObject(
-                "SELECT count(*) FROM admin_user WHERE admin_user_id <> '00000000-0000-0000-0000-000000000002'",
-                Integer.class);
-        if (admins != null && admins > 0) {
-            log.info("[dev-seed] admin_user already populated ({} real rows) — skipping dev seed", admins);
-            return;
-        }
-        log.info("[dev-seed] seeding dev admins + counterparties (password for every admin: {})", PASSWORD);
-
-        UUID superAdmin = seedAdmin("super@dev.local", "Dev Super", "super_admin");
-        seedAdmin("ops@dev.local", "Dev Ops", "ops_executive");
+        // DF-3 (DL-BE-087): ensure every seed admin per-email, so an account added to the list later lands on
+        // a pre-existing dev DB (no destructive wipe) and a manually-inserted one is adopted, not duplicated.
+        log.info("[dev-seed] ensuring dev admins (password for every admin: {})", PASSWORD);
+        UUID superAdmin = ensureAdmin("super@dev.local", "Dev Super", "super_admin");
+        ensureAdmin("ops@dev.local", "Dev Ops", "ops_executive");
         // A second Ops so the DOC.3 (document-completeness) maker-checker — and any two-ops flow — is drivable
         // via real commands (proposer ≠ approver needs two ops_executive principals).
-        seedAdmin("ops2@dev.local", "Dev Ops 2", "ops_executive");
-        seedAdmin("treasury@dev.local", "Dev Treasury", "treasury_and_settlement");
-        seedAdmin("treasury2@dev.local", "Dev Treasury 2", "treasury_and_settlement");
-        seedAdmin("compliance@dev.local", "Dev Compliance", "compliance_reviewer");
-        seedAdmin("credit@dev.local", "Dev Credit", "credit_reviewer");
+        ensureAdmin("ops2@dev.local", "Dev Ops 2", "ops_executive");
+        ensureAdmin("treasury@dev.local", "Dev Treasury", "treasury_and_settlement");
+        ensureAdmin("treasury2@dev.local", "Dev Treasury 2", "treasury_and_settlement");
+        ensureAdmin("compliance@dev.local", "Dev Compliance", "compliance_reviewer");
+        ensureAdmin("credit@dev.local", "Dev Credit", "credit_reviewer");
+
+        log.info("[dev-seed] all routes are under /api/v1; health is on :8081/actuator/health");
+        log.info("[dev-seed] log in: POST /api/v1/auth/login/password {{\"email\":\"ops@dev.local\",\"password\":\"{}\"}} "
+                + "→ GET /api/v1/dev/last-otp?email=ops@dev.local → POST /api/v1/auth/login/verify-otp", PASSWORD);
+
+        // Counterparties seed exactly once — guarded on counterparty emptiness (NOT admin count, so ensuring a
+        // late-added admin never re-seeds suppliers/buyers/investors on an established dev DB).
+        Integer counterparties = jdbc.queryForObject("SELECT count(*) FROM sup_account", Integer.class);
+        if (counterparties != null && counterparties > 0) {
+            log.info("[dev-seed] counterparties already present — admins ensured, skipping counterparty seed");
+            return;
+        }
 
         UUID supplierId = seedActiveSupplier();
         UUID buyerId = seedActiveBuyer(superAdmin);
@@ -73,9 +84,22 @@ public class DevDataSeeder implements ApplicationRunner {
 
         log.info("[dev-seed] done. supplier={} buyer={} investor={} (GET /api/v1/dev/seed-info to fetch these)",
                 supplierId, buyerId, investorId);
-        log.info("[dev-seed] all routes are under /api/v1; health is on :8081/actuator/health");
-        log.info("[dev-seed] log in: POST /api/v1/auth/login/password {{\"email\":\"ops@dev.local\",\"password\":\"{}\"}} "
-                + "→ GET /api/v1/dev/last-otp?email=ops@dev.local → POST /api/v1/auth/login/verify-otp", PASSWORD);
+    }
+
+    /**
+     * Returns the existing {@code admin_user_id} for {@code email} (case-insensitive, matching the CITEXT
+     * {@code auth_identity.email}) if present, else creates it via {@link #seedAdmin}. Idempotent per-email:
+     * a second boot — or a manually pre-inserted account — adds nothing.
+     */
+    private UUID ensureAdmin(String email, String displayName, String role) {
+        List<UUID> existing = jdbc.query(
+                "SELECT admin_user_id FROM admin_user WHERE email = ?::citext",
+                (rs, i) -> rs.getObject("admin_user_id", UUID.class), email);
+        if (!existing.isEmpty()) {
+            log.info("[dev-seed] admin {} already present — skipping", email);
+            return existing.get(0);
+        }
+        return seedAdmin(email, displayName, role);
     }
 
     private UUID seedAdmin(String email, String displayName, String role) {

@@ -64,7 +64,10 @@ either open **`manual-test.http`** in IntelliJ (run requests one by one, breakpo
     live without hand-running the full pipeline. E.g. `{stage:"disbursable", maker:"treasury@dev.local"}` then
     approve as `treasury2@dev.local`. Dev-only, direct inserts (bypasses the gates); see `DEV_SEED_LISTING_HELPER.md` / DL-BE-086.
 
-Re-running is safe: the seeder skips if `admin_user` already has rows. To re-seed, reset the DB (§7).
+Re-running is safe (DL-BE-087): admins are **ensured per-email** on every boot — a newly-added seed account
+(e.g. `ops2@dev.local`) lands on an existing dev DB with no wipe, and existing accounts/counterparties are never
+duplicated (counterparties seed once, guarded on `sup_account` emptiness). To fully re-seed from scratch, reset
+the DB (§7).
 
 ---
 
