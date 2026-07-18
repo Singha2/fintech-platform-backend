@@ -13,19 +13,19 @@
 ## 0. Current state — the one-glance summary
 
 Backend and UI are each mature and the **bridge is essentially built** — auth, reads, the whole admin +
-deal-flow write path, **and real investor self-service (BE-18: passwordless login + self-commit)** are live and
-E2E-verified. Only the two await-milestone screens remain: S9 (M17 auditor) and S15 (WS-2 buyer portal).
+deal-flow write path, **real investor self-service (BE-18)** and the **buyer portal (BE-15)** are live and
+E2E-verified. **14 of 15 screens are wired live;** only **S9** (audit log) remains, blocked on **M17 auditor**.
 
 | Half | State | Evidence |
 |---|---|---|
 | **Backend core** | ✅ Complete — full money lifecycle `listed → … → distributed → closed` over HTTP, five controls enforced | 413 tests green (real Postgres) |
 | **Backend read surface (for the UI)** | ✅ **BE-1…BE-12 + BE-14 + BE-17 shipped** (admin reads + dashboard + investor read-only portal). BE-13/15/16 deferred by design | `docs/API_CATALOGUE.md`, `DL-BE-079…084` |
 | **UI (mock)** | ✅ All **15 screens** built and working **offline** on a mock store | `../fintech-patform-mock/src/store/PlatformStore.jsx` |
-| **🟢 Live wiring (the bridge)** | ✅ **Auth + reads + admin/deal-flow writes live & E2E-verified** — `src/api/` client + envelope + `ApiError` + full service layer + `AuthContext` + Vite proxy. **S1 login**; **reads** for S2–S8/S11/S12/S13/S14 (S13 investor portfolio, own-scoped); **write chains** onboarding (S3/S4/S8 + **S10 investor**) + deal spine **S5 go-live → S12 subscribe → S6 disburse → S7 mature/distribute** (harnesses `scripts/e2e/*`, DL-BE-086/087 seed helper + two-ops); **investor self-service** — passwordless login + S12 self-commit (BE-18/DL-BE-088). Remaining: S9 (M17), S15 (WS-2). | mock `docs/UI_WORKORDER.md` |
+| **🟢 Live wiring (the bridge)** | ✅ **Auth + reads + admin/deal-flow writes live & E2E-verified** — `src/api/` client + envelope + `ApiError` + full service layer + `AuthContext` + Vite proxy. **S1 login**; **reads** for S2–S8/S11/S12/S13/S14 (S13 investor portfolio, own-scoped); **write chains** onboarding (S3/S4/S8 + **S10 investor**) + deal spine **S5 go-live → S12 subscribe → S6 disburse → S7 mature/distribute** (harnesses `scripts/e2e/*`, DL-BE-086/087 seed helper + two-ops); **investor self-service** — passwordless login + S12 self-commit (BE-18/DL-BE-088); **buyer portal** — ack-user login + reads + self-ack (BE-15/DL-BE-090). Remaining: **S9** (M17). | mock `docs/UI_WORKORDER.md` |
 
-**The admin + deal-flow surface, investor onboarding (S10), portfolio (S13), and real investor self-service
-(BE-18: passwordless login + self-commit) are all done and verified.** The only screens not wired live are the two
-that await backend milestones: **S9** (M17 auditor) and **S15** (WS-2 buyer portal).
+**The admin + deal-flow surface, investor onboarding (S10) + portfolio (S13) + self-service (BE-18), and the
+buyer portal (S15/BE-15) are all done and verified.** The only screen not wired live is **S9** (audit log),
+blocked on the **M17 auditor** backend milestone.
 
 ---
 
@@ -71,7 +71,7 @@ Legend: ✅ done · ⚠️ partial · ❌ not done · ⛔ blocked (deferred mile
 | **S12** Listing detail | `GET /listings/{id}/detail` (BE-10, admin) | ✅ | ✅ | ✅ | **Detail read + subscribe write wired + E2E-verified** — **investor self-commit** `{amount_paise}` under own session (BE-18, `investor-self-commit.mjs` 8/8) **or** ops-on-behalf `{investor_id,…}`; cross-tenant id → 403. `committed_total` increments | — |
 | **S13** Investor portfolio | `…/subscriptions` + summary (BE-14) | ✅ | ✅ | ✅ | **Portfolio read live + E2E-verified** (`scripts/e2e/investor-portfolio.mjs`, 10/10) — `GET /investors/{id}/subscriptions` → `{rows,summary}` (BE-17) + tax deductions/statements, scoped via `GET /auth/session` own `investor_id` (dev: `/dev/seed-info` fallback for admin bearer). Cross-tenant read → **403 `cross_tenant_read`**. Read-only persona; real investor login stays dev-password (**BE-18**) | — |
 | **S14** Supplier tracker (admin) | `GET /suppliers/{id}/listings` (BE-11) | ✅ | ✅ | ⚠️ | **Tracker read live** (`useHydrate(['supplierListings',id])`; buyer_name blank — not in BE-11); submit still mock | — |
-| **S15** Buyer portal | ack-user OTP login + buyer reads + self-ack (BE-15) | ✅ | ✅ | ❌ | **BE-15 backend SHIPPED (DL-BE-090, 465 tests).** Passwordless ack-user login (`POST /auth/login/ack-user/request-otp`) + `/auth/session` `buyer_id` + own-scoped reads (`GET /buyers/{id}/ack-invoices` + `/payment-instruction`) + buyer **self-ack** (`record-buyer-ack`, `captured_by_kind='buyer_ack_user'`, requires an outstanding request, no double-ack) + `buyer.CrossTenantReadDenied`. Payment-instruction metadata-only (confirm-PI captures no bank details — upstream follow-up). **Mock wiring next** (see mock `UI_WORKORDER.md`). Spec: [`modules/M11-C-buyer-portal-ack.md`](modules/M11-C-buyer-portal-ack.md) | — |
+| **S15** Buyer portal | ack-user OTP login + buyer reads + self-ack (BE-15) | ✅ | ✅ | ✅ | **Live + E2E-verified** (`scripts/e2e/buyer-portal.mjs`, 9/9) — passwordless ack-user login → `/auth/session` `buyer_id` → own-scoped `GET /buyers/{id}/ack-invoices` + `/payment-instruction` → buyer **self-ack** (`record-buyer-ack {outcome:'acknowledged'}`, requires outstanding request) → acknowledged; cross-tenant read → 403; ops-on-behalf no regression. UI: passwordless login, live reads, self-ack, real logout (DL-BE-089). Payment-instruction metadata-only (bank fields upstream follow-up). Spec: [`modules/M11-C-buyer-portal-ack.md`](modules/M11-C-buyer-portal-ack.md) | — |
 
 **Wire-able now (backend ready): S1–S8, S10, S11, S12, S13, S14.** Blocked on a milestone: S9, S15.
 _(S11/S13 unblocked by **M10-D**; investor read-only login uses the dev password today — real investor login is Phase B/BE-18.)_
@@ -116,7 +116,7 @@ From `ROADMAP.md` §5. These add capability but the UI wiring above does not wai
 3. **Command flows** (writes with the envelope): supplier/buyer/listing/investor onboarding cmds on S3/S4/S5/S10.
    - ✅ **Money-flow writes are now E2E-testable** (DL-BE-086): the dev helper `POST /dev/seed-listing {stage}` fast-forwards a fresh listing to `live | fully_funded | disbursable | disbursed | matured`, so S12 subscribe, S6 approve, S7 record-maturity/distribution can be driven live without hand-running the ~20-command pipeline. Second ops (`ops2@dev.local`) also seeded so the real DOC.3 two-ops path is drivable. Mock-side flips S5/S6/S7/S12 write cells to ✅ once exercised.
 4. **Investor read-only portal** — **S11 + S13 now backend-ready (M10-D/BE-14/BE-17)**; wire against a real investor bearer (dev password today, Phase B for real login). Details in the mock's `BACKEND_UI_READINESS.md`.
-5. **Deferred screens** — S9 (after M17). **S15 backend SHIPPED (BE-15 / `DL-BE-090`)** — passwordless ack-user login + own-scoped buyer reads + self-ack; **mock wiring is the remaining step** (mock `UI_WORKORDER.md`).
+5. **Deferred screens** — **S9** (after M17) is the only screen left. **S15 is live** (BE-15/DL-BE-090 wired + E2E-verified, `scripts/e2e/buyer-portal.mjs`).
 
 **Track B — backend remainder (parallel, non-blocking)**
 6. M17 Auditor (also unblocks S9) → then M15, M14, deferred-control sweep.
